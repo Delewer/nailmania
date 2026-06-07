@@ -1,0 +1,29 @@
+# Nail Mania storefront — SPA routing for Apache / LiteSpeed (iphost.md cPanel)
+# Vite copies everything in public/ to the root of dist/, so this ships with the build.
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+
+  # Order endpoint: /api/order → order.php (so the front-end uses one path on any host)
+  RewriteRule ^api/order/?$ order.php [L]
+
+  # Don't rewrite real files or directories (assets, images, etc.)
+  RewriteCond %{REQUEST_FILENAME} -f [OR]
+  RewriteCond %{REQUEST_FILENAME} -d
+  RewriteRule ^ - [L]
+
+  # Everything else → index.html so React Router handles /product/:id, /checkout, etc.
+  RewriteRule ^ index.html [L]
+</IfModule>
+
+# Long-cache the hashed asset bundles (filenames change on every build)
+<IfModule mod_headers.c>
+  <FilesMatch "\.(js|css|woff2?|png|jpe?g|svg|webp|avif)$">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+  </FilesMatch>
+  # Never cache the HTML shell
+  <FilesMatch "\.html$">
+    Header set Cache-Control "no-cache"
+  </FilesMatch>
+</IfModule>
