@@ -3,7 +3,7 @@ import React from 'react'
 import { useParams, useSearchParams, Link } from 'react-router-dom'
 import { useShop, Icon } from '../shop.jsx'
 import { ProductCard } from '../components/Products.jsx'
-import { findCategory, productsByBrand, catsByBrand } from '../data.js'
+import { findCategory, productsByBrand, catsByBrand, inStock } from '../data.js'
 
 const PER_PAGE = 12;
 
@@ -37,7 +37,8 @@ export default function BrandPage(){
     );
   }
 
-  const filtered = cat ? products.filter(p=>p.cat===cat) : products;
+  const matched = cat ? products.filter(p=>p.cat===cat) : products;
+  const filtered = [...matched].sort((a,b)=> Number(inStock(b)) - Number(inStock(a))); // in-stock first
   const pages = Math.ceil(filtered.length / PER_PAGE);
   const slice = filtered.slice(page*PER_PAGE, (page+1)*PER_PAGE);
 

@@ -156,6 +156,10 @@
 .tag.new{background:var(--mint-deep)}
 .tag.sale{background:var(--rose)}
 .tag.hit{background:var(--ink)}
+.tag.soldout{background:var(--gray-2)}
+.card.oos .ph{filter:grayscale(.55);opacity:.85}
+.card .addbtn.soldout{background:var(--line-2);color:var(--gray);cursor:not-allowed}
+.card .addbtn.soldout:hover{background:var(--line-2)}
 .card .body{padding:14px 15px 16px;display:flex;flex-direction:column;flex:1}
 .card .brand{font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--mauve-deep);margin-bottom:5px}
 .card .pname{font-size:14px;font-weight:600;line-height:1.32;color:var(--ink);margin:0 0 12px;

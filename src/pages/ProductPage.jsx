@@ -3,7 +3,7 @@ import React from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useShop, Icon, Placeholder } from '../shop.jsx'
 import { ProductCard } from '../components/Products.jsx'
-import { findProduct, findCategory, productCode, productDesc, productSpecs, relatedProducts, productGallery } from '../data.js'
+import { findProduct, findCategory, productCode, productDesc, productSpecs, relatedProducts, productGallery, inStock } from '../data.js'
 
 export default function ProductPage(){
   const { id } = useParams();
@@ -32,6 +32,7 @@ export default function ProductPage(){
 
   const cat = findCategory(p.cat);
   const isFav = favs.includes(p.key);
+  const oos = !inStock(p);
   const [descA, descB] = productDesc(p, lang);
   const save = p.old>0 ? Math.round((1 - p.price/p.old)*100) : 0;
   // gallery: distinct themed photos, with gradient variants as load/error fallback
@@ -70,7 +71,7 @@ export default function ProductPage(){
           <div className="pd-brand">{p.brand}</div>
           <h1>{name(p)}</h1>
           <div className="pd-meta">
-            <span className="stock"><span className="dot"/>{t("inStock")}</span>
+            <span className={"stock"+(oos?" out":"")}><span className="dot"/>{oos?t("outOfStock"):t("inStock")}</span>
             <span>{t("code")}: {productCode(p)}</span>
           </div>
           <div className="pd-price">
@@ -80,19 +81,25 @@ export default function ProductPage(){
           </div>
 
           <div className="pd-buy">
-            <div className="qty">
-              <button onClick={()=>setQty(q=>Math.max(1,q-1))} aria-label="-"><Icon n="minus" s={16}/></button>
-              <span>{qty}</span>
-              <button onClick={()=>setQty(q=>q+1)} aria-label="+"><Icon n="plus" s={16}/></button>
-            </div>
-            <button className={"addbtn"+(added?" in":"")} onClick={handleAdd}>
-              {added ? <><Icon n="check" s={18}/>{t("inCart")}</> : <><Icon n="bag" s={18}/>{t("addCart")}</>}
-            </button>
+            {oos ? (
+              <button className="addbtn soldout" disabled style={{flex:1}}>{t("outOfStock")}</button>
+            ) : (
+              <>
+                <div className="qty">
+                  <button onClick={()=>setQty(q=>Math.max(1,q-1))} aria-label="-"><Icon n="minus" s={16}/></button>
+                  <span>{qty}</span>
+                  <button onClick={()=>setQty(q=>q+1)} aria-label="+"><Icon n="plus" s={16}/></button>
+                </div>
+                <button className={"addbtn"+(added?" in":"")} onClick={handleAdd}>
+                  {added ? <><Icon n="check" s={18}/>{t("inCart")}</> : <><Icon n="bag" s={18}/>{t("addCart")}</>}
+                </button>
+              </>
+            )}
             <button className={"favbtn-lg"+(isFav?" on":"")} onClick={()=>toggleFav(p.key)} aria-label={t("fav")}>
               <Icon n="heart" s={20} fill={isFav}/>
             </button>
           </div>
-          <button className="pd-oneclick" onClick={buyNow}><Icon n="check" s={18}/>{t("buyOneClick")}</button>
+          {!oos && <button className="pd-oneclick" onClick={buyNow}><Icon n="check" s={18}/>{t("buyOneClick")}</button>}
 
           <div className="pd-block">
             <h2>{t("descTitle")}</h2>
@@ -109,7 +116,7 @@ export default function ProductPage(){
                 <li key={i}><span>{s.label}</span><b>{s.value}</b></li>
               ))}
               <li><span>{t("charCode")}</span><b>{productCode(p)}</b></li>
-              <li><span>{t("charAvail")}</span><b>{t("inStock")}</b></li>
+              <li><span>{t("charAvail")}</span><b>{oos?t("outOfStock"):t("inStock")}</b></li>
             </ul>
           </div>
         </div>

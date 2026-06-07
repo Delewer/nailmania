@@ -44,8 +44,10 @@ function odsRows() {
   return out;
 }
 
-// minimal RFC-4180 CSV parser (handles quoted fields, commas, newlines)
+// minimal RFC-4180 CSV parser; auto-detects "," vs ";" delimiter
 function csvRows(text) {
+  const first = text.split(/\r?\n/).find((l) => l.trim()) || '';
+  const delim = first.split(';').length > first.split(',').length ? ';' : ',';
   const out = []; let row = [], field = '', q = false;
   for (let i = 0; i < text.length; i++) {
     const c = text[i];
@@ -53,12 +55,19 @@ function csvRows(text) {
       if (c === '"') { if (text[i + 1] === '"') { field += '"'; i++; } else q = false; }
       else field += c;
     } else if (c === '"') q = true;
-    else if (c === ',') { row.push(field); field = ''; }
+    else if (c === delim) { row.push(field); field = ''; }
     else if (c === '\n') { row.push(field); out.push(row); row = []; field = ''; }
     else if (c !== '\r') field += c;
   }
   if (field.length || row.length) { row.push(field); out.push(row); }
   return out.map((r) => r.map((x) => x.trim()));
+}
+
+// local file may be an ODS (zip) or a plain CSV — handle both
+function localRows() {
+  const buf = readFileSync(ODS);
+  if (buf[0] === 0x50 && buf[1] === 0x4b) return odsRows();             // "PK" → ODS zip
+  return csvRows(buf.toString('utf8').replace(/^﻿/, ''));          // plain CSV
 }
 
 let rows;
@@ -68,7 +77,7 @@ if (SHEET_URL) {
   if (!res.ok) throw new Error(`Sheet fetch failed (HTTP ${res.status})`);
   rows = csvRows(await res.text());
 } else {
-  rows = odsRows();
+  rows = localRows();
 }
 
 // ---- 3. map sheet category -> site category id (must exist in CATS, data.js) ----
@@ -207,6 +216,7 @@ for (const r of rows.slice(headerIdx + 1)) {
     .filter(s => s.value);
   const code = cell(r, 'code');
   const brand = cell(r, 'brand') || 'Fără brand';
+  const qtyN = parseInt(cell(r, 'qty').replace(/[^\d-]/g, ''), 10);  // stock from Quantity column
   // stable identity for URLs / cart / favorites: SKU when present, else a
   // deterministic hash of brand+name (survives catalog rebuilds; row id does not)
   const key = code || ('x' + fnv(brand + '|' + title + '|' + cat + '|' + price));
@@ -221,6 +231,7 @@ for (const r of rows.slice(headerIdx + 1)) {
     price,
     old: Number.isFinite(priceOld) && priceOld > price ? priceOld : 0,
     desc: cell(r, 'desc'),
+    ...(Number.isFinite(qtyN) ? { stock: qtyN } : {}),  // 0 → "out of stock"; blank → assume in stock
     ...(image ? { image } : {}),         // supplier image URL, when the sheet has one
     ...(specs.length ? { specs } : {}),  // Characteristics:* columns from the sheet
   });
@@ -243,7 +254,7 @@ writeFileSync(path.join(ROOT, 'src', 'categories.json'), JSON.stringify(catList)
 const cats = {};
 for (const p of products) (cats[p.cat] ||= new Set()).add(p.brand);
 console.log(`✓ ${products.length} products -> src/catalog.json`);
-console.log(`✓ ${catList.length} categories -> src/categories.json (source: ${SHEET_URL ? 'Google Sheet' : 'local ODS'})\n`);
+console.log(`✓ ${catList.length} categories -> src/categories.json (source: ${SHEET_URL ? 'Google Sheet' : 'local file'})\n`);
 for (const [c, set] of Object.entries(cats).sort())
   console.log(`  ${c.padEnd(14)} ${String(products.filter(p => p.cat === c).length).padStart(4)} items · ${set.size} brand(s)`);
 const fresh = catList.filter(c => !KNOWN_CATS.has(c.id));

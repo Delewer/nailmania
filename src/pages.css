@@ -42,6 +42,10 @@
 .pd-meta{display:flex;align-items:center;gap:16px;flex-wrap:wrap;font-size:13px;color:var(--gray);margin-bottom:22px}
 .pd-meta .stock{display:inline-flex;align-items:center;gap:7px;color:var(--ok);font-weight:700}
 .pd-meta .stock .dot{width:9px;height:9px;border-radius:50%;background:var(--ok)}
+.pd-meta .stock.out{color:var(--gray)}
+.pd-meta .stock.out .dot{background:var(--gray-2)}
+.pd-buy .addbtn.soldout{background:var(--line-2);color:var(--gray);cursor:not-allowed}
+.pd-buy .addbtn.soldout:hover{background:var(--line-2)}
 .pd-price{display:flex;align-items:baseline;gap:12px;margin-bottom:24px}
 .pd-price .now{font-family:var(--serif);font-size:38px;font-weight:800;letter-spacing:-.01em}
 .pd-price .now small{font-size:18px;font-weight:700;color:var(--gray)}

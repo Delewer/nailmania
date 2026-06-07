@@ -2,10 +2,12 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
 import { useShop, Icon, Placeholder } from '../shop.jsx'
+import { inStock } from '../data.js'
 
 export function ProductCard({p}){
   const {t,name,addToCart,favs,toggleFav} = useShop();
   const isFav = favs.includes(p.key);
+  const oos = !inStock(p);
   // transient "added" confirmation that reverts the button to its initial look
   const [added,setAdded] = React.useState(false);
   const addT = React.useRef(0);
@@ -15,12 +17,12 @@ export function ProductCard({p}){
             : p.badge==="sale" ? {c:"sale",txt:"-"+Math.round((1-p.price/p.old)*100)+"%"}
             : p.badge==="hit" ? {c:"hit",txt:"HIT"} : null;
   return (
-    <div className="card">
+    <div className={"card"+(oos?" oos":"")}>
       <div className="media">
         <Link to={"/product/"+p.key} aria-label={name(p)}>
           <Placeholder g={p.g} icon="bottle" ratio="1" radius={0} img={p.img} label={name(p)}/>
         </Link>
-        <div className="badges">{tag && <span className={"tag "+tag.c}>{tag.txt}</span>}</div>
+        <div className="badges">{oos ? <span className="tag soldout">{t("outOfStock")}</span> : tag && <span className={"tag "+tag.c}>{tag.txt}</span>}</div>
         <button className={"favbtn"+(isFav?" on":"")} onClick={()=>toggleFav(p.key)} aria-label={t("fav")}>
           <Icon n="heart" s={19} fill={isFav}/>
         </button>
@@ -32,9 +34,11 @@ export function ProductCard({p}){
           <span className="price">{p.price} <small>{t("lei")}</small></span>
           {p.old>0 && <span className="old">{p.old} {t("lei")}</span>}
         </div>
-        <button className={"addbtn"+(added?" in":"")} onClick={onAdd}>
-          {added ? <><Icon n="check" s={17}/>{t("inCart")}</> : <><Icon n="bag" s={17}/>{t("addCart")}</>}
-        </button>
+        {oos
+          ? <button className="addbtn soldout" disabled>{t("outOfStock")}</button>
+          : <button className={"addbtn"+(added?" in":"")} onClick={onAdd}>
+              {added ? <><Icon n="check" s={17}/>{t("inCart")}</> : <><Icon n="bag" s={17}/>{t("addCart")}</>}
+            </button>}
       </div>
     </div>
   );

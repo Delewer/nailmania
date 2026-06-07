@@ -35,7 +35,7 @@ export const I18N = {
     addedToast:"Adăugat în coș", lei:"lei",
     menuTitle:"Meniu", langLabel:"Limba",
     // ---- product page ----
-    home:"Acasă", inStock:"În stoc", code:"Cod", qty:"Cantitate",
+    home:"Acasă", inStock:"În stoc", outOfStock:"Stoc epuizat", code:"Cod", qty:"Cantitate",
     buyOneClick:"Cumpără într-un clic", goCheckout:"Spre finalizare",
     descTitle:"Descriere", charTitle:"Caracteristici",
     charBrand:"Brand", charCat:"Categorie", charCode:"Cod", charAvail:"Disponibilitate",
@@ -96,7 +96,7 @@ export const I18N = {
     addedToast:"Добавлено в корзину", lei:"лей",
     menuTitle:"Меню", langLabel:"Язык",
     // ---- product page ----
-    home:"Главная", inStock:"В наличии", code:"Артикул", qty:"Количество",
+    home:"Главная", inStock:"В наличии", outOfStock:"Нет в наличии", code:"Артикул", qty:"Количество",
     buyOneClick:"Купить в один клик", goCheckout:"К оформлению",
     descTitle:"Описание", charTitle:"Характеристики",
     charBrand:"Бренд", charCat:"Категория", charCode:"Артикул", charAvail:"Наличие",
@@ -258,6 +258,10 @@ export function featured(seed, n=8){
 export const SALE_PRODUCTS = CATALOG.filter(p=>p.old>p.price);
 // look up by stable identity key (SKU or hash fallback) — used by URLs/cart/favorites
 export const findProduct = (key)=> ALL_PRODUCTS.find(p=>p.key===key);
+
+// stock comes from the sheet's Quantity column. Only an explicit 0 (or less) means
+// out of stock; a blank/unknown quantity is treated as available (safe default).
+export const inStock = (p)=> typeof p.stock !== "number" || p.stock > 0;
 export const findCategory = (catId)=> CATS.find(c=>c.id===catId);
 
 // real SKU from the price list when present, else a stable generated code
