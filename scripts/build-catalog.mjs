@@ -73,7 +73,9 @@ function localRows() {
 let rows;
 if (SHEET_URL) {
   console.log('Loading catalog from Google Sheet…');
-  const res = await fetch(SHEET_URL);
+  // cache-buster + no-store so each build pulls the latest sheet, not a stale copy
+  const url = SHEET_URL + (SHEET_URL.includes('?') ? '&' : '?') + 'cb=' + Date.now();
+  const res = await fetch(url, { cache: 'no-store', headers: { 'cache-control': 'no-cache' } });
   if (!res.ok) throw new Error(`Sheet fetch failed (HTTP ${res.status})`);
   rows = csvRows(await res.text());
 } else {
