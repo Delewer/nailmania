@@ -34,11 +34,15 @@ if (RECON) { for (const [c, f] of Object.entries(byCol).sort()) console.log(`  $
 const lastNum = (s) => {
   const x = s
     .replace(/\.[a-z0-9]{2,4}$/i, '')          // file extension
+    .replace(/\s*\(\d+\)\s*$/, '')              // "(2)" duplicate marker
+    .replace(/\s*дубл\S*.*$/i, '')             // "дублю 2" duplicate note
     .replace(/_\d+$/, '')                       // _1 / _2 duplicate suffix
     .replace(/\d+\s*-?\s*(ml|мл|gr?|г)\b/gi, ' '); // size/weight tokens
   const n = x.match(/\d+/g);
   return n ? parseInt(n[n.length - 1], 10) : null; // trailing number = shade
 };
+// filenames with no usable shade number (camera/Telegram timestamps)
+const isJunkName = (s) => /^(photo_\d{4}-\d{2}-\d{2}|img[-_ ]?\d)/i.test(s);
 const shadeNum = lastNum;
 // Titles: prefer the explicit "#NNN" shade; fall back to trailing number (e.g. "Yogurt Base 12ml 001")
 const titleNum = (t) => { const m = t.match(/#\s*0*(\d+)/); return m ? parseInt(m[1], 10) : lastNum(t); };
@@ -80,13 +84,13 @@ for (const [col, files] of Object.entries(byCol)) {
   const pred = FOLDER_MAP[col];
   if (!pred) { unmapped.push([col, files.length]); continue; }
   const line = danny.filter((p) => pred(p.name) && titleNum(p.name) != null);
-  const numToSku = {};
-  for (const p of line) if (!(titleNum(p.name) in numToSku)) numToSku[titleNum(p.name)] = p.code || p.key;
+  const numToSkus = {};                          // one shade number → all SKUs (e.g. 15ml + 50ml)
+  for (const p of line) { const k = titleNum(p.name); (numToSkus[k] ||= []).push(p.code || p.key); }
   let matched = 0;
   for (const f of files.sort((a, b) => (/\.jpe?g$/i.test(b.file) ? 1 : 0) - (/\.jpe?g$/i.test(a.file) ? 1 : 0))) {
+    if (isJunkName(f.file)) continue;            // skip timestamp/IMG files (no real shade)
     const n = shadeNum(f.file);
-    const sku = n != null ? numToSku[n] : null;
-    if (sku && !map[sku]) { map[sku] = lh3(f.id); matched++; }
+    for (const sku of (n != null ? numToSkus[n] || [] : [])) if (!map[sku]) { map[sku] = lh3(f.id); matched++; }
   }
   report.push([col, matched, line.length, files.length]);
 }

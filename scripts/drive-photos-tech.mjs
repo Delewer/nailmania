@@ -90,6 +90,11 @@ const MANUAL = {
   T1731: '1ILPtlsFijG0rgsd6dR3FDOt9MVcJpXG5', // Lampa Sun X Replica → «SUN X 54W BLACK»
   T1733: '1lbh9s1Rhrxs_bzUMQtfMK5kGuLj7GNBn', // Lampa Sun X PLUS → «SUN X PLUS 80W»
   T0911: '1lbh9s1Rhrxs_bzUMQtfMK5kGuLj7GNBn', // Lampa Sun X Plus 126W → «SUN X PLUS 80W»
+  // DANNY Builder Gel by colour (no shade number in the photo filename)
+  T0612: '1Fu554GHyocpQnvEMHRy9aMdOCXTZQHfN', // Builder Gel RED 15ml
+  T1209: '1Fu554GHyocpQnvEMHRy9aMdOCXTZQHfN', // Builder Gel RED 30ml
+  T0614: '11HHM9ISsRU4K9bLi3K69VDC3a-DqMJ3L', // Builder Gel WHITE 15ml
+  T0615: '11HHM9ISsRU4K9bLi3K69VDC3a-DqMJ3L', // Builder Gel WHITE 30ml
 };
 for (const [sku, id] of Object.entries(MANUAL)) { map[sku] = lh3(id); if (!matched.find((r) => r[0] === sku)) matched.push([sku, '(manual)', id]); }
 
