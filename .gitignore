@@ -9,5 +9,3 @@ public/telegram.config.php
 public/images/products/
 # generated artifact from scripts/fetch-images.mjs
 scripts/fetch-images.report.json
-# generated import helper (same data as listaproduse.csv)
-nailmania-sheet.csv

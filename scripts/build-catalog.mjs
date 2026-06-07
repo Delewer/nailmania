@@ -3,7 +3,7 @@
    Data source (priority):
      1. Google Sheets — set env CATALOG_SHEET_URL to the sheet's
         "File → Share → Publish to web → (this tab) → CSV" link.
-     2. local listaproduse.csv (an ODS spreadsheet) — offline fallback / default.
+     2. local nailmania-sheet.csv (CSV; an ODS file also works) — offline fallback / default.
 
    Run: npm run catalog   (re-run whenever the price list changes). */
 import { readFileSync, writeFileSync, mkdtempSync } from 'node:fs';
@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 
 const ROOT = process.cwd();
-const ODS = path.join(ROOT, 'listaproduse.csv');
+const LOCAL = path.join(ROOT, 'nailmania-sheet.csv');
 const SHEET_URL = process.env.CATALOG_SHEET_URL || '';
 
 // ---- 1. load spreadsheet rows (Google Sheets CSV, or the local ODS) ----
@@ -24,7 +24,7 @@ const decodeXml = (s) => s
 
 function odsRows() {
   const dir = mkdtempSync(path.join(tmpdir(), 'ods-'));
-  execSync(`unzip -o "${ODS}" content.xml -d "${dir}"`, { stdio: 'ignore' });
+  execSync(`unzip -o "${LOCAL}" content.xml -d "${dir}"`, { stdio: 'ignore' });
   const xml = readFileSync(path.join(dir, 'content.xml'), 'utf8');
   const out = [];
   const rowRe = /<table:table-row\b[^>]*>([\s\S]*?)<\/table:table-row>/g;
@@ -65,7 +65,7 @@ function csvRows(text) {
 
 // local file may be an ODS (zip) or a plain CSV — handle both
 function localRows() {
-  const buf = readFileSync(ODS);
+  const buf = readFileSync(LOCAL);
   if (buf[0] === 0x50 && buf[1] === 0x4b) return odsRows();             // "PK" → ODS zip
   return csvRows(buf.toString('utf8').replace(/^﻿/, ''));          // plain CSV
 }

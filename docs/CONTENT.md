@@ -61,7 +61,7 @@
 
 ## Разовая настройка (для разработчика)
 
-1. Импортировать `listaproduse.csv` в Google Sheets (File → Import).
+1. Импортировать `nailmania-sheet.csv` в Google Sheets (File → Import → Replace spreadsheet).
 2. File → Share → **Publish to web** → выбрать нужный лист → формат **CSV** → копировать ссылку.
 3. Положить ссылку в переменную окружения `CATALOG_SHEET_URL`
    (локально или в Secrets репозитория для GitHub Actions).
