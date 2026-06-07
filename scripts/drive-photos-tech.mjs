@@ -39,6 +39,7 @@ async function crawl(node, depth) {
   }
 }
 await crawl({ id: ROOT_ID, name: 'ROOT', parent: '' }, 0);
+writeFileSync(path.join(process.cwd(), 'drive-tech.json'), JSON.stringify(products));
 console.log(`Crawled product folders with photos: ${products.length}`);
 
 // model-code tokens
@@ -82,6 +83,15 @@ for (const p of catalog) {
   const hit = ordered.find((d) => ts.some((t) => matchAt(d.sig, t)));
   if (hit) { map[sku] = lh3(hit.img); matched.push([sku, p.name, hit.product]); }
 }
+
+// manual bindings (models the auto-matcher can't resolve safely). Drive file IDs.
+const MANUAL = {
+  T1742: '17M6ighEsL0CgMK45frJUs-8rwyBq1yaz', // Frezer Strong 210 → «Фрезер Strong 210 102L»
+  T1731: '1ILPtlsFijG0rgsd6dR3FDOt9MVcJpXG5', // Lampa Sun X Replica → «SUN X 54W BLACK»
+  T1733: '1lbh9s1Rhrxs_bzUMQtfMK5kGuLj7GNBn', // Lampa Sun X PLUS → «SUN X PLUS 80W»
+  T0911: '1lbh9s1Rhrxs_bzUMQtfMK5kGuLj7GNBn', // Lampa Sun X Plus 126W → «SUN X PLUS 80W»
+};
+for (const [sku, id] of Object.entries(MANUAL)) { map[sku] = lh3(id); if (!matched.find((r) => r[0] === sku)) matched.push([sku, '(manual)', id]); }
 
 writeFileSync(csvPath, '﻿SKU,Photo\r\n' + Object.entries(map).map(([s, u]) => `"${s}","${u}"`).join('\r\n') + '\r\n');
 console.log(`Equipment matched: ${matched.length} (photos.csv ${before} → ${Object.keys(map).length})\n`);
