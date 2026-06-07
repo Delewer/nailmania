@@ -35,8 +35,8 @@ export default function ProductPage(){
   const oos = !inStock(p);
   const [descA, descB] = productDesc(p, lang);
   const save = p.old>0 ? Math.round((1 - p.price/p.old)*100) : 0;
-  // gallery: distinct themed photos, with gradient variants as load/error fallback
-  const gallery = productGallery(p, 4);
+  // gallery: only the images the product actually has (1+, no empty slots)
+  const gallery = productGallery(p);
   const shades = [p.g, [p.g[1], p.g[0]], ["#fff", p.g[0]], [p.g[0], "#fff"]];
 
   const handleAdd = ()=>{
@@ -57,14 +57,16 @@ export default function ProductPage(){
 
       <div className="pd">
         <div className="pd-gallery">
-          <div className="pd-main"><Placeholder g={shades[shot]} icon="bottle" ratio="1" radius={0} img={gallery[shot]} label={name(p)}/></div>
-          <div className="pd-thumbs">
-            {gallery.map((src,i)=>(
-              <div key={i} className={"pd-thumb"+(i===shot?" on":"")} onClick={()=>setShot(i)}>
-                <Placeholder g={shades[i]} icon="bottle" ratio="1" radius={0} img={src} label={name(p)}/>
-              </div>
-            ))}
-          </div>
+          <div className="pd-main"><Placeholder g={shades[shot]||p.g} icon="bottle" ratio="1" radius={0} img={gallery[shot]} label={name(p)}/></div>
+          {gallery.length>1 && (
+            <div className="pd-thumbs">
+              {gallery.map((src,i)=>(
+                <div key={i} className={"pd-thumb"+(i===shot?" on":"")} onClick={()=>setShot(i)}>
+                  <Placeholder g={shades[i]||p.g} icon="bottle" ratio="1" radius={0} img={src} label={name(p)}/>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="pd-info">

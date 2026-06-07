@@ -178,11 +178,14 @@ export const catImg = (id)=> asset(`images/categories/${id}.jpg`);
 // We key on the SKU/code — NOT the row id — because ids shift when the price list is rebuilt,
 // while the SKU is stable, so a photo you add once keeps matching its product.
 export const productImg = (key, n)=> asset(`images/products/${key}${n>1?"-"+n:""}.jpg`);
-// gallery: a supplier URL (from the sheet) takes the first slot; the rest are local SKU files.
-export const productGallery = (p, n=4)=>{
-  const key = p.code || p.key || p.id;
-  const local = Array.from({length:n}, (_,i)=> productImg(key, i+1));
-  return p.image ? [p.image, ...local.slice(1)] : local;
+// gallery: only the images we actually have (no empty placeholder slots).
+// p.image may hold one URL or several separated by spaces/commas/newlines.
+export const productGallery = (p)=>{
+  if(p.image){
+    const urls = String(p.image).split(/[\s,]+/).filter(Boolean);
+    if(urls.length) return urls;
+  }
+  return [productImg(p.code || p.key || p.id)]; // single slot (real local file or gradient)
 };
 export const HERO_IMG = [asset("images/hero-1.jpg"), asset("images/hero-2.jpg")];
 export const ABOUT_IMG = asset("images/about.jpg");
