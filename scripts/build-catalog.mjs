@@ -70,14 +70,27 @@ function localRows() {
   return csvRows(buf.toString('utf8').replace(/^﻿/, ''));          // plain CSV
 }
 
+// a valid catalog CSV has a header row mentioning one of these (guards against
+// Google returning an HTML interstitial instead of the file)
+const HEADER_HINT = ['title', 'denumire', 'brand', 'sku', 'cod', 'category', 'grupa'];
+const looksLikeCatalog = (r) =>
+  r.slice(0, 5).some((row) => row.some((c) => HEADER_HINT.includes(String(c).toLowerCase().trim())));
+
 let rows;
 if (SHEET_URL) {
-  console.log('Loading catalog from Google Sheet…');
-  // cache-buster + no-store so each build pulls the latest sheet, not a stale copy
-  const url = SHEET_URL + (SHEET_URL.includes('?') ? '&' : '?') + 'cb=' + Date.now();
-  const res = await fetch(url, { cache: 'no-store', headers: { 'cache-control': 'no-cache' } });
-  if (!res.ok) throw new Error(`Sheet fetch failed (HTTP ${res.status})`);
-  rows = csvRows(await res.text());
+  try {
+    console.log('Loading catalog from Google Sheet…');
+    // cache-buster + no-store so each build pulls the latest sheet, not a stale copy
+    const url = SHEET_URL + (SHEET_URL.includes('?') ? '&' : '?') + 'cb=' + Date.now();
+    const res = await fetch(url, { cache: 'no-store', headers: { 'cache-control': 'no-cache' } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const parsed = csvRows(await res.text());
+    if (!looksLikeCatalog(parsed)) throw new Error('response was not a recognizable catalog CSV');
+    rows = parsed;
+  } catch (e) {
+    console.warn(`! Google Sheet load failed (${e.message}) — falling back to committed ${path.basename(LOCAL)}`);
+    rows = localRows();
+  }
 } else {
   rows = localRows();
 }
@@ -243,6 +256,9 @@ for (const r of rows.slice(headerIdx + 1)) {
 const keys = new Set();
 const keyDupes = products.filter(p => keys.size === keys.add(p.key).size);
 if (keyDupes.length) console.warn(`! ${keyDupes.length} duplicate identity keys:`, keyDupes.map(p=>p.key).slice(0,10));
+
+// never overwrite the catalog with an empty list (would blank the whole site)
+if (products.length === 0) throw new Error('No valid products parsed — refusing to write an empty catalog.');
 
 writeFileSync(path.join(ROOT, 'src', 'catalog.json'), JSON.stringify(products) + '\n');
 
