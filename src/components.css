@@ -24,7 +24,7 @@
 .header.stuck{box-shadow:0 6px 24px rgba(120,60,85,.08)}
 .header .bar{display:flex;align-items:center;gap:18px;height:80px}
 .logo{display:flex;align-items:center;gap:11px;flex:none;user-select:none;cursor:pointer}
-.logo .brandimg{height:58px;width:auto;display:block;object-fit:contain}
+.logo .brandimg{height:72px;width:auto;display:block;object-fit:contain}
 .logo .mark{width:42px;height:42px;flex:none}
 .logo .txt{font-family:var(--serif);font-weight:800;font-size:25px;letter-spacing:-.01em;line-height:1}
 .logo .txt b{color:var(--ink)}
@@ -303,7 +303,8 @@
   .foot-grid{grid-template-columns:1fr 1fr}
 }
 @media(max-width:860px){
-  .header .bar{height:64px;gap:10px}
+  .header .bar{height:72px;gap:10px}
+  .logo .brandimg{height:62px}
   .catbtn .ctxt,.searchbox .gotxt{display:none}
   .catbtn{padding:0 14px;height:46px}
   .searchbox input{height:46px;padding-right:54px}
@@ -326,7 +327,7 @@
   .actions{order:2;margin-left:auto}
   .catbtn{display:none}
   .searchbox{order:3;flex:1 0 100%;min-width:0}
-  .logo .brandimg{height:46px}
+  .logo .brandimg{height:58px}
   .cats-grid,.prod-grid{grid-template-columns:repeat(2,1fr)}
   .mega .wrap{padding:14px 14px 18px}
   .mega .grid{grid-template-columns:repeat(2,1fr);gap:4px 8px}
