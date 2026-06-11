@@ -72,7 +72,9 @@
   box-shadow:0 24px 50px rgba(80,40,60,.18);z-index:58;animation:fadeUp .18s ease}
 .mega .wrap{padding:26px 24px 30px}
 .mega .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px 26px}
-.mega a{display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:11px;transition:.13s;cursor:pointer}
+.mega a{display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:11px;transition:.13s;cursor:pointer;min-width:0}
+.mega a>span:not(.dot){min-width:0}
+.mega a .mt{overflow-wrap:anywhere}
 .mega a:hover{background:var(--blush-2)}
 /* position:relative + overflow:hidden contain the PhShape SVG (absolute/inset:0)
    inside the 38px dot — without it the icon escapes and fills the whole panel */
@@ -326,6 +328,11 @@
   .searchbox{order:3;flex:1 0 100%;min-width:0}
   .logo .brandimg{height:46px}
   .cats-grid,.prod-grid{grid-template-columns:repeat(2,1fr)}
+  .mega .wrap{padding:14px 14px 18px}
+  .mega .grid{grid-template-columns:repeat(2,1fr);gap:4px 8px}
+  .mega a{gap:9px;padding:9px 8px}
+  .mega a .dot{width:34px;height:34px}
+  .mega a .mt{font-size:13.5px}
   .hero-main{padding:30px;min-height:320px}
   .hero-main .copy{max-width:100%}
   .hero-side{grid-template-columns:1fr 1fr}
