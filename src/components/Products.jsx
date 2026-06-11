@@ -44,6 +44,30 @@ export function ProductCard({p}){
   );
 }
 
+// numbered pagination with a sliding window (1 … 9 10 11 … 27) + prev/next arrows.
+// shared by the home sections, category and brand pages.
+function pageWindow(page,pages){
+  if(pages<=7) return Array.from({length:pages},(_,i)=>i);
+  const set=new Set([0,pages-1,page,page-1,page+1]);
+  const nums=[...set].filter(n=>n>=0&&n<pages).sort((a,b)=>a-b);
+  const out=[];
+  for(let i=0;i<nums.length;i++){ if(i>0&&nums[i]-nums[i-1]>1) out.push("…"); out.push(nums[i]); }
+  return out;
+}
+export function Pager({page,pages,onSelect}){
+  if(pages<=1) return null;
+  return (
+    <div className="pager">
+      <button className="nav" disabled={page===0} onClick={()=>onSelect(page-1)} aria-label="prev">‹</button>
+      {pageWindow(page,pages).map((it,i)=> it==="…"
+        ? <span key={"g"+i} className="gap">…</span>
+        : <button key={it} className={it===page?"on":""} onClick={()=>onSelect(it)} aria-label={"page "+(it+1)}>{it+1}</button>
+      )}
+      <button className="nav" disabled={page===pages-1} onClick={()=>onSelect(page+1)} aria-label="next">›</button>
+    </div>
+  );
+}
+
 export function ProductSection({id,titleKey,items,perPage=8}){
   const {t,setDrawer} = useShop();
   const [page,setPage] = React.useState(0);
@@ -59,13 +83,7 @@ export function ProductSection({id,titleKey,items,perPage=8}){
         <div className="prod-grid">
           {slice.map(p=><ProductCard key={p.key} p={p}/>)}
         </div>
-        {pages>1 && (
-          <div className="pager">
-            {Array.from({length:pages}).map((_,i)=>(
-              <button key={i} className={i===page?"on":""} onClick={()=>setPage(i)} aria-label={"page "+(i+1)}/>
-            ))}
-          </div>
-        )}
+        <Pager page={page} pages={pages} onSelect={setPage}/>
       </div>
     </section>
   );

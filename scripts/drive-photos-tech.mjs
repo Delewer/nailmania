@@ -98,6 +98,15 @@ const MANUAL = {
 };
 for (const [sku, id] of Object.entries(MANUAL)) { map[sku] = lh3(id); if (!matched.find((r) => r[0] === sku)) matched.push([sku, '(manual)', id]); }
 
+// vision bindings (products identified by looking at the photo). Values are full
+// URLs (HEIC photos need a size suffix like =w1000 so Google serves JPEG).
+const visionPath = path.join(process.cwd(), 'photos-vision.json');
+if (existsSync(visionPath)) {
+  const vision = JSON.parse(readFileSync(visionPath, 'utf8'));
+  for (const [sku, url] of Object.entries(vision)) { map[sku] = url; if (!matched.find((r) => r[0] === sku)) matched.push([sku, '(vision)', url]); }
+  console.log(`vision bindings: ${Object.keys(vision).length}`);
+}
+
 writeFileSync(csvPath, '﻿SKU,Photo\r\n' + Object.entries(map).map(([s, u]) => `"${s}","${u}"`).join('\r\n') + '\r\n');
 console.log(`Equipment matched: ${matched.length} (photos.csv ${before} → ${Object.keys(map).length})\n`);
 for (const [sku, cat, drv] of matched) console.log(`  ${sku.padEnd(7)} ${cat.slice(0, 40).padEnd(40)} ← ${drv}`);

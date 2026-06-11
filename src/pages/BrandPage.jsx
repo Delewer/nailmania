@@ -2,7 +2,7 @@
 import React from 'react'
 import { useParams, useSearchParams, Link } from 'react-router-dom'
 import { useShop, Icon } from '../shop.jsx'
-import { ProductCard } from '../components/Products.jsx'
+import { ProductCard, Pager } from '../components/Products.jsx'
 import { findCategory, productsByBrand, catsByBrand, inStock } from '../data.js'
 
 const PER_PAGE = 12;
@@ -76,13 +76,7 @@ export default function BrandPage(){
         {slice.map(p=><ProductCard key={p.key} p={p}/>)}
       </div>
 
-      {pages>1 && (
-        <div className="pager">
-          {Array.from({length:pages}).map((_,i)=>(
-            <button key={i} className={i===page?"on":""} onClick={()=>{setPage(i); window.scrollTo({top:0,behavior:"smooth"});}} aria-label={"page "+(i+1)}/>
-          ))}
-        </div>
-      )}
+      <Pager page={page} pages={pages} onSelect={(i)=>{setPage(i); window.scrollTo({top:0,behavior:"smooth"});}}/>
     </div>
   );
 }
