@@ -36,6 +36,11 @@ const qt = (s)=> '"'+String(s).replace(/"/g,'""')+'"';
 const deburr = (s)=> (s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
 const normTitle = (s)=> deburr(s).replace(/&amp;/g,' ').replace(/&/g,' ').replace(/[^a-z0-9]+/g,' ').trim().replace(/\s+/g,'');
 const numsOf = (s)=> new Set((s.match(/\d+/g)||[]).map(x=>String(parseInt(x,10))));
+// volume (the "<n>ml" number) vs shade (every other number). Comparing them
+// separately stops a volume on one side from matching a shade on the other —
+// e.g. "Gel Polish 10ml №030" must NOT match "Jelly Gel 30ml #10" (10↔10, 30↔30).
+const volsOf = (s)=>{ const set=new Set(); const re=/(\d+)\s*ml\b/gi; let m; while((m=re.exec(s))) set.add(String(parseInt(m[1],10))); return set; };
+const shadeOf = (s)=>{ const v=volsOf(s); return new Set([...numsOf(s)].filter(n=>!v.has(n))); };
 const wordsOf = (s)=> new Set((deburr(s).match(/[a-z]+/g)||[]).filter(w=>w.length>=3));
 const toR2 = (url)=> R2 + url.split('/').pop().trim();
 const sameSet = (a,b)=>{ if(a.size!==b.size) return false; for(const x of a) if(!b.has(x)) return false; return true; };
@@ -49,33 +54,52 @@ function editLE(a,b,max){ if(Math.abs(a.length-b.length)>max) return false;
 // a "distinctive" word: not generic, and no ≤2-edit lookalike on the other side
 const hasUnpaired = (only, other)=> [...only].some(w=> !GENERIC.has(w) && ![...other].some(o=>editLE(w,o,2)));
 
-// files already on R2 (from the existing photos.csv values)
-const uploaded = new Set();
+// existing photos.csv bindings (SKU -> photo string). These were curated by prior
+// "fix mismatched photos" passes, so they are PRESERVED as-is; this run only fills
+// gaps. URLs already referenced here are known-live on R2 (they serve the current
+// site) — skip re-probing them; everything new is verified below.
+const existing = {}; const liveOnR2 = new Set();
 try { const rows=parseCSV(fs.readFileSync(path.join(ROOT,'photos.csv'),'utf8'));
-  for(const r of rows.slice(1)) for(const u of (r[1]||'').split(/\s+/)) if(u) uploaded.add(u.trim()); } catch {}
+  for(const r of rows.slice(1)){ const k=(r[0]||'').trim(), v=(r[1]||'').trim(); if(k&&v) existing[k]=v;
+    for(const u of v.split(/\s+/)) if(u) liveOnR2.add(u.trim()); } } catch {}
 
-const ents = [], byExact = new Map();
+// Consider EVERY Tilda photo as a candidate (the whole public/images/tilda set
+// was uploaded to R2 via scripts/upload-r2.mjs). Selected URLs that aren't on
+// R2 are dropped in the verification pass below, so we never emit a dead link.
+const ents = [], byExact = new Map(), entByUrl = new Map();
 for(const e of tilda){
-  const urls=(e.urls||[]).map(toR2).filter(u=>uploaded.has(u));
+  const urls=(e.urls||[]).map(toR2);
   if(!urls.length) continue;
-  const ent={ title:e.title, urls, key:normTitle(e.title), nums:numsOf(e.title), words:wordsOf(e.title) };
+  const ent={ title:e.title, urls, key:normTitle(e.title), vols:volsOf(e.title), shade:shadeOf(e.title), words:wordsOf(e.title) };
   ents.push(ent); if(ent.key && !byExact.has(ent.key)) byExact.set(ent.key, ent);
+  for(const u of urls) if(!entByUrl.has(u)) entByUrl.set(u, ent);
 }
 
 const photo={}, claimed=new Set(), report=[];
+const catKeys = new Set(catalog.map(p=>p.key));
 
-// pass 1 — exact
+// pass 0 — preserve existing bindings for products still in the catalog, and lock
+// their photos so the matching passes can't reassign them. (Stale bindings whose
+// SKU has left the catalog are simply not carried over.)
+let seeded=0;
+for(const p of catalog){
+  const v=existing[p.key]; if(!v) continue;
+  photo[p.key]=v; seeded++;
+  for(const u of v.split(/\s+/)){ const e=entByUrl.get(u.trim()); if(e) claimed.add(e); }
+}
+
+// pass 1 — exact (gaps only)
 let exact=0;
-for(const p of catalog){ const e=byExact.get(normTitle(p.name)); if(e){ photo[p.key]=e.urls.join(' '); claimed.add(e); exact++; } }
+for(const p of catalog){ if(photo[p.key]) continue; const e=byExact.get(normTitle(p.name)); if(e && !claimed.has(e)){ photo[p.key]=e.urls.join(' '); claimed.add(e); exact++; } }
 
 // pass 2 — safe fuzzy
 const proposals=[];
 for(const p of catalog){
   if(photo[p.key]) continue;
-  const pn=numsOf(p.name), pw=wordsOf(p.name);
+  const pv=volsOf(p.name), ps=shadeOf(p.name), pw=wordsOf(p.name);
   const passing=[];
   for(const e of ents){
-    if(claimed.has(e) || !sameSet(pn,e.nums)) continue;
+    if(claimed.has(e) || !sameSet(pv,e.vols) || !sameSet(ps,e.shade)) continue;
     if(inter(pw,e.words)<2) continue;
     const onlyA=new Set([...pw].filter(w=>!e.words.has(w)));
     const onlyB=new Set([...e.words].filter(w=>!pw.has(w)));
@@ -93,10 +117,30 @@ for(const {p,e,score} of proposals){
   report.push(`${score.toFixed(2)}  ${p.name}   ⟵   ${e.title}`);
 }
 
+// verify every selected URL is actually reachable on R2; drop any that isn't, so
+// a failed upload never produces a broken <img> on the live site. URLs already in
+// photos.csv are known-live (they serve the current site) and skip the network.
+const selected = new Set();
+for(const k in photo) for(const u of photo[k].split(/\s+/)) if(u) selected.add(u);
+const toCheck = [...selected].filter(u=> !liveOnR2.has(u));
+const dead = new Set();
+async function head(u){ try{ const r=await fetch(u,{method:'HEAD'}); if(!r.ok) dead.add(u); }catch{ dead.add(u); } }
+if(toCheck.length){
+  process.stdout.write(`Verifying ${toCheck.length} new photo URLs on R2…`);
+  for(let i=0;i<toCheck.length;i+=16) await Promise.all(toCheck.slice(i,i+16).map(head));
+  process.stdout.write(` ${dead.size} unreachable, dropped.\n`);
+}
+let droppedProducts=0;
+for(const k of Object.keys(photo)){
+  const urls=photo[k].split(/\s+/).filter(u=> u && !dead.has(u));
+  if(urls.length) photo[k]=urls.join(' '); else { delete photo[k]; droppedProducts++; }
+}
+
 const out=[['SKU','Photo'].map(qt).join(',')];
-for(const p of catalog) if(photo[p.key]) out.push([p.key, photo[p.key]].map(qt).join(','));
+let written=0;
+for(const p of catalog) if(photo[p.key]){ out.push([p.key, photo[p.key]].map(qt).join(',')); written++; }
 fs.writeFileSync(path.join(ROOT,'photos.csv'), '﻿'+out.join('\r\n')+'\r\n');
 
-console.log(`✓ photos.csv: ${exact+fuzzy}/${catalog.length} matched  (exact ${exact} + fuzzy ${fuzzy})`);
+console.log(`✓ photos.csv: ${written}/${catalog.length} matched  (kept ${seeded} + new exact ${exact} + new fuzzy ${fuzzy}${droppedProducts?`, −${droppedProducts} dropped: not on R2`:''})`);
 if(REPORT){ fs.writeFileSync(path.join(ROOT,'_photo-fuzzy-report.txt'), report.sort().join('\n')+'\n');
   console.log('  fuzzy report -> _photo-fuzzy-report.txt'); }

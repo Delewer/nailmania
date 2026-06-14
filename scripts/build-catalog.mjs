@@ -302,7 +302,10 @@ for (const r of rows.slice(headerIdx + 1)) {
   while (usedKeys.has(key)) key = baseKey + '-' + (++dn);
   usedKeys.add(key);
   // photo: an image in the sheet's Photo column wins; otherwise photos.csv (by SKU)
-  const image = cell(r, 'image') || PHOTOS[code] || PHOTOS[key] || '';
+  // prefer the unique `key` over the raw `code`: some source SKUs are reused for
+  // different products (e.g. T0014 = Solutie Aerodisin AND BeeNails Polygel), so a
+  // code lookup would give the wrong product its twin's photo. key is always unique.
+  const image = cell(r, 'image') || PHOTOS[key] || PHOTOS[code] || '';
   // collection membership from the flag columns (Summer / Sale)
   const flags = {};
   for (const fc of flagCols) if (flagOn(r[fc.idx])) flags[fc.flag] = true;
