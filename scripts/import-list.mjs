@@ -38,20 +38,60 @@ const fixBrand = (b) => {
   return b;
 };
 
+// brand inferred from the title when the source `brand` column is empty
+// (order matters; first match wins). Only clear, real brand names — generic
+// items (Aspirator, Capete de freza, Tavă, Perie…) stay "Fără brand".
+const BRAND_FROM_TITLE = [
+  [/^DNK'a/i, "DNK'a"],
+  [/^Global\s*Fashion/i, 'Global Fashion'],
+  [/^MP[\s-]/, 'MP'],
+  [/^Ritz\b/i, 'Ritz'],
+  [/Dolly'?s?\s*Lash/i, "Dolly's Lash"],
+  [/Blueque/i, 'Blueque'],
+  [/Ledme/i, 'Ledme'],
+  [/GT\s*Sonic/i, 'GT Sonic'],
+  [/Lysoformin/i, 'Lysoformin'],
+  [/Blanidas/i, 'Blanidas'],
+  [/Bilysna/i, 'Bilysna'],
+  [/Neoseptin/i, 'Neoseptin'],
+  [/Aerodisin/i, 'Aerodisin'],
+  [/Experttouch/i, 'Experttouch'],
+];
+const inferBrand = (title) => { for (const [re, b] of BRAND_FROM_TITLE) if (re.test(title)) return b; return ''; };
+
+// title-based category overrides (win over the source `grupa`); first match wins.
+//   not: optional negative guard so "Adaptor pentru Lampa UV" stays a tehnica accessory
+const CAT_OVERRIDE = [
+  { re: /capete de freza|cap de freza/i, to: 'Bituri' },
+  { re: /lanterna|lamp/i, not: /adaptor/i, to: 'Instrumente' },
+];
+const overrideCat = (title) => {
+  for (const o of CAT_OVERRIDE) if (o.re.test(title) && !(o.not && o.not.test(title))) return o.to;
+  return '';
+};
+
 const qt = (s) => '"' + String(s ?? '').replace(/"/g, '""') + '"';
 const header = ['Brand', 'SKU', 'Category', 'Title', 'Text', 'Quantity', 'Price', 'Price Old'];
 const out = [header.map(qt).join(',')];
 
-let kept = 0, skipped = 0;
+let kept = 0, skipped = 0, inferred = 0, recat = 0;
 for (const r of rows.slice(hi + 1)) {
   const title = (r[ci.den] || '').trim();
-  const cat = (r[ci.gr] || '').trim();
+  const grupa = (r[ci.gr] || '').trim();
   const price = parseFloat((r[ci.pret] || '').replace(',', '.'));
-  if (!title || !cat || !Number.isFinite(price)) { skipped++; continue; }   // separator/blank rows
+  if (!title || !grupa || !Number.isFinite(price)) { skipped++; continue; }   // separator/blank rows
+
+  let brand = fixBrand(r[ci.brand]);
+  if (!brand) { const b = inferBrand(title); if (b) { brand = b; inferred++; } }
+
+  const ov = overrideCat(title);
+  const category = ov || grupa;
+  if (ov && ov.toLowerCase() !== grupa.toLowerCase()) recat++;
+
   out.push([
-    fixBrand(r[ci.brand]),
+    brand,
     (r[ci.cod] || '').trim(),
-    cat,
+    category,
     title,
     (r[ci.desc] || '').trim(),
     '',                       // Quantity (blank => in stock)
@@ -60,6 +100,7 @@ for (const r of rows.slice(hi + 1)) {
   ].map(qt).join(','));
   kept++;
 }
+console.log(`  brands inferred from title: ${inferred} | category overrides applied: ${recat}`);
 
 writeFileSync(OUT, '﻿' + out.join('\r\n') + '\r\n');
 console.log(`✓ wrote ${path.basename(OUT)} — ${kept} products (skipped ${skipped} blank rows)`);
