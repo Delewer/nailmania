@@ -13,7 +13,11 @@ import * as path from 'node:path';
 
 const ROOT = process.cwd();
 const LOCAL = path.join(ROOT, 'nailmania-sheet.csv');
-const SHEET_URL = process.env.CATALOG_SHEET_URL || '';
+// The committed nailmania-sheet.csv (regenerated from the authoritative price list by
+// scripts/import-list.mjs) is the source of truth. The Google Sheet is used ONLY when
+// explicitly opted in with CATALOG_USE_SHEET=1 — otherwise a stale published sheet would
+// silently overwrite the catalog at deploy time (it did: old ItalWax/Enova/Culoare data).
+const SHEET_URL = (process.env.CATALOG_USE_SHEET === '1' && process.env.CATALOG_SHEET_URL) || '';
 
 // product photos: photos.csv (SKU,Photo) is the photo source, kept separate from
 // the product list. Photo holds local path(s)/URL(s), space/comma separated for
