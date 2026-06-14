@@ -64,6 +64,10 @@ const inferBrand = (title) => { for (const [re, b] of BRAND_FROM_TITLE) if (re.t
 const CAT_OVERRIDE = [
   { re: /capete de freza|cap de freza/i, to: 'Bituri' },
   { re: /lanterna|lamp/i, not: /adaptor/i, to: 'Instrumente' },
+  { re: /\btop coat\b|super shine top/i, to: 'Topuri' },            // top coats mislabeled "Base"
+  { re: /^cleste /i, to: 'Instrumente' },                            // pinch / C-curve tools
+  { re: /pungi sterilizare|craft pachete/i, to: 'Sterilizare&Dezinfectare' }, // sterilization pouches
+  { re: /wonderfile buff/i, to: 'Materiale de unica folosinta' },   // nail buffer mislabeled "Epilare"
 ];
 const overrideCat = (title) => {
   for (const o of CAT_OVERRIDE) if (o.re.test(title) && !(o.not && o.not.test(title))) return o.to;
