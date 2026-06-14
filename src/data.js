@@ -3,7 +3,7 @@
 // ---- UI strings ----
 export const I18N = {
   ro:{
-    topPromo:"Livrare gratuită prin Moldova de la 2200 lei (Nova Poshta)",
+    topPromo:"Livrare gratuită prin Moldova de la 2200 lei",
     hours:"Zilnic 09:00–18:00",
     workHours:"Luni–Sâmbătă 09:00–18:00 · Duminică 10:00–16:00",
     catalog:"Catalog", searchPh:"Caută produse, branduri…", search:"Caută",
@@ -81,7 +81,7 @@ export const I18N = {
     reqField:"Câmp obligatoriu", reqDelivery:"Alege metoda de livrare", reqPayment:"Alege metoda de plată"
   },
   ru:{
-    topPromo:"Бесплатная доставка по Молдове от 2200 лей (Nova Poshta)",
+    topPromo:"Бесплатная доставка по Молдове от 2200 лей",
     hours:"Ежедневно 09:00–18:00",
     workHours:"Пн–Сб 09:00–18:00 · Вс 10:00–16:00",
     catalog:"Каталог", searchPh:"Поиск товаров, брендов…", search:"Найти",

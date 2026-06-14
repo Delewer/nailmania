@@ -109,6 +109,7 @@ export function MobileMenu(){
   const navigate = useNavigate();
   // works from any page: go home (if needed) and let Home scroll to the section
   const go=(hash)=>{ setDrawer(null); navigate("/"+hash); };
+  const goPage=(path)=>{ setDrawer(null); navigate(path); };
   const chev = <Icon n="chev" s={18}/>;
   return (
     <Drawer title={t("menuTitle")} side="left">
@@ -124,9 +125,9 @@ export function MobileMenu(){
           <a onClick={()=>go("#sale")}><span className="mi"><Icon n="star" s={19}/>{t("navSale")}</span>{chev}</a>
 
           <div className="mtitle">{t("colInfo")}</div>
-          <a onClick={()=>go("#delivery")}><span className="mi"><Icon n="truck" s={19}/>{t("navDelivery")}</span>{chev}</a>
-          <a onClick={()=>go("#plata")}><span className="mi"><Icon n="card" s={19}/>{t("navPayment")}</span>{chev}</a>
-          <a onClick={()=>go("#contacte")}><span className="mi"><Icon n="phone" s={19}/>{t("navContact")}</span>{chev}</a>
+          <a onClick={()=>goPage("/livrare")}><span className="mi"><Icon n="truck" s={19}/>{t("navDelivery")}</span>{chev}</a>
+          <a onClick={()=>goPage("/plata")}><span className="mi"><Icon n="card" s={19}/>{t("navPayment")}</span>{chev}</a>
+          <a onClick={()=>goPage("/contacte")}><span className="mi"><Icon n="phone" s={19}/>{t("navContact")}</span>{chev}</a>
 
           <div className="mtitle">{t("menu")}</div>
           <a onClick={()=>setDrawer("fav")}><span className="mi"><Icon n="heart" s={19}/>{t("fav")}</span><span className="mcount">{favs.length>0&&<i>{favs.length}</i>}{chev}</span></a>

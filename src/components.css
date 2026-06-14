@@ -13,7 +13,8 @@
 .topbar .promo svg{color:var(--mauve)}
 .topbar .promo span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .topbar .tright{display:flex;align-items:center;gap:18px;flex:none}
-.topbar .hours{color:#cdbfc6}
+.topbar .hours{display:inline-flex;align-items:center;gap:6px;color:#cdbfc6;white-space:nowrap}
+.topbar .hours svg{color:var(--mauve)}
 .lang{display:inline-flex;border:1px solid #3a3035;border-radius:99px;overflow:hidden}
 .lang button{padding:3px 11px;font-size:12px;font-weight:700;letter-spacing:.04em;color:#b6a8af;transition:.15s}
 .lang button.on{background:var(--mauve);color:var(--ink)}

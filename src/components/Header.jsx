@@ -35,12 +35,12 @@ export function Topbar(){
       <div className="wrap">
         <div className="promo"><Icon n="truck" s={17}/><span>{t("topPromo")}</span></div>
         <nav className="topnav hide-mob">
-          <Link to="/#contacte">{t("navContact")}</Link>
-          <Link to="/#delivery">{t("navDelivery")}</Link>
-          <Link to="/#plata">{t("navPayment")}</Link>
+          <Link to="/livrare">{t("navDelivery")}</Link>
+          <Link to="/plata">{t("navPayment")}</Link>
+          <Link to="/contacte">{t("navContact")}</Link>
         </nav>
         <div className="tright">
-          <span className="hours">{t("hours")}</span>
+          <span className="hours"><Icon n="store" s={15}/>{t("workHours")}</span>
           <div className="lang" role="group" aria-label="Language">
             <button className={lang==="ro"?"on":""} onClick={()=>setLang("ro")}>RO</button>
             <button className={lang==="ru"?"on":""} onClick={()=>setLang("ru")}>RU</button>

@@ -136,9 +136,9 @@ export function Footer(){
           <div>
             <h4>{t("colInfo")}</h4>
             <ul>
-              <li><Link to="/#delivery">{t("navDelivery")}</Link></li>
-              <li><Link to="/#sale">{t("navSale")}</Link></li>
-              <li><Link to="/#new">{t("navNew")}</Link></li>
+              <li><Link to="/livrare">{t("navDelivery")}</Link></li>
+              <li><Link to="/plata">{t("navPayment")}</Link></li>
+              <li><Link to="/contacte">{t("navContact")}</Link></li>
               <li><a onClick={()=>setDrawer("catalog")}>{t("navBrands")}</a></li>
             </ul>
           </div>
