@@ -63,7 +63,10 @@ const inferBrand = (title) => { for (const [re, b] of BRAND_FROM_TITLE) if (re.t
 //   not: optional negative guard so "Adaptor pentru Lampa UV" stays a tehnica accessory
 const CAT_OVERRIDE = [
   { re: /capete de freza|cap de freza/i, to: 'Bituri' },
-  { re: /lanterna|lamp/i, not: /adaptor/i, to: 'Instrumente' },
+  { re: /topitor de ceara/i, to: 'Tehnica' },                       // wax melters = equipment
+  { re: /(filtru|sac) pentru aspirator/i, to: 'Tehnica' },          // aspirator parts
+  { re: /lanterna|lamp/i, to: 'Instrumente' },                      // lamps (+ UV-lamp adapter)
+  { re: /\bbaza\b.*(pila|papmam|expert)/i, to: 'Accesuare pentru mesteri' }, // file holders
   { re: /\btop coat\b|super shine top/i, to: 'Topuri' },            // top coats mislabeled "Base"
   { re: /^cleste /i, to: 'Instrumente' },                            // pinch / C-curve tools
   { re: /pungi sterilizare|craft pachete/i, to: 'Sterilizare&Dezinfectare' }, // sterilization pouches
