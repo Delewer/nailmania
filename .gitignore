@@ -5,7 +5,16 @@ dist
 .env
 # Telegram secret (cPanel) — must never be committed
 public/telegram.config.php
-# Local product photos — served via Cloudinary/CDN instead (keeps the repo lean)
+# Local product photos — served via R2/CDN instead (keeps the repo lean)
 public/images/products/
+public/images/tilda/
+tilda-photos/
 # generated artifact from scripts/fetch-images.mjs
 scripts/fetch-images.report.json
+# local photo backups (served from R2 now)
+_local-products-backup/
+_r2products/
+_need-products.json
+# one-time Tilda import artifacts (regenerable; not needed for prod)
+store-*.csv
+tilda-photos.csv

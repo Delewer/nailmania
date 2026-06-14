@@ -182,7 +182,9 @@ export const productImg = (key, n)=> asset(`images/products/${key}${n>1?"-"+n:""
 // p.image may hold one URL or several separated by spaces/commas/newlines.
 export const productGallery = (p)=>{
   if(p.image){
-    const urls = String(p.image).split(/[\s,]+/).filter(Boolean);
+    // absolute URLs (supplier) pass through; relative local paths get BASE via asset()
+    const urls = String(p.image).split(/[\s,]+/).filter(Boolean)
+      .map(u=> /^(https?:|data:|\/\/)/.test(u) ? u : asset(u));
     if(urls.length) return urls;
   }
   return [productImg(p.code || p.key || p.id)]; // single slot (real local file or gradient)
@@ -205,7 +207,7 @@ export const CATALOG = CATALOG_RAW.map(p=>{
     badge: p.old>p.price ? "sale" : "",
     g: c ? c.g : ["#e7d6dd","#f5ebef"],
     icon: c ? c.icon : "bottle",
-    img: p.image || productImg(p.code || p.key || p.id),  // supplier URL → local SKU file → gradient
+    img: p.image ? productGallery(p)[0] : productImg(p.code || p.key || p.id),  // Tilda/supplier photo → local SKU file → gradient
   };
 });
 

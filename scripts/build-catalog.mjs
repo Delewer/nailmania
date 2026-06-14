@@ -15,6 +15,21 @@ const ROOT = process.cwd();
 const LOCAL = path.join(ROOT, 'nailmania-sheet.csv');
 const SHEET_URL = process.env.CATALOG_SHEET_URL || '';
 
+// product photos: photos.csv (SKU,Photo) is the photo source, kept separate from
+// the product list. Photo holds local path(s)/URL(s), space/comma separated for
+// galleries. Matched to products by SKU. (csvRows is hoisted below.)
+const PHOTOS = (() => {
+  try {
+    const rows = csvRows(readFileSync(path.join(ROOT, 'photos.csv'), 'utf8').replace(/^﻿/, ''));
+    const h = (rows[0] || []).map((x) => x.toLowerCase().trim());
+    const si = h.indexOf('sku'), pi = h.indexOf('photo');
+    if (si < 0 || pi < 0) return {};
+    const m = {};
+    for (const r of rows.slice(1)) { const k = (r[si] || '').trim(), v = (r[pi] || '').trim(); if (k && v) m[k] = v; }
+    return m;
+  } catch { return {}; }
+})();
+
 // ---- 1. load spreadsheet rows (Google Sheets CSV, or the local ODS) ----
 const decodeXml = (s) => s
   .replace(/<[^>]+>/g, '')
@@ -225,7 +240,6 @@ for (const r of rows.slice(headerIdx + 1)) {
   const cat = CAT_MAP[norm(catRaw)] || slug(catRaw);
   if (!catLabels[cat]) catLabels[cat] = catRaw;
 
-  const image = cell(r, 'image');
   const specs = specCols
     .map(({ idx, label }) => ({ label, value: (r[idx] || '').trim() }))
     .filter(s => s.value);
@@ -235,6 +249,8 @@ for (const r of rows.slice(headerIdx + 1)) {
   // stable identity for URLs / cart / favorites: SKU when present, else a
   // deterministic hash of brand+name (survives catalog rebuilds; row id does not)
   const key = code || ('x' + fnv(brand + '|' + title + '|' + cat + '|' + price));
+  // photo: an image in the sheet's Photo column wins; otherwise photos.csv (by SKU)
+  const image = cell(r, 'image') || PHOTOS[key] || '';
   products.push({
     id: 100000 + (++n),
     key,
