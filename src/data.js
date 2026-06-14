@@ -5,9 +5,10 @@ export const I18N = {
   ro:{
     topPromo:"Livrare gratuită prin toată Moldova de la 1800 lei",
     hours:"Zilnic 09:00–18:00",
+    workHours:"Luni–Sâmbătă 09:00–18:00 · Duminică 10:00–16:00",
     catalog:"Catalog", searchPh:"Caută produse, branduri…", search:"Caută",
     fav:"Favorite", cart:"Coș", menu:"Meniu",
-    navNew:"Noutăți", navSale:"Reduceri", navBrands:"Branduri", navDelivery:"Livrare", navContact:"Contacte",
+    navNew:"Noutăți", navSale:"Reduceri", navBrands:"Branduri", navDelivery:"Livrare", navContact:"Contacte", navPayment:"Plată",
     heroKicker:"Colecția de sezon", heroTitle:"Trendurile\nsezonului", heroText:"Geluri, baze și topuri pentru maeștrii manichiurii — totul într-un singur loc.",
     heroBtn:"Vezi catalogul", heroBtn2:"Noutăți",
     pillCatalog:"Catalog", pillNew:"Noutăți", pillSale:"Reduceri",
@@ -66,9 +67,10 @@ export const I18N = {
   ru:{
     topPromo:"Бесплатная доставка по Молдове от 1800 лей",
     hours:"Ежедневно 09:00–18:00",
+    workHours:"Пн–Сб 09:00–18:00 · Вс 10:00–16:00",
     catalog:"Каталог", searchPh:"Поиск товаров, брендов…", search:"Найти",
     fav:"Избранное", cart:"Корзина", menu:"Меню",
-    navNew:"Новинки", navSale:"Скидки", navBrands:"Бренды", navDelivery:"Доставка", navContact:"Контакты",
+    navNew:"Новинки", navSale:"Скидки", navBrands:"Бренды", navDelivery:"Доставка", navContact:"Контакты", navPayment:"Оплата",
     heroKicker:"Коллекция сезона", heroTitle:"Тренды\nсезона", heroText:"Гель-лаки, базы и топы для мастеров маникюра — всё в одном месте.",
     heroBtn:"Смотреть каталог", heroBtn2:"Новинки",
     pillCatalog:"Каталог", pillNew:"Новинки", pillSale:"Скидки",

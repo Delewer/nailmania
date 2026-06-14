@@ -282,6 +282,34 @@
 .mmenu a svg{color:var(--mauve-deep)}
 .mmenu .mtitle{font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--gray);margin:18px 0 4px}
 
+/* top-bar info links (desktop) */
+.topbar .topnav{display:flex;align-items:center;gap:20px;font-weight:600;min-width:0}
+.topbar .topnav a{color:#e3d6dc;white-space:nowrap;transition:.15s}
+.topbar .topnav a:hover{color:#fff}
+
+/* mobile menu rows: left icon + label, chevron/count on the right */
+.mmenu .mi{display:flex;align-items:center;gap:13px}
+.mmenu .mi svg{color:var(--ink-2)}
+.mmenu .mcount{display:inline-flex;align-items:center;gap:8px}
+.mmenu .mcount i{font-style:normal;min-width:20px;height:20px;padding:0 6px;border-radius:99px;
+  background:var(--mauve);color:var(--ink);font-size:12px;font-weight:800;display:inline-grid;place-items:center}
+
+/* ===== Info sections (Contacts / Payment) ===== */
+.info-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+.info-row{display:flex;align-items:center;gap:14px;padding:16px 18px;border:1px solid var(--line);
+  border-radius:var(--r);background:#fff;font-weight:600;font-size:15px;transition:.16s}
+.info-row svg{color:var(--mauve-deep);flex:none}
+.info-row b{font-weight:700;overflow-wrap:anywhere}
+a.info-row:hover{border-color:var(--mauve-deep);box-shadow:var(--shadow-lg)}
+.pay-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.pay-card{display:flex;gap:14px;align-items:flex-start;padding:18px;border:1px solid var(--line);
+  border-radius:var(--r);background:#fff}
+.pay-card svg{color:var(--mauve-deep);flex:none;margin-top:2px}
+.pay-card b{display:block;font-size:15px;margin-bottom:4px}
+.pay-card span{font-size:13px;color:var(--gray);line-height:1.5}
+@media(max-width:860px){ .pay-grid{grid-template-columns:1fr} }
+@media(max-width:600px){ .info-grid{grid-template-columns:1fr} }
+
 /* ===== Toast ===== */
 .toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);z-index:120;
   background:var(--ink);color:#fff;padding:13px 22px;border-radius:99px;font-weight:700;font-size:14px;

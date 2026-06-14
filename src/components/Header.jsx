@@ -1,6 +1,6 @@
 /* ===== Header: top bar + logo + search + catalog button ===== */
 import React from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import { useShop, Icon, Placeholder } from '../shop.jsx'
 import { asset } from '../data.js'
 
@@ -34,6 +34,11 @@ export function Topbar(){
     <div className="topbar">
       <div className="wrap">
         <div className="promo"><Icon n="truck" s={17}/><span>{t("topPromo")}</span></div>
+        <nav className="topnav hide-mob">
+          <Link to="/#contacte">{t("navContact")}</Link>
+          <Link to="/#delivery">{t("navDelivery")}</Link>
+          <Link to="/#plata">{t("navPayment")}</Link>
+        </nav>
         <div className="tright">
           <span className="hours">{t("hours")}</span>
           <div className="lang" role="group" aria-label="Language">

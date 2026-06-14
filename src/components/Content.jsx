@@ -70,6 +70,48 @@ export function Social(){
   );
 }
 
+export function Payment(){
+  const {t} = useShop();
+  const methods = [
+    ["card", "payCard", "payCardDesc"],
+    ["cash", "payCash", "payCashDesc"],
+    ["phone", "payMia", "payMiaDesc"],
+  ];
+  return (
+    <section className="section info-sec" id="plata">
+      <div className="wrap">
+        <div className="sec-head"><h2>{t("paymentSection")}</h2></div>
+        <div className="pay-grid">
+          {methods.map(([ic, tk, dk])=>(
+            <div className="pay-card" key={tk}>
+              <Icon n={ic} s={22}/>
+              <div><b>{t(tk)}</b><span>{t(dk)}</span></div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+export function Contacts(){
+  const {t} = useShop();
+  return (
+    <section className="section info-sec" id="contacte">
+      <div className="wrap">
+        <div className="sec-head"><h2>{t("contact")}</h2></div>
+        <div className="info-grid">
+          <a className="info-row" href="tel:+37368067486"><Icon n="phone" s={20}/><b>+373 68 067 486</b></a>
+          <a className="info-row" href="mailto:nailmania18@gmail.com"><Icon n="mail" s={20}/><b>nailmania18@gmail.com</b></a>
+          <a className="info-row" href="https://www.instagram.com/nailmania_md" target="_blank" rel="noreferrer"><Icon n="ig" s={20} fill/><b>@nailmania_md</b></a>
+          <div className="info-row"><Icon n="pin" s={20} fill/><b>str. Romană 66/2, Ungheni, Moldova</b></div>
+          <div className="info-row"><Icon n="store" s={20}/><b>{t("workHours")}</b></div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export function Footer(){
   const {t,name,setDrawer} = useShop();
   const cats = CATS.slice(0,7);

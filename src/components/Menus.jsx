@@ -106,7 +106,10 @@ export function FavDrawer(){
 
 export function MobileMenu(){
   const {t,lang,setLang,setDrawer,favs,cartCount} = useShop();
-  const go=(sel)=>{ setDrawer(null); setTimeout(()=>{const e=document.querySelector(sel); if(e)window.scrollTo({top:e.getBoundingClientRect().top+window.scrollY-90,behavior:"smooth"});},80); };
+  const navigate = useNavigate();
+  // works from any page: go home (if needed) and let Home scroll to the section
+  const go=(hash)=>{ setDrawer(null); navigate("/"+hash); };
+  const chev = <Icon n="chev" s={18}/>;
   return (
     <Drawer title={t("menuTitle")} side="left">
       <div className="dbody nm-scroll">
@@ -116,14 +119,18 @@ export function MobileMenu(){
             <button className={lang==="ro"?"on":""} onClick={()=>setLang("ro")}>RO · Română</button>
             <button className={lang==="ru"?"on":""} onClick={()=>setLang("ru")}>RU · Русский</button>
           </div>
-          <a onClick={()=>{setDrawer("catalog");}}>{t("catalog")} <Icon n="chev" s={18}/></a>
-          <a onClick={()=>go("#new")}>{t("navNew")} <Icon n="chev" s={18}/></a>
-          <a onClick={()=>go("#sale")}>{t("navSale")} <Icon n="chev" s={18}/></a>
-          <a onClick={()=>go("#delivery")}>{t("navDelivery")} <Icon n="chev" s={18}/></a>
-          <a onClick={()=>{setDrawer("fav");}}>{t("fav")} <span>{favs.length>0?favs.length:""} <Icon n="heart" s={16} fill={favs.length>0}/></span></a>
-          <a onClick={()=>{setDrawer("cart");}}>{t("cart")} <span>{cartCount>0?cartCount:""} <Icon n="bag" s={16}/></span></a>
-          <div className="mtitle">{t("contact")}</div>
-          <a href="tel:+37368067486">+373 068 067 486 <Icon n="phone" s={16}/></a>
+          <a onClick={()=>setDrawer("catalog")}><span className="mi"><Icon n="store" s={19}/>{t("catalog")}</span>{chev}</a>
+          <a onClick={()=>go("#new")}><span className="mi"><Icon n="spark" s={19}/>{t("navNew")}</span>{chev}</a>
+          <a onClick={()=>go("#sale")}><span className="mi"><Icon n="star" s={19}/>{t("navSale")}</span>{chev}</a>
+
+          <div className="mtitle">{t("colInfo")}</div>
+          <a onClick={()=>go("#delivery")}><span className="mi"><Icon n="truck" s={19}/>{t("navDelivery")}</span>{chev}</a>
+          <a onClick={()=>go("#plata")}><span className="mi"><Icon n="card" s={19}/>{t("navPayment")}</span>{chev}</a>
+          <a onClick={()=>go("#contacte")}><span className="mi"><Icon n="phone" s={19}/>{t("navContact")}</span>{chev}</a>
+
+          <div className="mtitle">{t("menu")}</div>
+          <a onClick={()=>setDrawer("fav")}><span className="mi"><Icon n="heart" s={19}/>{t("fav")}</span><span className="mcount">{favs.length>0&&<i>{favs.length}</i>}{chev}</span></a>
+          <a onClick={()=>setDrawer("cart")}><span className="mi"><Icon n="bag" s={19}/>{t("cart")}</span><span className="mcount">{cartCount>0&&<i>{cartCount}</i>}{chev}</span></a>
         </div>
       </div>
     </Drawer>
