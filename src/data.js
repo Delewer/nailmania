@@ -324,7 +324,8 @@ export function productDesc(p, lang){
 
 // ---- Product specs (Characteristics:* columns from the price list) ----
 const SPEC_LABEL_RU = {
-  "Cantitate":"Объём", "Putere":"Мощность", "Culoare":"Цвет", "Viteză maximă":"Макс. скорость",
+  "Cantitate":"Объём", "Greutate":"Вес", "Putere":"Мощность", "Grit":"Зернистость",
+  "Tip":"Тип", "Culoare":"Цвет", "Viteză maximă":"Макс. скорость",
 };
 const SPEC_COLOR_RU = {
   "Bej":"Бежевый", "Bej – roz":"Бежево-розовый", "Bej deschis":"Светло-бежевый",
@@ -333,18 +334,44 @@ const SPEC_COLOR_RU = {
   "Roz":"Розовый", "Violet":"Фиолетовый", "Transparent":"Прозрачный", "Maro":"Коричневый",
   "Piersic":"Персиковый", "Laptisor":"Молочный", "Negru":"Чёрный", "Rosu":"Красный",
   "Cu sclipici":"С блёстками",
+  "Color":"Цветная", "Transparentă":"Прозрачная",
 };
 const specValueRu = (v)=>{
   if(SPEC_COLOR_RU[v]) return SPEC_COLOR_RU[v];
   if(/^da$/i.test(v)) return "Да";
   if(/^nu$/i.test(v)) return "Нет";
-  return v.replace(/(\d)\s*ml\b/gi,"$1 мл").replace(/(\d)\s*W\b/g,"$1 Вт").replace(/rpm/gi,"об/мин");
+  return v.replace(/(\d)\s*ml\b/gi,"$1 мл").replace(/(\d)\s*kg\b/gi,"$1 кг")
+          .replace(/(\d)\s*g\b/gi,"$1 г").replace(/(\d)\s*W\b/g,"$1 Вт").replace(/rpm/gi,"об/мин");
 };
 // localized [{label, value}] for a product (RO as-is; RU labels + values translated)
 export function productSpecs(p, lang){
   if(!p.specs || !p.specs.length) return [];
   if(lang!=="ru") return p.specs;
   return p.specs.map(s=>({ label: SPEC_LABEL_RU[s.label]||s.label, value: specValueRu(s.value) }));
+}
+// localized single spec label / value — used by the category-page facet filters
+export const specLabel = (label, lang)=> lang==="ru" ? (SPEC_LABEL_RU[label]||label) : label;
+export const specValue = (value, lang)=> lang==="ru" ? specValueRu(value) : value;
+
+// faceted filters for a category, derived from product specs (only labels with ≥2 values).
+const _FACET_ORDER = ["Tip","Cantitate","Greutate","Putere","Grit"];
+const _facetNum = (v)=> parseFloat(String(v).replace(",",".").replace(/[^\d.]/g,""));
+export function facetsByCat(catId){
+  const labels = new Map();
+  for(const p of productsByCat(catId)) for(const s of (p.specs||[])){
+    if(!labels.has(s.label)) labels.set(s.label, new Map());
+    const m = labels.get(s.label); m.set(s.value, (m.get(s.value)||0)+1);
+  }
+  const facets = [];
+  for(const [label, m] of labels){
+    if(m.size < 2) continue;                       // a single-value facet filters nothing
+    const values = [...m.entries()].map(([value,count])=>({value,count}));
+    if(/\d/.test(values[0].value)) values.sort((a,b)=> _facetNum(a.value)-_facetNum(b.value));
+    else values.sort((a,b)=> a.value.localeCompare(b.value));
+    facets.push({ label, values });
+  }
+  facets.sort((a,b)=> (_FACET_ORDER.indexOf(a.label)+1||99) - (_FACET_ORDER.indexOf(b.label)+1||99));
+  return facets;
 }
 
 // up to `n` other products sharing the category (falls back to bestsellers)

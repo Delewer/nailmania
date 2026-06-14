@@ -204,6 +204,26 @@ function ruName(s){
   return out.replace(/\bde\b/giu,' ').replace(/\s{2,}/g,' ').replace(/\s+([)\].,])/g,'$1').trim();
 }
 
+// derive filterable specs from the product title (the price list has no spec columns).
+// Each facet must be accurate: volume only from "<n>ml", power only from "<n>W",
+// grit only on abrasives (so cleşti model codes like "10/11" don't become a grit),
+// and base type (Color/Transparentă) only for the baze category.
+function deriveSpecs(title, cat){
+  const out = [];
+  const add = (label, value) => { if (value && !out.some(s => s.label === label)) out.push({ label, value }); };
+  let m;
+  if ((m = title.match(/(\d+)\s*ml\b/i)))             add('Cantitate', m[1] + ' ml');
+  if ((m = title.match(/(\d+(?:[.,]\d+)?)\s*kg\b/i))) add('Greutate', m[1].replace(',', '.') + ' kg');
+  else if ((m = title.match(/(\d+)\s*g\b/i)))         add('Greutate', m[1] + ' g');
+  if ((m = title.match(/(\d+)\s*w\b/i)))              add('Putere', m[1] + ' W');
+  if (/pil[ae]|buff|grit|papmam|\bfile\b|disc|sponj/i.test(title)) {
+    if ((m = title.match(/(\d{2,4})[\/\\](\d{2,4})\b/))) add('Grit', m[1] + '/' + m[2]);
+    else if ((m = title.match(/(\d{2,4})\s*grit/i)))     add('Grit', m[1]);
+  }
+  if (cat === 'baze') add('Tip', /cover\s*base|my love|yogurt/i.test(title) ? 'Color' : 'Transparentă');
+  return out;
+}
+
 // ---- 4. locate the header row + columns (so adding an Image column "just works") ----
 const HMAP = {
   brand:['brand','marca'], code:['sku','cod','code','articol'],
@@ -261,9 +281,12 @@ for (const r of rows.slice(headerIdx + 1)) {
   const cat = CAT_MAP[norm(catRaw)] || slug(catRaw);
   if (!catLabels[cat]) catLabels[cat] = catRaw;
 
-  const specs = specCols
+  const sheetSpecs = specCols
     .map(({ idx, label }) => ({ label, value: (r[idx] || '').trim() }))
     .filter(s => s.value);
+  // derive filterable specs from the title (the price list has no spec columns)
+  const derived = deriveSpecs(title, cat);
+  const specs = [...sheetSpecs, ...derived.filter(d => !sheetSpecs.some(s => s.label === d.label))];
   const code = cell(r, 'code');
   const brand = cell(r, 'brand') || 'Fără brand';
   const qtyN = parseInt(cell(r, 'qty').replace(/[^\d-]/g, ''), 10);  // stock from Quantity column
