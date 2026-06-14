@@ -118,6 +118,7 @@ const norm = (s) => (s || '')
 
 const CAT_MAP = {
   'culori': 'gellac',
+  'gel lac': 'gellac',
   'dannytiny': 'gellac',
   'alungire': 'alungire',
   'baze': 'baze',
@@ -135,8 +136,12 @@ const CAT_MAP = {
   'lichide': 'lichide',
   'pedichiura': 'pedichiura',
   'sterilizare si dezinfectare': 'sterilizare',
+  'sterilizare dezinfectare': 'sterilizare',
   'solutii pregatitoare': 'solutii',
   'materiale': 'materiale',
+  'materiale de unica folosinta': 'materiale',
+  'base': 'baze',
+  'totul pentru sprancene': 'sprancene',
 };
 const KNOWN_CATS = new Set(Object.values(CAT_MAP));
 // any category the client adds in the sheet that isn't mapped above gets a
@@ -242,6 +247,7 @@ const flagOn = (v) => { const s = String(v || '').trim().toLowerCase(); return s
 // ---- 5. build product records ----
 const products = [];
 const catLabels = {};               // category id -> human label (for auto-created cats)
+const usedKeys = new Set();          // some source SKUs are reused for different products
 let n = 0;
 for (const r of rows.slice(headerIdx + 1)) {
   const title = cell(r, 'title');
@@ -263,9 +269,13 @@ for (const r of rows.slice(headerIdx + 1)) {
   const qtyN = parseInt(cell(r, 'qty').replace(/[^\d-]/g, ''), 10);  // stock from Quantity column
   // stable identity for URLs / cart / favorites: SKU when present, else a
   // deterministic hash of brand+name (survives catalog rebuilds; row id does not)
-  const key = code || ('x' + fnv(brand + '|' + title + '|' + cat + '|' + price));
+  const baseKey = code || ('x' + fnv(brand + '|' + title + '|' + cat + '|' + price));
+  // source occasionally reuses a SKU for two different products — keep keys unique
+  let key = baseKey, dn = 1;
+  while (usedKeys.has(key)) key = baseKey + '-' + (++dn);
+  usedKeys.add(key);
   // photo: an image in the sheet's Photo column wins; otherwise photos.csv (by SKU)
-  const image = cell(r, 'image') || PHOTOS[key] || '';
+  const image = cell(r, 'image') || PHOTOS[code] || PHOTOS[key] || '';
   // collection membership from the flag columns (Summer / Sale)
   const flags = {};
   for (const fc of flagCols) if (flagOn(r[fc.idx])) flags[fc.flag] = true;
