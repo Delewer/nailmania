@@ -45,7 +45,7 @@ export function About(){
             </ul>
             <h3>{t("termsTitle")}</h3>
             <ul className="terms">
-              {["t1","t2","t3"].map(k=>(
+              {["t1","t2","t3","t4","t5"].map(k=>(
                 <li key={k}><Icon n="truck" s={20}/>{t(k)}</li>
               ))}
             </ul>
@@ -72,23 +72,27 @@ export function Social(){
 
 export function Payment(){
   const {t} = useShop();
-  const methods = [
-    ["card", "payCard", "payCardDesc"],
-    ["cash", "payCash", "payCashDesc"],
-    ["phone", "payMia", "payMiaDesc"],
+  const groups = [
+    { icon:"truck", title:t("payOnDelivery"), items:[t("payDel1"), t("payDel2")] },
+    { icon:"store", title:t("payPickup"),     items:[t("payPick1"), t("payPick2"), t("payPick3")] },
   ];
   return (
     <section className="section info-sec" id="plata">
       <div className="wrap">
-        <div className="sec-head"><h2>{t("paymentSection")}</h2></div>
+        <div className="sec-head"><h2>{t("payTitle")}</h2></div>
+        <p className="info-lead">{t("payLead")}</p>
         <div className="pay-grid">
-          {methods.map(([ic, tk, dk])=>(
-            <div className="pay-card" key={tk}>
-              <Icon n={ic} s={22}/>
-              <div><b>{t(tk)}</b><span>{t(dk)}</span></div>
+          {groups.map(g=>(
+            <div className="pay-card" key={g.title}>
+              <Icon n={g.icon} s={22}/>
+              <div>
+                <b>{g.title}</b>
+                <ul>{g.items.map(it=><li key={it}>{it}</li>)}</ul>
+              </div>
             </div>
           ))}
         </div>
+        <p className="info-note">{t("payNote")}</p>
       </div>
     </section>
   );
@@ -100,12 +104,14 @@ export function Contacts(){
     <section className="section info-sec" id="contacte">
       <div className="wrap">
         <div className="sec-head"><h2>{t("contact")}</h2></div>
+        <p className="info-lead">{t("contIntro")}</p>
         <div className="info-grid">
-          <a className="info-row" href="tel:+37368067486"><Icon n="phone" s={20}/><b>+373 68 067 486</b></a>
-          <a className="info-row" href="mailto:nailmania18@gmail.com"><Icon n="mail" s={20}/><b>nailmania18@gmail.com</b></a>
-          <a className="info-row" href="https://www.instagram.com/nailmania_md" target="_blank" rel="noreferrer"><Icon n="ig" s={20} fill/><b>@nailmania_md</b></a>
-          <div className="info-row"><Icon n="pin" s={20} fill/><b>str. Romană 66/2, Ungheni, Moldova</b></div>
-          <div className="info-row"><Icon n="store" s={20}/><b>{t("workHours")}</b></div>
+          <div className="info-row"><Icon n="pin" s={20} fill/><div className="ci-txt"><b>{t("contAddr")}</b></div></div>
+          <a className="info-row" href="tel:+37368067486"><Icon n="phone" s={20}/><div className="ci-txt"><span>{t("contPhoneLabel")}</span><b>+373 68 067 486</b></div></a>
+          <a className="info-row" href="mailto:nailmania18@gmail.com"><Icon n="mail" s={20}/><div className="ci-txt"><span>{t("contEmailLabel")}</span><b>nailmania18@gmail.com</b></div></a>
+          <a className="info-row" href="https://www.instagram.com/nailmania_md" target="_blank" rel="noreferrer"><Icon n="ig" s={20} fill/><div className="ci-txt"><span>Instagram</span><b>@nailmania_md</b></div></a>
+          <div className="info-row"><Icon n="store" s={20}/><div className="ci-txt"><span>{t("contHoursLabel")}</span><b>{t("workHours")}</b></div></div>
+          <div className="info-row"><Icon n="check" s={20}/><div className="ci-txt"><b>{t("contOrders")}</b></div></div>
         </div>
       </div>
     </section>
@@ -138,7 +144,7 @@ export function Footer(){
           </div>
           <div>
             <h4>{t("colContact")}</h4>
-            <div className="ci"><Icon n="phone" s={18}/><span>+373 068 067 486</span></div>
+            <div className="ci"><Icon n="phone" s={18}/><span>+373 68 067 486</span></div>
             <div className="ci"><Icon n="mail" s={18}/><span>nailmania18@gmail.com</span></div>
             <div className="ci"><Icon n="pin" s={18} fill/><span>str. Romană 66/2,<br/>Ungheni, Moldova</span></div>
           </div>
