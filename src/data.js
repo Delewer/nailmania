@@ -12,7 +12,7 @@ export const I18N = {
     heroBtn:"Vezi catalogul", heroBtn2:"Noutăți",
     pillCatalog:"Catalog", pillNew:"Noutăți", pillSale:"Reduceri",
     catsTitle:"Categorii de produse",
-    secBest:"Hituri de vânzări", secNew:"Noi sosiri la Nail Mania", secSale:"Produse la reducere",
+    secBest:"Hituri de vânzări", secNew:"Noi sosiri la Nail Mania", secSale:"Produse la reducere", secSummer:"Colecția Summer ’26",
     all:"Toate", addCart:"În coș", inCart:"În coș ✓", quickAdd:"Adaugă rapid",
     brandsTitle:"Brandurile noastre", brandsSub:"Lucrăm doar cu producători de încredere",
     allBrands:"Toate brandurile", filterBrand:"Brand",
@@ -73,7 +73,7 @@ export const I18N = {
     heroBtn:"Смотреть каталог", heroBtn2:"Новинки",
     pillCatalog:"Каталог", pillNew:"Новинки", pillSale:"Скидки",
     catsTitle:"Категории товаров",
-    secBest:"Хиты продаж", secNew:"Новое поступление в Nail Mania", secSale:"Товары со скидкой",
+    secBest:"Хиты продаж", secNew:"Новое поступление в Nail Mania", secSale:"Товары со скидкой", secSummer:"Коллекция Summer ’26",
     all:"Все", addCart:"В корзину", inCart:"В корзине ✓", quickAdd:"Быстрый заказ",
     brandsTitle:"Наши бренды", brandsSub:"Работаем только с проверенными производителями",
     allBrands:"Все бренды", filterBrand:"Бренд",
@@ -260,7 +260,11 @@ export function featured(seed, n=8){
   }
   return out;
 }
-export const SALE_PRODUCTS = CATALOG.filter(p=>p.old>p.price);
+// curated landing collections, driven by the sheet's flag columns (build-catalog.mjs):
+//   Summer column -> p.summer ;  Sale/Promo column -> p.promo
+// The −30% block also keeps real price-list discounts (Price Old > Price).
+export const SUMMER_PRODUCTS = CATALOG.filter(p=>p.summer);
+export const SALE_PRODUCTS = CATALOG.filter(p=>p.promo || p.old>p.price);
 // look up by stable identity key (SKU or hash fallback) — used by URLs/cart/favorites
 export const findProduct = (key)=> ALL_PRODUCTS.find(p=>p.key===key);
 

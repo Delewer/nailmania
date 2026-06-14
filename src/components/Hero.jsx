@@ -25,21 +25,21 @@ export function Hero(){
             <span className="deco"></span>
           </div>
           <div className="hero-side">
-            <div className="hero-card">
+            <a className="hero-card" href="#summer">
               <Placeholder g={["#1b1b1b","#3a3438"]} ratio="auto" img={HERO_IMG[0]}/>
               <div className="hc-txt">
                 <b>Summer ’26</b>
                 <span style={{color:"#e9dde2"}}>Dark gel collection</span>
               </div>
-            </div>
-            <div className="hero-card">
+            </a>
+            <a className="hero-card" href="#sale">
               <Placeholder g={["#cfe0df","#eef4f3"]} ratio="auto" img={HERO_IMG[1]}/>
               <div className="hc-txt">
                 <b>−30%</b>
                 <span>{t("navSale")}</span>
                 <div className="pill"><Icon n="spark" s={14} fill/> {t("featured")}</div>
               </div>
-            </div>
+            </a>
           </div>
         </div>
 

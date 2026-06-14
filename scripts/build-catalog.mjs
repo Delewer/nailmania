@@ -224,6 +224,20 @@ const specCols = (rows[headerIdx] || [])
   .filter(c => norm(c.raw).startsWith('characteristics'))
   .map(c => ({ idx: c.idx, label: (c.raw.split(':').pop() || c.raw).trim() }));
 
+// collection flag columns: a non-empty cell tags the product into a landing collection.
+//   "Summer"  -> Summer '26 block      "Sale"/"Promo" -> −30% block
+const FLAG_DEFS = [
+  { flag: 'summer', re: /summer|vara/ },
+  { flag: 'promo',  re: /promo|sale|reducere|discount/ },
+];
+const flagCols = [];
+(rows[headerIdx] || []).forEach((h, idx) => {
+  const nh = norm(h);
+  for (const f of FLAG_DEFS) if (f.re.test(nh) && !flagCols.some(x => x.flag === f.flag)) { flagCols.push({ idx, flag: f.flag }); break; }
+});
+// a cell counts as "checked" unless it is empty or an explicit negative
+const flagOn = (v) => { const s = String(v || '').trim().toLowerCase(); return s !== '' && !['0', 'no', 'nu', 'n', 'false', 'нет'].includes(s); };
+
 // ---- 5. build product records ----
 const products = [];
 const catLabels = {};               // category id -> human label (for auto-created cats)
@@ -251,6 +265,9 @@ for (const r of rows.slice(headerIdx + 1)) {
   const key = code || ('x' + fnv(brand + '|' + title + '|' + cat + '|' + price));
   // photo: an image in the sheet's Photo column wins; otherwise photos.csv (by SKU)
   const image = cell(r, 'image') || PHOTOS[key] || '';
+  // collection membership from the flag columns (Summer / Sale)
+  const flags = {};
+  for (const fc of flagCols) if (flagOn(r[fc.idx])) flags[fc.flag] = true;
   products.push({
     id: 100000 + (++n),
     key,
@@ -265,6 +282,7 @@ for (const r of rows.slice(headerIdx + 1)) {
     ...(Number.isFinite(qtyN) ? { stock: qtyN } : {}),  // 0 → "out of stock"; blank → assume in stock
     ...(image ? { image } : {}),         // supplier image URL, when the sheet has one
     ...(specs.length ? { specs } : {}),  // Characteristics:* columns from the sheet
+    ...flags,                            // summer / promo collection flags
   });
 }
 
