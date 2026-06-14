@@ -73,8 +73,8 @@
 .pd-block p{font-size:15px;line-height:1.6;color:var(--ink-2);margin:0 0 12px;max-width:60ch}
 .pd-chars{list-style:none;padding:0;margin:0}
 .pd-chars li{display:flex;justify-content:space-between;gap:16px;padding:11px 0;border-bottom:1px dashed var(--line)}
-.pd-chars li span{color:var(--gray);font-size:14px}
-.pd-chars li b{font-weight:700;font-size:14px;text-align:right}
+.pd-chars li span{color:var(--gray);font-size:14px;flex:none}
+.pd-chars li b{font-weight:700;font-size:14px;text-align:right;min-width:0;overflow-wrap:anywhere}
 
 /* ===== Checkout ===== */
 .co{display:grid;grid-template-columns:1.4fr .9fr;gap:30px;align-items:start}
@@ -167,4 +167,10 @@
 @media(max-width:600px){
   .co-fields{grid-template-columns:1fr}
   .co-card{padding:20px}
+  /* product page: keep the buy row on one line inside the viewport
+     (the add-to-cart button shrinks instead of pushing the fav off-screen) */
+  .pd-buy{gap:8px}
+  .pd-buy .addbtn{min-width:0}
+  .pd-buy .qty button{width:42px}
+  .pd-price .now{font-size:32px}
 }
