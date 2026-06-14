@@ -78,7 +78,9 @@ const overrideCat = (title) => {
 };
 
 const qt = (s) => '"' + String(s ?? '').replace(/"/g, '""') + '"';
-const header = ['Brand', 'SKU', 'Category', 'Title', 'Text', 'Quantity', 'Price', 'Price Old'];
+// Sale = скидки (−30% block) · New = noutăți (новинки) · Promo = акции (promo block).
+// Leave blank; the client marks a product by putting any value (x / da / 1) in the cell.
+const header = ['Brand', 'SKU', 'Category', 'Title', 'Text', 'Quantity', 'Price', 'Price Old', 'Sale', 'New', 'Promo'];
 const out = [header.map(qt).join(',')];
 
 let kept = 0, skipped = 0, inferred = 0, recat = 0;
@@ -104,6 +106,7 @@ for (const r of rows.slice(hi + 1)) {
     '',                       // Quantity (blank => in stock)
     (r[ci.pret] || '').trim(),
     '',                       // Price Old
+    '', '', '',               // Sale / New / Promo (collection flags — client fills in)
   ].map(qt).join(','));
   kept++;
 }

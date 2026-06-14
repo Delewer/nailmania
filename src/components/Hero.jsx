@@ -28,8 +28,8 @@ export function Hero(){
             <a className="hero-card" href="#summer">
               <Placeholder g={["#1b1b1b","#3a3438"]} ratio="auto" img={HERO_IMG[0]}/>
               <div className="hc-txt">
-                <b>Summer ’26</b>
-                <span style={{color:"#e9dde2"}}>Dark gel collection</span>
+                <b>{t("secSummer")}</b>
+                <span style={{color:"#e9dde2"}}>{t("pillSale")}</span>
               </div>
             </a>
             <a className="hero-card" href="#sale">

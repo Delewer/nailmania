@@ -256,9 +256,9 @@ const specCols = (rows[headerIdx] || [])
 // collection flag columns: a non-empty cell tags the product into a landing collection.
 //   "Summer"  -> Summer '26 block      "Sale"/"Promo" -> −30% block
 const FLAG_DEFS = [
-  { flag: 'summer', re: /summer|vara/ },
-  { flag: 'promo',  re: /promo|sale|reducere|discount/ },
-  { flag: 'isNew',  re: /new|nou|noutat/ },
+  { flag: 'summer', re: /summer|vara|promo|acti|акци/ },        // "Promo" column -> акции block
+  { flag: 'promo',  re: /sale|reducere|discount|скидк/ },       // "Sale" column -> −30% (скидки)
+  { flag: 'isNew',  re: /new|nou|noutat|новин/ },               // "New" column -> noutăți (новинки)
 ];
 const flagCols = [];
 (rows[headerIdx] || []).forEach((h, idx) => {
