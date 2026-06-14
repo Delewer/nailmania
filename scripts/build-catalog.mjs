@@ -229,6 +229,7 @@ const specCols = (rows[headerIdx] || [])
 const FLAG_DEFS = [
   { flag: 'summer', re: /summer|vara/ },
   { flag: 'promo',  re: /promo|sale|reducere|discount/ },
+  { flag: 'isNew',  re: /new|nou|noutat/ },
 ];
 const flagCols = [];
 (rows[headerIdx] || []).forEach((h, idx) => {

@@ -22,14 +22,17 @@ const skuIdx = low.indexOf('sku');
 
 let iSummer = low.indexOf('summer');
 let iSale = low.indexOf('sale');
+let iNew = low.indexOf('new');
 if (iSummer < 0) { header.push('Summer'); iSummer = header.length - 1; }
 if (iSale < 0) { header.push('Sale'); iSale = header.length - 1; }
+if (iNew < 0) { header.push('New'); iNew = header.length - 1; }
 const width = header.length;
 
 // example tags: a handful of Gel Lac products
 const gellac = catalog.filter((p) => p.cat === 'gellac').map((p) => p.code || p.key);
 const summerSet = new Set(gellac.slice(0, 8));
 const saleSet = new Set(gellac.slice(8, 12));
+const newSet = new Set(gellac.slice(12, 20));
 
 let tagged = 0;
 for (let i = 1; i < rows.length; i++) {
@@ -38,9 +41,11 @@ for (let i = 1; i < rows.length; i++) {
   const sku = (r[skuIdx] || '').trim();
   if (summerSet.has(sku)) { r[iSummer] = 'x'; tagged++; }
   if (saleSet.has(sku)) { r[iSale] = 'x'; tagged++; }
+  if (newSet.has(sku)) { r[iNew] = 'x'; tagged++; }
 }
 
 fs.writeFileSync(FILE, '﻿' + rows.map((r) => r.map(qt).join(',')).join('\r\n') + '\r\n');
-console.log(`columns: Summer(#${iSummer}) Sale(#${iSale}) | cols=${width} | example tags set: ${tagged}`);
+console.log(`columns: Summer(#${iSummer}) Sale(#${iSale}) New(#${iNew}) | cols=${width} | example tags set: ${tagged}`);
 console.log(`Summer examples: ${[...summerSet].join(', ')}`);
 console.log(`Sale examples:   ${[...saleSet].join(', ')}`);
+console.log(`New examples:    ${[...newSet].join(', ')}`);

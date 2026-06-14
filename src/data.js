@@ -265,6 +265,7 @@ export function featured(seed, n=8){
 // The −30% block also keeps real price-list discounts (Price Old > Price).
 export const SUMMER_PRODUCTS = CATALOG.filter(p=>p.summer);
 export const SALE_PRODUCTS = CATALOG.filter(p=>p.promo || p.old>p.price);
+export const NEW_PRODUCTS = CATALOG.filter(p=>p.isNew);
 // look up by stable identity key (SKU or hash fallback) — used by URLs/cart/favorites
 export const findProduct = (key)=> ALL_PRODUCTS.find(p=>p.key===key);
 

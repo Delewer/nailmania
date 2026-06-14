@@ -4,11 +4,12 @@ import { useLocation } from 'react-router-dom'
 import { Hero, Categories } from '../components/Hero.jsx'
 import { ProductSection } from '../components/Products.jsx'
 import { Brands, About, Social } from '../components/Content.jsx'
-import { featured, SALE_PRODUCTS, SUMMER_PRODUCTS } from '../data.js'
+import { featured, SALE_PRODUCTS, SUMMER_PRODUCTS, NEW_PRODUCTS } from '../data.js'
 
 // real-catalog rows (stable, varied picks — see featured() in data.js)
 const BEST = featured(1, 8);
-const NEW  = featured(7, 8);
+// "Noutăți": products tagged New in the sheet; fall back to a varied pick if none
+const NEW  = NEW_PRODUCTS.length ? NEW_PRODUCTS : featured(7, 8);
 
 export default function Home(){
   const { hash } = useLocation();
