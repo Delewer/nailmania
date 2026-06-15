@@ -18,3 +18,7 @@ _need-products.json
 # one-time Tilda import artifacts (regenerable; not needed for prod)
 store-*.csv
 tilda-photos.csv
+
+# local DANNY photo download (served from R2)
+TINY DANNY/
+_sheets/
