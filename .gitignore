@@ -22,3 +22,6 @@ tilda-photos.csv
 # local DANNY photo download (served from R2)
 TINY DANNY/
 _sheets/
+
+# scratch/temp scraping artifacts (regenerable; never committed)
+_*
