@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "catalog": "node scripts/build-catalog.mjs",
+    "rehost": "node scripts/rehost-images.mjs",
     "dev": "vite",
+    "prebuild": "npm run catalog && npm run rehost",
     "build": "vite build",
     "preview": "vite preview"
   },
