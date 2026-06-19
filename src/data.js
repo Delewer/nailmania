@@ -245,6 +245,15 @@ export const CATALOG = CATALOG_RAW.map(p=>{
   };
 });
 
+// Category thumbnails: use the first in-category product photo we actually have
+// (already hosted on R2) instead of a placeholder. Falls back to the local
+// images/categories/<id>.jpg → gradient when a category has no product photo.
+const _catThumb = {};
+for (const p of CATALOG) {
+  if (p.cat && p.img && !_catThumb[p.cat] && /^https?:/.test(p.img)) _catThumb[p.cat] = p.img;
+}
+CATS.forEach((c)=>{ if (_catThumb[c.id]) c.img = _catThumb[c.id]; });
+
 // ---- Lookups & helpers ----
 // Live product set = real catalog only. Landing rows come from featured()/SALE_PRODUCTS.
 export const ALL_PRODUCTS = CATALOG;
