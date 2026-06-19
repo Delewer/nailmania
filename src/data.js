@@ -245,14 +245,20 @@ export const CATALOG = CATALOG_RAW.map(p=>{
   };
 });
 
-// Category thumbnails: use the first in-category product photo we actually have
-// (already hosted on R2) instead of a placeholder. Falls back to the local
-// images/categories/<id>.jpg → gradient when a category has no product photo.
+// Category thumbnails, in priority order:
+//   1. hand-picked photo from nailmania.md in src/cat-images/<id>.<ext>
+//   2. first in-category product photo we have (already on R2) — covers any
+//      category without an uploaded photo (e.g. gellac)
+//   3. local images/categories/<id>.jpg → gradient placeholder
+const _catUploaded = import.meta.glob('./cat-images/*.{jpg,jpeg,png,webp}', { eager: true, query: '?url', import: 'default' });
+const _catImgById = {};
+for (const [p, url] of Object.entries(_catUploaded)) _catImgById[p.replace(/^.*\//, '').replace(/\.[^.]+$/, '')] = url;
+
 const _catThumb = {};
 for (const p of CATALOG) {
   if (p.cat && p.img && !_catThumb[p.cat] && /^https?:/.test(p.img)) _catThumb[p.cat] = p.img;
 }
-CATS.forEach((c)=>{ if (_catThumb[c.id]) c.img = _catThumb[c.id]; });
+CATS.forEach((c)=>{ c.img = _catImgById[c.id] || _catThumb[c.id] || catImg(c.id); });
 
 // ---- Lookups & helpers ----
 // Live product set = real catalog only. Landing rows come from featured()/SALE_PRODUCTS.
