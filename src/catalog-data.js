@@ -87,8 +87,10 @@ export const productCode = (p)=> p.code || "NM-"+String(p.id).padStart(4,"0");
 
 // bilingual generated description (no real copy in the source data)
 export function productDesc(p, lang){
-  // catalog items carry a real description from the price list
-  if(p.desc) return [p.desc, ""];
+  // the real description from the price list is Romanian only — show it for RO;
+  // for other languages fall back to the localized template so the page actually
+  // switches language (otherwise RU users see Romanian text)
+  if(p.desc && lang === "ro") return [p.desc, ""];
   const L = I18N[lang] || I18N.ro;
   const cat = findCategory(p.cat);
   const catName = cat ? (cat[lang]||cat.ro) : "";
