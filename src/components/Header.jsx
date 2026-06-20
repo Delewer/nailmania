@@ -16,13 +16,13 @@ export function LogoMark({size=42,color="#1a1a1a"}){
   );
 }
 export function Logo({onClick}){
-  // Uses the real brand logo at public/images/logo.png; until that file exists
+  // Uses the real brand logo at public/images/logo-high.png; until that file exists
   // it falls back to the built-in SVG monogram + wordmark so nothing looks broken.
   const [ok,setOk] = React.useState(true);
   return (
     <div className="logo" onClick={onClick} role="button">
       {ok
-        ? <img className="brandimg" src={asset("images/logo.png")} alt="Nail Mania" onError={()=>setOk(false)}/>
+        ? <img className="brandimg" src={asset("images/logo-high.png")} alt="Nail Mania" onError={()=>setOk(false)}/>
         : <><LogoMark/><div className="txt"><b>Nail</b><i>Mania</i></div></>}
     </div>
   );
