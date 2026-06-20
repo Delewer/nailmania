@@ -9,9 +9,11 @@
 /* ===== Top utility bar ===== */
 .topbar{background:var(--ink);color:#f4ecef;font-size:13px}
 .topbar .wrap{display:flex;align-items:center;justify-content:space-between;height:38px;gap:18px}
-.topbar .promo{display:flex;align-items:center;gap:9px;font-weight:500;letter-spacing:.01em;min-width:0}
+.topbar .promo{display:flex;align-items:center;font-weight:500;letter-spacing:.01em;min-width:0}
+.topbar .promo-copy{display:inline-flex;align-items:center;gap:9px;min-width:0}
+.topbar .promo-hours{display:none}
 .topbar .promo svg{color:var(--mauve)}
-.topbar .promo span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.topbar .promo-copy>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .topbar .tright{display:flex;align-items:center;gap:18px;flex:none}
 .topbar .hours{display:inline-flex;align-items:center;gap:6px;color:#cdbfc6;white-space:nowrap}
 .topbar .hours svg{color:var(--mauve)}
@@ -68,9 +70,10 @@
   background:var(--rose);color:#fff;font-size:11px;font-weight:800;display:grid;place-items:center;animation:pop .25s ease}
 
 /* ===== Catalog mega-menu ===== */
-.megabg{position:fixed;inset:0;background:rgba(30,15,22,.32);z-index:55;animation:fadeIn .18s ease}
+.megabg{position:fixed;inset:0;background:rgba(30,15,22,.32);z-index:55;animation:fadeIn .18s ease;touch-action:none}
 .mega{position:absolute;left:0;right:0;top:100%;background:#fff;border-top:1px solid var(--line);
-  box-shadow:0 24px 50px rgba(80,40,60,.18);z-index:58;animation:fadeUp .18s ease}
+  box-shadow:0 24px 50px rgba(80,40,60,.18);z-index:58;animation:fadeUp .18s ease;
+  overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
 .mega .wrap{padding:26px 24px 30px}
 .mega .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px 26px}
 .mega a{display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:11px;transition:.13s;cursor:pointer;min-width:0}
@@ -371,6 +374,8 @@ a.info-row:hover{border-color:var(--mauve-deep);box-shadow:var(--shadow-lg)}
   .wrap{padding:0 20px}
   .topbar .wrap{justify-content:center}
   .topbar .promo{justify-content:center;width:100%}
+  .topbar .promo-delivery{display:none}
+  .topbar .promo-hours{display:inline-flex}
   .topbar .tright{display:none}
   /* header wraps to two rows: logo + actions on top, full-width search below.
      flex-basis:100% with no shrink forces the search onto its own row instead

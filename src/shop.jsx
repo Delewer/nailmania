@@ -96,14 +96,35 @@ export function ShopProvider({children}){
   const [knownProducts, setKnownProducts] = React.useState({});
   const [catalogLoading, setCatalogLoading] = React.useState(false);
   const toastT = React.useRef(0);
+  const hasDrawer = Boolean(drawer);
 
   React.useEffect(()=>localStorage.setItem("nm_lang",lang),[lang]);
   React.useEffect(()=>localStorage.setItem("nm_cart",JSON.stringify(cart)),[cart]);
   React.useEffect(()=>localStorage.setItem("nm_favs",JSON.stringify(favs)),[favs]);
   React.useEffect(()=>localStorage.setItem("nm_orders",JSON.stringify(orders)),[orders]);
   React.useEffect(()=>{
-    document.body.style.overflow = drawer ? "hidden" : "";
-  },[drawer]);
+    if(!hasDrawer) return;
+    const y = window.scrollY || window.pageYOffset || 0;
+    const {style} = document.body;
+    const prev = {
+      position:style.position,
+      top:style.top,
+      left:style.left,
+      right:style.right,
+      width:style.width,
+      overflow:style.overflow,
+    };
+    style.position = "fixed";
+    style.top = `-${y}px`;
+    style.left = "0";
+    style.right = "0";
+    style.width = "100%";
+    style.overflow = "hidden";
+    return ()=>{
+      Object.assign(style, prev);
+      window.scrollTo(0,y);
+    };
+  },[hasDrawer]);
 
   const t = (k)=> (I18N[lang]||{})[k] ?? k;
   const name = (p)=> p[lang]||p.ro;

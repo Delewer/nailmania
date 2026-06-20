@@ -30,10 +30,14 @@ export function Logo({onClick}){
 
 export function Topbar(){
   const {t,lang,setLang} = useShop();
+  const mobileHours = lang==="ru" ? "Пн-Сб 09-18 · Вс 10-16" : "Lu-Sa 09-18 · Du 10-16";
   return (
     <div className="topbar">
       <div className="wrap">
-        <div className="promo"><Icon n="truck" s={17}/><span>{t("topPromo")}</span></div>
+        <div className="promo">
+          <span className="promo-copy promo-delivery"><Icon n="truck" s={17}/><span>{t("topPromo")}</span></span>
+          <span className="promo-copy promo-hours"><Icon n="store" s={15}/><span>{mobileHours}</span></span>
+        </div>
         <nav className="topnav hide-mob">
           <Link to="/livrare">{t("navDelivery")}</Link>
           <Link to="/plata">{t("navPayment")}</Link>

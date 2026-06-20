@@ -8,18 +8,21 @@ export function CatalogMega(){
   const {name,setDrawer} = useShop();
   const navigate = useNavigate();
   const openCat = (cid)=>{ setDrawer(null); navigate("/category/"+cid); };
-  const [top,setTop] = React.useState(118);
-  React.useEffect(()=>{
-    // The panel is anchored under the header; bring it into view so triggers far
-    // down the page (e.g. the "Toate" button) don't open it off-screen.
-    window.scrollTo({top:0});
-    const h=document.querySelector(".header");
-    if(h) setTop(h.getBoundingClientRect().bottom);
+  const [panel,setPanel] = React.useState({top:118,maxHeight:640});
+  React.useLayoutEffect(()=>{
+    const update = ()=>{
+      const h=document.querySelector(".header");
+      const top = Math.max(0, Math.round(h ? h.getBoundingClientRect().bottom : 0));
+      setPanel({top,maxHeight:Math.max(180, window.innerHeight - top)});
+    };
+    update();
+    window.addEventListener("resize",update);
+    return ()=>window.removeEventListener("resize",update);
   },[]);
   return (
     <>
       <div className="megabg" onClick={()=>setDrawer(null)}/>
-      <div className="mega" style={{position:"fixed",top,left:0,right:0}}>
+      <div className="mega nm-scroll" style={{position:"fixed",top:panel.top,left:0,right:0,maxHeight:panel.maxHeight}}>
         <div className="wrap">
           <div className="grid">
             {CATS.map(c=>(
