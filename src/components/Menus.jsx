@@ -1,7 +1,7 @@
 /* ===== Catalog mega-menu, drawers (cart/fav/menu), toast ===== */
 import React from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useShop, Icon, Placeholder, PhShape } from '../shop.jsx'
+import { useShop, Icon, Placeholder } from '../shop.jsx'
 import { CATS } from '../data.js'
 
 export function CatalogMega(){
@@ -10,6 +10,9 @@ export function CatalogMega(){
   const openCat = (cid)=>{ setDrawer(null); navigate("/category/"+cid); };
   const [top,setTop] = React.useState(118);
   React.useEffect(()=>{
+    // The panel is anchored under the header; bring it into view so triggers far
+    // down the page (e.g. the "Toate" button) don't open it off-screen.
+    window.scrollTo({top:0});
     const h=document.querySelector(".header");
     if(h) setTop(h.getBoundingClientRect().bottom);
   },[]);
@@ -21,8 +24,8 @@ export function CatalogMega(){
           <div className="grid">
             {CATS.map(c=>(
               <a key={c.id} onClick={()=>openCat(c.id)}>
-                <span className="dot" style={{background:`linear-gradient(140deg,${c.g[0]},${c.g[1]})`}}>
-                  <PhShape kind={c.icon}/>
+                <span className="dot">
+                  <Placeholder g={c.g} icon={c.icon} img={c.img} ratio="1" radius={10} label={name(c)}/>
                 </span>
                 <span>
                   <span className="mt">{name(c)}</span>

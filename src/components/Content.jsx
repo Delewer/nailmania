@@ -1,9 +1,9 @@
 /* ===== Brands + About/Delivery + Social + Footer ===== */
 import React from 'react'
 import { Link } from 'react-router-dom'
-import { useShop, Icon, Placeholder } from '../shop.jsx'
+import { useShop, Icon } from '../shop.jsx'
 import { LogoMark } from './Header.jsx'
-import { CATS, ABOUT_IMG } from '../data.js'
+import { CATS } from '../data.js'
 
 export function Brands(){
   const {t} = useShop();
@@ -59,7 +59,6 @@ export function About(){
               ))}
             </ul>
           </div>
-          <div className="pic"><Placeholder g={["#f2dcd4","#e8ccd8"]} icon="bottle" ratio="4/5" radius={20} img={ABOUT_IMG} label="Nail Mania"/></div>
         </div>
       </div>
     </section>

@@ -3,6 +3,10 @@ import React from 'react'
 import { Link } from 'react-router-dom'
 import { useShop, Icon, Placeholder } from '../shop.jsx'
 import { CATS, HERO_IMG } from '../data.js'
+import heroBottle from '../hero/bottle.webp'
+import heroFile from '../hero/file.webp'
+import heroScissors from '../hero/scissors.webp'
+import heroBrush from '../hero/brush.webp'
 
 export function Hero(){
   const {t,setDrawer} = useShop();
@@ -11,7 +15,16 @@ export function Hero(){
       <div className="wrap">
         <div className="hero-grid">
           <div className="hero-main">
-            <img className="hero-main-img" src={HERO_IMG[0]} alt="" aria-hidden="true" loading="eager" />
+            <div className="hero-products" aria-hidden="true">
+              <img className="hp hp-file" src={heroFile} alt="" loading="eager"/>
+              <img className="hp hp-bottle" src={heroBottle} alt="" loading="eager"/>
+              <img className="hp hp-scissors" src={heroScissors} alt="" loading="eager"/>
+              <img className="hp hp-brush" src={heroBrush} alt="" loading="eager"/>
+              <span className="hero-spark sp1">✦</span>
+              <span className="hero-spark sp2">✦</span>
+              <span className="hero-spark sp3">✦</span>
+              <span className="hero-spark sp4">✦</span>
+            </div>
             <div className="copy">
               <span className="hero-kicker">{t("heroKicker")}</span>
               <h1 className="hero-title">{t("heroTitle")}</h1>
