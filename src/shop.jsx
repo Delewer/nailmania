@@ -1,6 +1,12 @@
 /* ===== Shop store: context, state, icons, placeholders ===== */
 import React from 'react'
-import { I18N, ALL_PRODUCTS } from './data.js'
+import { I18N } from './data.js'
+
+let catalogPromise = null;
+const loadCatalogProducts = ()=> {
+  catalogPromise ||= import('./catalog-data.js').then(m=>m.ALL_PRODUCTS);
+  return catalogPromise;
+};
 
 // ---------- Icons (UI only) ----------
 const I = {
@@ -86,6 +92,9 @@ export function ShopProvider({children}){
   const [orders, setOrders] = React.useState(()=>JSON.parse(localStorage.getItem("nm_orders")||"[]"));
   const [drawer, setDrawer] = React.useState(null); // 'cart' | 'fav' | 'menu' | 'catalog'
   const [toast, setToast] = React.useState(null);
+  const [allProducts, setAllProducts] = React.useState([]);
+  const [knownProducts, setKnownProducts] = React.useState({});
+  const [catalogLoading, setCatalogLoading] = React.useState(false);
   const toastT = React.useRef(0);
 
   React.useEffect(()=>localStorage.setItem("nm_lang",lang),[lang]);
@@ -99,23 +108,49 @@ export function ShopProvider({children}){
   const t = (k)=> (I18N[lang]||{})[k] ?? k;
   const name = (p)=> p[lang]||p.ro;
 
-  const allProducts = ALL_PRODUCTS;
-  // cart/favorites store the stable product key (SKU or hash), not the volatile row id
-  const find = (key)=> allProducts.find(p=>p.key===key);
+  const rememberProduct = React.useCallback((p)=>{
+    if(!p || !p.key) return;
+    setKnownProducts(prev=> prev[p.key] === p ? prev : {...prev, [p.key]:p});
+  },[]);
+  const indexProducts = React.useCallback((items)=>{
+    setKnownProducts(prev=>{
+      let changed = false;
+      const next = {...prev};
+      for(const p of items){
+        if(p && p.key && next[p.key] !== p){ next[p.key] = p; changed = true; }
+      }
+      return changed ? next : prev;
+    });
+  },[]);
+  const ensureCatalog = React.useCallback(()=>{
+    if(allProducts.length) return Promise.resolve(allProducts);
+    setCatalogLoading(true);
+    return loadCatalogProducts()
+      .then(items=>{ setAllProducts(items); indexProducts(items); return items; })
+      .finally(()=>setCatalogLoading(false));
+  },[allProducts, indexProducts]);
 
-  // one-time cleanup: drop cart/favorite entries that no longer resolve
+  // cart/favorites store the stable product key (SKU or hash), not the volatile row id
+  const find = React.useCallback((key)=> knownProducts[key] || allProducts.find(p=>p.key===key), [allProducts, knownProducts]);
+
+  React.useEffect(()=>{
+    if((cart.length || favs.length) && !allProducts.length) ensureCatalog();
+  },[allProducts.length, cart.length, favs.length, ensureCatalog]);
+
+  // Drop cart/favorite entries that no longer resolve after the catalog is loaded
   // (e.g. legacy carts saved under the old numeric ids, or removed products)
   React.useEffect(()=>{
+    if(!allProducts.length) return;
     setCart(c=>{ const f=c.filter(i=>find(i.id)); return f.length===c.length ? c : f; });
     setFavs(f=>{ const g=f.filter(k=>find(k)); return g.length===f.length ? f : g; });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[]);
+  },[allProducts.length, find]);
 
   const showToast = (msg)=>{
     setToast(msg); clearTimeout(toastT.current);
     toastT.current = setTimeout(()=>setToast(null), 2200);
   };
   const addToCart = (p)=>{
+    rememberProduct(p);
     setCart(c=>{
       const ex=c.find(i=>i.id===p.key);
       if(ex) return c.map(i=>i.id===p.key?{...i,q:i.q+1}:i);
@@ -126,7 +161,7 @@ export function ShopProvider({children}){
   const setQty=(id,q)=> setCart(c=> q<=0? c.filter(i=>i.id!==id): c.map(i=>i.id===id?{...i,q}:i));
   const removeFromCart=(id)=> setCart(c=>c.filter(i=>i.id!==id));
   const clearCart=()=> setCart([]);
-  const toggleFav=(id)=> setFavs(f=> f.includes(id)? f.filter(x=>x!==id): [...f,id]);
+  const toggleFav=(id)=>{ if(!find(id)) ensureCatalog(); setFavs(f=> f.includes(id)? f.filter(x=>x!==id): [...f,id]); };
 
   const cartCount = cart.reduce((s,i)=>s+i.q,0);
   const cartTotal = cart.reduce((s,i)=>{const p=find(i.id);return s+(p?p.price*i.q:0)},0);
@@ -163,7 +198,7 @@ export function ShopProvider({children}){
     favs,toggleFav,
     drawer,setDrawer,
     toast,showToast,
-    find,allProducts
+    find,allProducts,ensureCatalog,catalogLoading,rememberProduct
   };
   return <ShopContext.Provider value={value}>{children}</ShopContext.Provider>;
 }

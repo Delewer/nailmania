@@ -86,9 +86,12 @@
 /* ===== Hero ===== */
 .hero .wrap{padding-top:34px;padding-bottom:8px}
 .hero-grid{display:grid;grid-template-columns:1.05fr .95fr;gap:18px}
-.hero-main{position:relative;border-radius:var(--r-lg);overflow:hidden;min-height:380px;
+.hero-main{position:relative;border-radius:var(--r-lg);overflow:hidden;min-height:380px;isolation:isolate;
   background:linear-gradient(135deg,var(--peach) 0%, var(--peach-2) 60%, var(--mauve) 130%);
   display:flex;align-items:center;padding:48px}
+.hero-main-img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center;z-index:0;pointer-events:none}
+.hero-main::before{content:"";position:absolute;inset:0;z-index:1;pointer-events:none;
+  background:linear-gradient(90deg, rgba(246,227,220,.98) 0%, rgba(246,227,220,.94) 43%, rgba(246,227,220,.58) 66%, rgba(246,227,220,.08) 100%)}
 .hero-main .copy{position:relative;z-index:2;max-width:60%}
 .hero-kicker{display:inline-block;font-size:13px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;
   color:var(--rose-deep);margin-bottom:16px}
@@ -101,10 +104,10 @@
 .btn-dark:hover{background:#000;transform:translateY(-1px)}
 .btn-ghost{background:rgba(255,255,255,.7);color:var(--ink);border:1.5px solid rgba(26,26,26,.14)}
 .btn-ghost:hover{background:#fff}
-.hero-main .deco{position:absolute;right:-40px;bottom:-60px;width:320px;height:320px;border-radius:50%;
+.hero-main .deco{position:absolute;right:-40px;bottom:-60px;width:320px;height:320px;border-radius:50%;z-index:1;
   background:radial-gradient(circle at 35% 35%, rgba(255,255,255,.6), transparent 60%);pointer-events:none}
-.hero-side{display:grid;grid-template-rows:1fr 1fr;gap:18px}
-.hero-card{position:relative;border-radius:var(--r-lg);overflow:hidden;min-height:0;display:flex;align-items:flex-end;padding:22px}
+.hero-side{display:grid;grid-template-rows:1fr 1fr;gap:18px;min-width:0}
+.hero-card{position:relative;border-radius:var(--r-lg);overflow:hidden;min-height:0;min-width:0;display:flex;align-items:flex-end;padding:22px}
 .hero-card .ph{position:absolute;inset:0;border-radius:var(--r-lg)}
 /* dark scrim under the text so it stays legible over the photo */
 .hero-card .ph::after{content:"";position:absolute;inset:0;z-index:3;pointer-events:none;
@@ -350,7 +353,10 @@ a.info-row:hover{border-color:var(--mauve-deep);box-shadow:var(--shadow-lg)}
   .mobtoggle{display:flex}
 }
 @media(max-width:600px){
-  .wrap{padding:0 16px}
+  .wrap{padding:0 20px}
+  .topbar .wrap{justify-content:center}
+  .topbar .promo{justify-content:center;width:100%}
+  .topbar .tright{display:none}
   /* header wraps to two rows: logo + actions on top, full-width search below.
      flex-basis:100% with no shrink forces the search onto its own row instead
      of letting flexbox squeeze everything onto one line. Catalog button is
@@ -360,6 +366,9 @@ a.info-row:hover{border-color:var(--mauve-deep);box-shadow:var(--shadow-lg)}
   .actions{order:2;margin-left:auto}
   .catbtn{display:none}
   .searchbox{order:3;flex:1 0 100%;min-width:0}
+  .actions{gap:2px}
+  .act{padding:6px 8px}
+  .act .lbl{font-size:10.5px}
   .logo .brandimg{height:58px}
   .cats-grid,.prod-grid{grid-template-columns:repeat(2,1fr)}
   .mega .wrap{padding:14px 14px 18px}
@@ -368,8 +377,14 @@ a.info-row:hover{border-color:var(--mauve-deep);box-shadow:var(--shadow-lg)}
   .mega a .dot{width:34px;height:34px}
   .mega a .mt{font-size:13.5px}
   .hero-main{padding:30px;min-height:320px}
+  .hero-main-img{opacity:.5;object-position:70% center}
+  .hero-main::before{background:linear-gradient(180deg, rgba(246,227,220,.98) 0%, rgba(246,227,220,.92) 100%)}
   .hero-main .copy{max-width:100%}
-  .hero-side{grid-template-columns:1fr 1fr}
+  .hero-side{grid-template-columns:1fr;gap:12px}
+  .hero-card{min-height:150px}
+  .delivery .bar{height:auto;min-height:62px;line-height:1.35;flex-wrap:wrap}
+  .sec-head h2{font-size:clamp(24px,7vw,30px)}
+  .sec-head .all{padding:8px 12px;font-size:13px}
   .brand-grid{grid-template-columns:repeat(2,1fr)}
   .foot-grid{grid-template-columns:1fr}
   .section{padding:40px 0}

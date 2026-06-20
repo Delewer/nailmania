@@ -3,12 +3,13 @@ import React from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useShop, Icon, Placeholder } from '../shop.jsx'
 import { ProductCard } from '../components/Products.jsx'
-import { findProduct, findCategory, productCode, productDesc, productSpecs, relatedProducts, productGallery, inStock } from '../data.js'
+import { findCategory, productGallery } from '../data.js'
+import { findProduct, productCode, productDesc, productSpecs, relatedProducts, inStock } from '../catalog-data.js'
 
 export default function ProductPage(){
   const { id } = useParams();
   const navigate = useNavigate();
-  const { t, lang, name, addToCart, favs, toggleFav, setDrawer } = useShop();
+  const { t, lang, name, addToCart, favs, toggleFav, setDrawer, rememberProduct } = useShop();
   const [shot, setShot] = React.useState(0);
   const [qty, setQty] = React.useState(1);
   const [added, setAdded] = React.useState(false);
@@ -18,6 +19,7 @@ export default function ProductPage(){
   React.useEffect(()=>{ window.scrollTo({top:0}); setShot(0); setQty(1); setAdded(false); }, [id]);
 
   const p = findProduct(id);
+  React.useEffect(()=>{ if(p) rememberProduct(p); },[p, rememberProduct]);
   if(!p){
     return (
       <div className="wrap page">

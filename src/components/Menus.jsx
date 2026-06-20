@@ -58,14 +58,19 @@ export function CartLine({item}){
 }
 
 export function CartDrawer(){
-  const {t,cart,cartTotal,clearCart,setDrawer} = useShop();
+  const {t,cart,cartTotal,clearCart,setDrawer,find,allProducts,ensureCatalog,catalogLoading} = useShop();
   const navigate = useNavigate();
+  const resolved = cart.map(i=>find(i.id)).filter(Boolean);
+  const loading = cart.length>0 && resolved.length===0 && (!allProducts.length || catalogLoading);
+  React.useEffect(()=>{ if(cart.length) ensureCatalog(); },[cart.length, ensureCatalog]);
   const goCheckout = ()=>{ setDrawer(null); navigate("/checkout"); };
   return (
     <Drawer title={t("cart")} side="right">
       {cart.length===0
         ? <div className="empty"><Icon n="bag" s={56}/><p>{t("emptyCart")}</p>
             <button className="btn btn-dark" onClick={()=>setDrawer(null)}>{t("goShop")}</button></div>
+        : loading
+        ? <div className="empty"><Icon n="bag" s={56}/><p>{t("catalog")}...</p></div>
         : <>
             <div className="dbody nm-scroll">{cart.map(it=><CartLine key={it.id} item={it}/>)}</div>
             <div className="dfoot">
@@ -79,12 +84,14 @@ export function CartDrawer(){
 }
 
 export function FavDrawer(){
-  const {t,favs,find,name,toggleFav,addToCart,setDrawer} = useShop();
+  const {t,favs,find,name,toggleFav,addToCart,setDrawer,allProducts,ensureCatalog,catalogLoading} = useShop();
+  React.useEffect(()=>{ if(favs.length) ensureCatalog(); },[favs.length, ensureCatalog]);
   const items = favs.map(find).filter(Boolean);
+  const loading = favs.length>0 && items.length===0 && (!allProducts.length || catalogLoading);
   return (
     <Drawer title={t("fav")} side="right">
       {items.length===0
-        ? <div className="empty"><Icon n="heart" s={56}/><p>{t("emptyFav")}</p>
+        ? <div className="empty"><Icon n="heart" s={56}/><p>{loading ? `${t("catalog")}...` : t("emptyFav")}</p>
             <button className="btn btn-dark" onClick={()=>setDrawer(null)}>{t("goShop")}</button></div>
         : <div className="dbody nm-scroll">
             {items.map(p=>(

@@ -3,7 +3,8 @@ import React from 'react'
 import { useParams, useSearchParams, Link } from 'react-router-dom'
 import { useShop, Icon } from '../shop.jsx'
 import { ProductCard, Pager } from '../components/Products.jsx'
-import { findCategory, productsByCat, brandsByCat, facetsByCat, specLabel, specValue, inStock } from '../data.js'
+import { findCategory } from '../data.js'
+import { productsByCat, brandsByCat, facetsByCat, specLabel, specValue, inStock } from '../catalog-data.js'
 
 const PER_PAGE = 12;
 const keyOf = (label)=> label.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');

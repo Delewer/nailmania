@@ -3,7 +3,8 @@ import React from 'react'
 import { useParams, useSearchParams, Link } from 'react-router-dom'
 import { useShop, Icon } from '../shop.jsx'
 import { ProductCard, Pager } from '../components/Products.jsx'
-import { findCategory, productsByBrand, catsByBrand, inStock } from '../data.js'
+import { findCategory } from '../data.js'
+import { productsByBrand, catsByBrand, inStock } from '../catalog-data.js'
 
 const PER_PAGE = 12;
 

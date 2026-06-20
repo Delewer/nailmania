@@ -3,10 +3,19 @@ import React from 'react'
 import { Link } from 'react-router-dom'
 import { useShop, Icon, Placeholder } from '../shop.jsx'
 import { LogoMark } from './Header.jsx'
-import { CATS, CATALOG_BRANDS, ABOUT_IMG } from '../data.js'
+import { CATS, ABOUT_IMG } from '../data.js'
 
 export function Brands(){
   const {t} = useShop();
+  const [brands, setBrands] = React.useState([]);
+  React.useEffect(()=>{
+    let alive = true;
+    import('../catalog-data.js').then(({ CATALOG_BRANDS })=>{
+      if(alive) setBrands(CATALOG_BRANDS);
+    });
+    return ()=>{ alive = false; };
+  },[]);
+
   return (
     <section className="section brands">
       <div className="wrap">
@@ -17,7 +26,7 @@ export function Brands(){
           </div>
         </div>
         <div className="brand-grid">
-          {CATALOG_BRANDS.map(({brand,count})=>(
+          {brands.map(({brand,count})=>(
             <Link className="brand-cell" key={brand} to={"/brand/"+encodeURIComponent(brand)}>
               <span>{brand}</span>
               <i className="brand-cnt">{count}</i>

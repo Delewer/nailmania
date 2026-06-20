@@ -52,7 +52,7 @@ export function Topbar(){
 }
 
 export function SearchBox(){
-  const {t,name,allProducts} = useShop();
+  const {t,name,allProducts,ensureCatalog,catalogLoading} = useShop();
   const navigate = useNavigate();
   const [q,setQ] = React.useState("");
   const [open,setOpen] = React.useState(false);
@@ -61,6 +61,9 @@ export function SearchBox(){
     const h=(e)=>{ if(boxRef.current && !boxRef.current.contains(e.target)) setOpen(false); };
     document.addEventListener("mousedown",h); return ()=>document.removeEventListener("mousedown",h);
   },[]);
+  const loadProducts = React.useCallback(()=>{
+    if(!allProducts.length) ensureCatalog();
+  },[allProducts.length, ensureCatalog]);
   const results = React.useMemo(()=>{
     const s=q.trim().toLowerCase(); if(!s) return [];
     return allProducts.filter(p=>
@@ -70,13 +73,13 @@ export function SearchBox(){
   return (
     <div className="searchbox" ref={boxRef}>
       <input value={q} placeholder={t("searchPh")}
-        onChange={e=>{setQ(e.target.value);setOpen(true);}}
-        onFocus={()=>setOpen(true)} aria-label={t("search")}/>
+        onChange={e=>{setQ(e.target.value);setOpen(true); if(e.target.value.trim()) loadProducts();}}
+        onFocus={()=>{setOpen(true); loadProducts();}} aria-label={t("search")}/>
       <button className="go"><Icon n="search" s={18}/><span className="gotxt">{t("search")}</span></button>
       {open && q.trim() && (
         <div className="sresults nm-scroll" style={{maxHeight:380,overflowY:"auto"}}>
           {results.length===0
-            ? <div className="empty">{t("noResults")}</div>
+            ? <div className="empty">{catalogLoading ? `${t("search")}...` : t("noResults")}</div>
             : <>
                 <div className="head">{results.length} {t("results")}</div>
                 {results.map(p=>(

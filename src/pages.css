@@ -1,5 +1,5 @@
 /* ===== Shared page chrome (product + checkout) ===== */
-.page{padding:34px 0 64px;min-height:60vh}
+.page{padding-top:34px;padding-bottom:64px;min-height:60vh}
 .crumbs{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px;color:var(--gray);margin:0 0 22px}
 .crumbs a{cursor:pointer;transition:.14s}
 .crumbs a:hover{color:var(--ink)}

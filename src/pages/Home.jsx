@@ -4,15 +4,25 @@ import { useLocation } from 'react-router-dom'
 import { Hero, Categories } from '../components/Hero.jsx'
 import { ProductSection } from '../components/Products.jsx'
 import { Brands, Social } from '../components/Content.jsx'
-import { featured, SALE_PRODUCTS, SUMMER_PRODUCTS, NEW_PRODUCTS } from '../data.js'
-
-// real-catalog rows (stable, varied picks — see featured() in data.js)
-const BEST = featured(1, 8);
-// "Noutăți": products tagged New in the sheet; fall back to a varied pick if none
-const NEW  = NEW_PRODUCTS.length ? NEW_PRODUCTS : featured(7, 8);
 
 export default function Home(){
   const { hash } = useLocation();
+  const [sections, setSections] = React.useState(null);
+
+  React.useEffect(()=>{
+    let alive = true;
+    import('../catalog-data.js').then(({ featured, SALE_PRODUCTS, SUMMER_PRODUCTS, NEW_PRODUCTS })=>{
+      if(!alive) return;
+      setSections({
+        best: featured(1, 8),
+        newItems: NEW_PRODUCTS.length ? NEW_PRODUCTS : featured(7, 8),
+        sale: SALE_PRODUCTS,
+        summer: SUMMER_PRODUCTS,
+      });
+    });
+    return ()=>{ alive = false; };
+  },[]);
+
   // scroll to in-page anchor when arriving from another route (e.g. footer links)
   React.useEffect(()=>{
     if(!hash) return;
@@ -24,10 +34,14 @@ export default function Home(){
     <>
       <Hero/>
       <Categories/>
-      {SUMMER_PRODUCTS.length>0 && <ProductSection id="summer" titleKey="secSummer" items={SUMMER_PRODUCTS} perPage={8}/>}
-      <ProductSection id="best" titleKey="secBest" items={BEST} perPage={8}/>
-      <ProductSection id="new" titleKey="secNew" items={NEW} perPage={8}/>
-      {SALE_PRODUCTS.length>0 && <ProductSection id="sale" titleKey="secSale" items={SALE_PRODUCTS} perPage={8}/>}
+      {sections && (
+        <>
+          {sections.summer.length>0 && <ProductSection id="summer" titleKey="secSummer" items={sections.summer} perPage={8}/>}
+          <ProductSection id="best" titleKey="secBest" items={sections.best} perPage={8}/>
+          <ProductSection id="new" titleKey="secNew" items={sections.newItems} perPage={8}/>
+          {sections.sale.length>0 && <ProductSection id="sale" titleKey="secSale" items={sections.sale} perPage={8}/>}
+        </>
+      )}
       <Brands/>
       <Social/>
     </>

@@ -2,15 +2,17 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
 import { useShop, Icon, Placeholder } from '../shop.jsx'
-import { inStock } from '../data.js'
+
+const inStock = (p)=> typeof p.stock !== "number" || p.stock > 0;
 
 export function ProductCard({p}){
-  const {t,name,addToCart,favs,toggleFav} = useShop();
+  const {t,name,addToCart,favs,toggleFav,rememberProduct} = useShop();
   const isFav = favs.includes(p.key);
   const oos = !inStock(p);
   // transient "added" confirmation that reverts the button to its initial look
   const [added,setAdded] = React.useState(false);
   const addT = React.useRef(0);
+  React.useEffect(()=>{ rememberProduct(p); },[p, rememberProduct]);
   React.useEffect(()=>()=>clearTimeout(addT.current),[]);
   const onAdd = ()=>{ addToCart(p); setAdded(true); clearTimeout(addT.current); addT.current=setTimeout(()=>setAdded(false),1400); };
   const tag = p.badge==="new" ? {c:"new",txt:t("newBadge")}

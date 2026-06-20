@@ -15,7 +15,7 @@ const PAYMENT = [
 
 export default function Checkout(){
   const navigate = useNavigate();
-  const { t, name, cart, find, cartTotal, submitOrder, setQty, removeFromCart } = useShop();
+  const { t, name, cart, find, cartTotal, submitOrder, setQty, removeFromCart, allProducts, ensureCatalog, catalogLoading } = useShop();
 
   const [delivery, setDelivery] = React.useState("");
   const [payment, setPayment]   = React.useState("");
@@ -25,6 +25,7 @@ export default function Checkout(){
   const [done, setDone] = React.useState(null); // order number when placed
 
   React.useEffect(()=>{ window.scrollTo({top:0}); }, []);
+  React.useEffect(()=>{ if(cart.length) ensureCatalog(); }, [cart.length, ensureCatalog]);
 
   const lines = cart.map(i=>({ ...i, p: find(i.id) })).filter(x=>x.p);
   const discount = lines.reduce((s,l)=> s + (l.p.old>0 ? (l.p.old-l.p.price)*l.q : 0), 0);
@@ -85,6 +86,17 @@ export default function Checkout(){
           </div>
 
           <div><Link className="btn btn-dark" to="/">{t("continueShopping")}</Link></div>
+        </div>
+      </div>
+    );
+  }
+
+  if(cart.length > 0 && lines.length === 0 && (!allProducts.length || catalogLoading)){
+    return (
+      <div className="wrap page">
+        <div className="page-empty">
+          <Icon n="bag" s={60}/>
+          <h2>{t("catalog")}...</h2>
         </div>
       </div>
     );

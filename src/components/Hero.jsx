@@ -11,6 +11,7 @@ export function Hero(){
       <div className="wrap">
         <div className="hero-grid">
           <div className="hero-main">
+            <img className="hero-main-img" src={HERO_IMG[0]} alt="" aria-hidden="true" loading="eager" />
             <div className="copy">
               <span className="hero-kicker">{t("heroKicker")}</span>
               <h1 className="hero-title">{t("heroTitle")}</h1>
@@ -26,14 +27,14 @@ export function Hero(){
           </div>
           <div className="hero-side">
             <a className="hero-card" href="#summer">
-              <Placeholder g={["#1b1b1b","#3a3438"]} ratio="auto" img={HERO_IMG[0]}/>
+              <Placeholder g={["#1b1b1b","#3a3438"]} ratio="auto" img={HERO_IMG[1]}/>
               <div className="hc-txt">
                 <b>{t("secSummer")}</b>
                 <span style={{color:"#e9dde2"}}>{t("pillSale")}</span>
               </div>
             </a>
             <a className="hero-card" href="#sale">
-              <Placeholder g={["#cfe0df","#eef4f3"]} ratio="auto" img={HERO_IMG[1]}/>
+              <Placeholder g={["#cfe0df","#eef4f3"]} ratio="auto" img={HERO_IMG[2]}/>
               <div className="hc-txt">
                 <b>−30%</b>
                 <span>{t("navSale")}</span>
