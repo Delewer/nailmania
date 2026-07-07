@@ -7,9 +7,11 @@
 #   • This workflow is a fallback / for the cPanel (FTP) path: run it by hand from the
 #     Actions tab ("Run workflow").
 #
-# One-time setup (repo → Settings → Secrets and variables → Actions):
-#   CATALOG_SHEET_URL   – the sheet's "Publish to web → CSV" link  (required)
-#   then ONE deploy target:
+# The default Google Sheet is stored in catalog.config.json. Cloudflare can use
+# its configured CATALOG_SHEET_URL by setting CATALOG_USE_SHEET=1.
+#
+# One-time setup (repo → Settings → Secrets and variables → Actions),
+# choose one deploy target:
 #     • Cloudflare Pages:  CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID, CF_PAGES_PROJECT
 #     • cPanel / iphost (FTP):  FTP_SERVER, FTP_USERNAME, FTP_PASSWORD
 # Deploy steps run only when their secrets are present, so this is safe to commit now.
@@ -23,7 +25,6 @@ jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     env:
-      CATALOG_SHEET_URL: ${{ secrets.CATALOG_SHEET_URL }}
       CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       FTP_SERVER: ${{ secrets.FTP_SERVER }}
     steps:
@@ -36,7 +37,7 @@ jobs:
 
       - run: npm ci
 
-      - name: Build catalog from the Google Sheet (falls back to local ODS)
+      - name: Build catalog from the configured Google Sheet (falls back to local CSV)
         run: npm run catalog
 
       - run: npm run build
