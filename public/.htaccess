@@ -13,6 +13,10 @@
   RewriteCond %{REQUEST_FILENAME} -d
   RewriteRule ^ - [L]
 
+  # Serve pre-rendered SEO shells for product/category/brand/content routes.
+  RewriteCond %{DOCUMENT_ROOT}/$1.html -f
+  RewriteRule ^(.+?)/?$ $1.html [L]
+
   # Everything else → index.html so React Router handles /product/:id, /checkout, etc.
   RewriteRule ^ index.html [L]
 </IfModule>

@@ -1,1 +1,8 @@
-/*    /index.html   200
+/product/:id   /product/:id.html   200
+/category/:id  /category/:id.html  200
+/brand/:name   /brand/:name.html   200
+/livrare       /livrare.html       200
+/plata         /plata.html         200
+/contacte      /contacte.html      200
+/checkout      /checkout.html      200
+/*             /index.html         200

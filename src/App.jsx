@@ -5,6 +5,7 @@ import { ShopProvider } from './shop.jsx'
 import { Header } from './components/Header.jsx'
 import { Footer, About, Payment, Contacts } from './components/Content.jsx'
 import { Overlays } from './components/Menus.jsx'
+import { Seo } from './components/Seo.jsx'
 
 const Home = React.lazy(()=>import('./pages/Home.jsx'));
 const CategoryPage = React.lazy(()=>import('./pages/CategoryPage.jsx'));
@@ -28,6 +29,7 @@ export default function App(){
     <BrowserRouter>
       <ShopProvider>
         <ScrollTop/>
+        <Seo/>
         <Header/>
         <main>
           <React.Suspense fallback={<PageFallback/>}>

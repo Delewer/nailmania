@@ -1,9 +1,9 @@
 /* Build src/catalog.json + src/categories.json from the product spreadsheet.
 
    Data source (priority):
-     1. Google Sheets — set env CATALOG_SHEET_URL to the sheet's
-        "File → Share → Publish to web → (this tab) → CSV" link.
-     2. local nailmania-sheet.csv (CSV; an ODS file also works) — offline fallback / default.
+     1. Google Sheets — configured in catalog.config.json. Ordinary /edit links
+        and published CSV links are both accepted.
+     2. local nailmania-sheet.csv (CSV; an ODS file also works) — offline fallback.
 
    Run: npm run catalog   (re-run whenever the price list changes). */
 import { readFileSync, writeFileSync, mkdtempSync } from 'node:fs';
@@ -13,11 +13,28 @@ import * as path from 'node:path';
 
 const ROOT = process.cwd();
 const LOCAL = path.join(ROOT, 'nailmania-sheet.csv');
-// The committed nailmania-sheet.csv (regenerated from the authoritative price list by
-// scripts/import-list.mjs) is the source of truth. The Google Sheet is used ONLY when
-// explicitly opted in with CATALOG_USE_SHEET=1 — otherwise a stale published sheet would
-// silently overwrite the catalog at deploy time (it did: old ItalWax/Enova/Culoare data).
-const SHEET_URL = (process.env.CATALOG_USE_SHEET === '1' && process.env.CATALOG_SHEET_URL) || '';
+const CONFIG = JSON.parse(readFileSync(path.join(ROOT, 'catalog.config.json'), 'utf8'));
+const PHOTO_OVERRIDES = (() => {
+  try { return JSON.parse(readFileSync(path.join(ROOT, 'photo-overrides.json'), 'utf8')); }
+  catch { return {}; }
+})();
+function normalizeSheetUrl(raw) {
+  const value = String(raw || '').trim();
+  if (!value) return '';
+  const id = value.match(/\/spreadsheets\/d\/([^/]+)/)?.[1];
+  if (!id) return value;
+  if (/\/pub\?/.test(value) || /[?&](?:output|format)=csv\b/i.test(value)) return value;
+  const gid = value.match(/[?#&]gid=([0-9]+)/)?.[1];
+  return `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv${gid ? `&gid=${gid}` : ''}`;
+}
+
+// Cloudflare production builds opt in with CATALOG_USE_SHEET=1 and supply the
+// sheet URL as an environment variable. The repository config is the local and
+// CI default, so every build still has an explicit, reviewable source.
+const configuredSheetUrl = process.env.CATALOG_USE_SHEET === '1' && process.env.CATALOG_SHEET_URL
+  ? process.env.CATALOG_SHEET_URL
+  : CONFIG.sheetUrl;
+const SHEET_URL = normalizeSheetUrl(configuredSheetUrl);
 
 // product photos: photos.csv (SKU,Photo) is the photo source, kept separate from
 // the product list. Photo holds local path(s)/URL(s), space/comma separated for
@@ -305,7 +322,8 @@ for (const r of rows.slice(headerIdx + 1)) {
   // prefer the unique `key` over the raw `code`: some source SKUs are reused for
   // different products (e.g. T0014 = Solutie Aerodisin AND BeeNails Polygel), so a
   // code lookup would give the wrong product its twin's photo. key is always unique.
-  const image = cell(r, 'image') || PHOTOS[key] || PHOTOS[code] || '';
+  const image = PHOTO_OVERRIDES[key] || PHOTO_OVERRIDES[code]
+    || cell(r, 'image') || PHOTOS[key] || PHOTOS[code] || '';
   // collection membership from the flag columns (Summer / Sale)
   const flags = {};
   for (const fc of flagCols) if (flagOn(r[fc.idx])) flags[fc.flag] = true;

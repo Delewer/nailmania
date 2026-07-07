@@ -9,6 +9,7 @@
     "dev": "vite",
     "prebuild": "npm run catalog && npm run rehost",
     "build": "vite build",
+    "postbuild": "node scripts/build-seo.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
