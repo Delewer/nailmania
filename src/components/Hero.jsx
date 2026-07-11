@@ -30,9 +30,9 @@ export function Hero(){
               <h1 className="hero-title">{t("heroTitle")}</h1>
               <p className="hero-text">{t("heroText")}</p>
               <div className="hero-cta">
-                <button className="btn btn-dark" onClick={()=>setDrawer("catalog")}>
+                <a className="btn btn-dark" href="#best">
                   {t("heroBtn")} <Icon n="arrow" s={18}/>
-                </button>
+                </a>
                 <a className="btn btn-ghost" href="#new">{t("heroBtn2")}</a>
               </div>
             </div>
