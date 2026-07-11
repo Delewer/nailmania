@@ -28,35 +28,85 @@
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Playfair+Display:ital,wght@0,500;0,600;0,700;0,800;1,600;1,700&display=swap" rel="stylesheet"/>
 <script>
 (function(){
-  var reloadKey = 'nm_asset_reload';
-  function retryWithFreshHtml(reason){
+  var assetReloadKey = 'nm_asset_reload_count';
+  var mountReloadKey = 'nm_mount_reload_count';
+  var maxReloads = 3;
+
+  function getCount(key){
     try {
-      if (sessionStorage.getItem(reloadKey)) return;
-      sessionStorage.setItem(reloadKey, reason || 'asset');
-    } catch (error) {}
+      return Number(sessionStorage.getItem(key) || 0);
+    } catch (error) {
+      return 0;
+    }
+  }
+
+  function setCount(key, value){
+    try { sessionStorage.setItem(key, String(value)); } catch (error) {}
+  }
+
+  function retryWithFreshHtml(reason, key){
+    var count = getCount(key);
+    if (count >= maxReloads) return;
+    setCount(key, count + 1);
     var url = new URL(window.location.href);
     url.searchParams.set('nm_reload', Date.now().toString());
+    url.searchParams.set('nm_reason', reason || 'refresh');
     window.location.replace(url.toString());
   }
+
+  function hasStaticFallback(){
+    var root = document.getElementById('root');
+    return !!(root && root.querySelector('.seo-static'));
+  }
+
+  function checkMount(){
+    if (!window.__NM_APP_READY__ && hasStaticFallback()) {
+      retryWithFreshHtml('mount', mountReloadKey);
+    }
+  }
+
+  function scheduleMountChecks(){
+    window.setTimeout(checkMount, 7000);
+    window.setTimeout(checkMount, 14000);
+  }
+
+  window.__NM_MARK_READY__ = function(){
+    window.__NM_APP_READY__ = true;
+    try {
+      sessionStorage.removeItem(assetReloadKey);
+      sessionStorage.removeItem(mountReloadKey);
+    } catch (error) {}
+    try {
+      var url = new URL(window.location.href);
+      if (url.searchParams.has('nm_reload') || url.searchParams.has('nm_reason')) {
+        url.searchParams.delete('nm_reload');
+        url.searchParams.delete('nm_reason');
+        window.history.replaceState(null, '', url.pathname + url.search + url.hash);
+      }
+    } catch (error) {}
+  };
+
   window.addEventListener('error', function(event){
     var target = event && event.target;
     var url = target && (target.src || target.href);
     var tag = target && target.tagName;
     if (url && /\/assets\//.test(url) && /^(SCRIPT|LINK)$/i.test(tag || '')) {
-      retryWithFreshHtml('asset');
+      retryWithFreshHtml('asset', assetReloadKey);
     }
   }, true);
+
   window.addEventListener('unhandledrejection', function(event){
     var reason = String((event && event.reason && (event.reason.message || event.reason)) || '');
     if (/Failed to fetch dynamically imported module|Importing a module script failed|Failed to load module script|Loading chunk/i.test(reason)) {
-      retryWithFreshHtml('module');
+      retryWithFreshHtml('module', assetReloadKey);
     }
   });
-  window.addEventListener('load', function(){
-    window.setTimeout(function(){
-      try { sessionStorage.removeItem(reloadKey); } catch (error) {}
-    }, 4000);
-  });
+
+  if (document.readyState === 'loading') {
+    window.addEventListener('DOMContentLoaded', scheduleMountChecks, { once:true });
+  } else {
+    scheduleMountChecks();
+  }
 })();
 </script>
 </head>
