@@ -39,11 +39,11 @@ export function Hero(){
             <span className="deco"></span>
           </div>
           <div className="hero-side">
-            <a className="hero-card" href="#summer">
+            <a className="hero-card" href="#new">
               <Placeholder g={["#1b1b1b","#3a3438"]} ratio="auto" img={HERO_IMG[1]}/>
               <div className="hc-txt">
-                <b>{t("secSummer")}</b>
-                <span style={{color:"#e9dde2"}}>{t("pillSale")}</span>
+                <b>{t("secNew")}</b>
+                <span style={{color:"#e9dde2"}}>{t("pillNew")}</span>
               </div>
             </a>
             <a className="hero-card" href="#sale">
