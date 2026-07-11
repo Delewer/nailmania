@@ -54,12 +54,15 @@
   border-radius:var(--r);box-shadow:var(--shadow-lg);overflow:hidden;z-index:70;animation:fadeUp .14s ease}
 .sresults .row{display:flex;align-items:center;gap:13px;padding:11px 16px;cursor:pointer;transition:.12s}
 .sresults .row:hover{background:var(--blush-2)}
-.sresults .row .thumb{width:46px;height:46px;border-radius:9px;flex:none}
+.sresults .row .thumb{width:46px;height:46px;border-radius:9px;flex:none;overflow:hidden}
+.sresults .row .thumb .ph{height:100%}
 .sresults .row .nm{font-weight:600;font-size:14px}
 .sresults .row .br{font-size:12px;color:var(--gray)}
 .sresults .row .pr{margin-left:auto;font-weight:800;font-size:14px;white-space:nowrap}
 .sresults .empty{padding:22px 16px;color:var(--gray);font-size:14px;text-align:center}
 .sresults .head{padding:9px 16px;font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--gray-2);background:var(--blush-2)}
+.sresults .more{width:100%;display:flex;align-items:center;justify-content:center;padding:12px 16px;border-top:1px solid var(--line);font-weight:800;color:var(--ink)}
+.sresults .more:hover{background:var(--blush-2)}
 
 .actions{display:flex;align-items:center;gap:6px;flex:none}
 .act{display:flex;flex-direction:column;align-items:center;gap:3px;padding:7px 12px;border-radius:12px;
