@@ -12,6 +12,7 @@ const CategoryPage = React.lazy(()=>import('./pages/CategoryPage.jsx'));
 const BrandPage = React.lazy(()=>import('./pages/BrandPage.jsx'));
 const ProductPage = React.lazy(()=>import('./pages/ProductPage.jsx'));
 const Checkout = React.lazy(()=>import('./pages/Checkout.jsx'));
+const SearchPage = React.lazy(()=>import('./pages/SearchPage.jsx'));
 
 // scroll to top when navigating to a new path (keep anchor scroll when a #hash is present)
 function ScrollTop(){
@@ -37,6 +38,7 @@ export default function App(){
               <Route path="/" element={<Home/>}/>
               <Route path="/category/:id" element={<CategoryPage/>}/>
               <Route path="/brand/:name" element={<BrandPage/>}/>
+              <Route path="/search" element={<SearchPage/>}/>
               <Route path="/product/:id" element={<ProductPage/>}/>
               <Route path="/livrare" element={<About/>}/>
               <Route path="/plata" element={<Payment/>}/>

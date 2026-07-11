@@ -3,6 +3,7 @@ import React from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useShop, Icon, Placeholder } from '../shop.jsx'
 import { asset } from '../data.js'
+import { searchProducts } from '../search.js'
 
 export function LogoMark({size=42,color="#1a1a1a"}){
   // stylized "nn" nail monogram
@@ -68,27 +69,36 @@ export function SearchBox(){
   const loadProducts = React.useCallback(()=>{
     if(!allProducts.length) ensureCatalog();
   },[allProducts.length, ensureCatalog]);
-  const results = React.useMemo(()=>{
-    const s=q.trim().toLowerCase(); if(!s) return [];
-    return allProducts.filter(p=>
-      (p.ro+" "+p.ru+" "+p.brand+" "+(p.code||"")).toLowerCase().includes(s)
-    ).slice(0,6);
+  const allResults = React.useMemo(()=>{
+    if(!q.trim()) return [];
+    return searchProducts(allProducts, q);
   },[q,allProducts]);
+  const results = allResults.slice(0,8);
+  const runSearch = React.useCallback(()=>{
+    const s = q.trim();
+    if(!s) return;
+    setOpen(false);
+    navigate(`/search?q=${encodeURIComponent(s)}`);
+  },[navigate,q]);
   return (
     <div className="searchbox" ref={boxRef}>
       <input value={q} placeholder={t("searchPh")}
         onChange={e=>{setQ(e.target.value);setOpen(true); if(e.target.value.trim()) loadProducts();}}
-        onFocus={()=>{setOpen(true); loadProducts();}} aria-label={t("search")}/>
-      <button className="go"><Icon n="search" s={18}/><span className="gotxt">{t("search")}</span></button>
+        onFocus={()=>{setOpen(true); loadProducts();}}
+        onKeyDown={e=>{ if(e.key==="Enter"){ e.preventDefault(); runSearch(); }}}
+        aria-label={t("search")}/>
+      <button className="go" type="button" onClick={runSearch}><Icon n="search" s={18}/><span className="gotxt">{t("search")}</span></button>
       {open && q.trim() && (
         <div className="sresults nm-scroll" style={{maxHeight:380,overflowY:"auto"}}>
           {results.length===0
             ? <div className="empty">{catalogLoading ? `${t("search")}...` : t("noResults")}</div>
             : <>
-                <div className="head">{results.length} {t("results")}</div>
+                <div className="head">{allResults.length} {t("results")}</div>
                 {results.map(p=>(
                   <div className="row" key={p.key} onClick={()=>{navigate("/product/"+p.key);setOpen(false);setQ("");}}>
-                    <Placeholder g={p.g} radius={9} img={p.img} label={name(p)}/>
+                    <div className="thumb">
+                      <Placeholder g={p.g} radius={9} img={p.img} label={name(p)}/>
+                    </div>
                     <div style={{minWidth:0}}>
                       <div className="nm" style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:200}}>{name(p)}</div>
                       <div className="br">{p.brand}</div>
@@ -96,6 +106,9 @@ export function SearchBox(){
                     <div className="pr">{p.price} {t("lei")}</div>
                   </div>
                 ))}
+                {allResults.length>results.length && (
+                  <button className="more" type="button" onClick={runSearch}>{t("all")} · {allResults.length}</button>
+                )}
               </>}
         </div>
       )}
