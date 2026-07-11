@@ -26,3 +26,5 @@ _sheets/
 
 # scratch/temp scraping artifacts (regenerable; never committed)
 _*
+!public/_headers
+!public/_redirects

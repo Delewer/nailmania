@@ -26,6 +26,39 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Playfair+Display:ital,wght@0,500;0,600;0,700;0,800;1,600;1,700&display=swap" rel="stylesheet"/>
+<script>
+(function(){
+  var reloadKey = 'nm_asset_reload';
+  function retryWithFreshHtml(reason){
+    try {
+      if (sessionStorage.getItem(reloadKey)) return;
+      sessionStorage.setItem(reloadKey, reason || 'asset');
+    } catch (error) {}
+    var url = new URL(window.location.href);
+    url.searchParams.set('nm_reload', Date.now().toString());
+    window.location.replace(url.toString());
+  }
+  window.addEventListener('error', function(event){
+    var target = event && event.target;
+    var url = target && (target.src || target.href);
+    var tag = target && target.tagName;
+    if (url && /\/assets\//.test(url) && /^(SCRIPT|LINK)$/i.test(tag || '')) {
+      retryWithFreshHtml('asset');
+    }
+  }, true);
+  window.addEventListener('unhandledrejection', function(event){
+    var reason = String((event && event.reason && (event.reason.message || event.reason)) || '');
+    if (/Failed to fetch dynamically imported module|Importing a module script failed|Failed to load module script|Loading chunk/i.test(reason)) {
+      retryWithFreshHtml('module');
+    }
+  });
+  window.addEventListener('load', function(){
+    window.setTimeout(function(){
+      try { sessionStorage.removeItem(reloadKey); } catch (error) {}
+    }, 4000);
+  });
+})();
+</script>
 </head>
 <body>
 <div id="root"></div>
