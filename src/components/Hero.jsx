@@ -33,7 +33,6 @@ export function Hero(){
                 <a className="btn btn-dark" href="#best">
                   {t("heroBtn")} <Icon n="arrow" s={18}/>
                 </a>
-                <a className="btn btn-ghost" href="#new">{t("heroBtn2")}</a>
               </div>
             </div>
             <span className="deco"></span>
@@ -49,8 +48,7 @@ export function Hero(){
             <a className="hero-card sale-card" href="#sale">
               <Placeholder g={["#cfe0df","#eef4f3"]} ratio="auto" img={HERO_IMG[2]}/>
               <div className="hc-txt">
-                <b>−30%</b>
-                <span>{t("navSale")}</span>
+                <b>{t("navSale")}</b>
               </div>
               <div className="pill"><Icon n="spark" s={14} fill/> {t("featured")}</div>
             </a>
