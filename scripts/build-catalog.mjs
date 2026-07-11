@@ -312,8 +312,9 @@ for (const r of rows.slice(headerIdx + 1)) {
   const brand = cell(r, 'brand') || 'Fără brand';
   const qtyN = parseInt(cell(r, 'qty').replace(/[^\d-]/g, ''), 10);  // stock from Quantity column
   // stable identity for URLs / cart / favorites: SKU when present, else a
-  // deterministic hash of brand+name (survives catalog rebuilds; row id does not)
-  const baseKey = code || ('x' + fnv(brand + '|' + title + '|' + cat + '|' + price));
+  // deterministic hash of brand+name+category. Do not include price: client
+  // price updates must not break product URLs or manual photo overrides.
+  const baseKey = code || ('x' + fnv(brand + '|' + title + '|' + cat));
   // source occasionally reuses a SKU for two different products — keep keys unique
   let key = baseKey, dn = 1;
   while (usedKeys.has(key)) key = baseKey + '-' + (++dn);
