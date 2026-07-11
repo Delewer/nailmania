@@ -1,21 +1,47 @@
 # Cloudflare Pages custom headers.
 # Keep the HTML shell fresh after catalog deploys; hashed assets stay immutable.
 
-/*
+/
+  Cache-Control: no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0
+
+/index.html
+  Cache-Control: no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0
+
+/*.html
+  Cache-Control: no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0
+
+/category/*
+  Cache-Control: no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0
+
+/brand/*
+  Cache-Control: no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0
+
+/product/*
+  Cache-Control: no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0
+
+/search
+  Cache-Control: no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0
+
+/livrare
+  Cache-Control: no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0
+
+/plata
+  Cache-Control: no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0
+
+/contacte
+  Cache-Control: no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0
+
+/checkout
   Cache-Control: no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0
 
 /assets/*
-  ! Cache-Control
   Cache-Control: public, max-age=31536000, immutable
 
 /images/*
-  ! Cache-Control
   Cache-Control: public, max-age=604800
 
 /sitemap.xml
-  ! Cache-Control
   Cache-Control: public, max-age=3600
 
 /robots.txt
-  ! Cache-Control
   Cache-Control: public, max-age=3600
