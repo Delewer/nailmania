@@ -72,6 +72,12 @@ function routeSeo(pathname) {
     return { ...base, title:clean(`${brand} — produse profesionale | Nail Mania`, 70), description, schema:{ '@context':'https://schema.org', '@type':'CollectionPage', name:`Produse ${brand}`, description, url:canonical } };
   }
 
+  if (pathname === '/search') {
+    const title = 'Cautare produse | Nail Mania';
+    const description = 'Cauta produse profesionale pentru manichiura, pedichiura si salon in catalogul Nail Mania.';
+    return { ...base, title, description, robots:'noindex,follow', schema:{ '@context':'https://schema.org', '@type':'WebPage', name:title, description, url:canonical } };
+  }
+
   const pages = {
     '/livrare':['Livrare în Moldova | Nail Mania','Condiții și termene de livrare pentru comenzile Nail Mania în Ungheni, Chișinău, toată Moldova și Europa.'],
     '/plata':['Metode de plată | Nail Mania','Metode de plată disponibile pentru comenzile Nail Mania: numerar, card bancar, transfer și plată la livrare.'],
