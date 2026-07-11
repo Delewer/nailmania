@@ -5,8 +5,11 @@ import './styles.css'
 import './components.css'
 import './pages.css'
 
+const BUILD_HEALTH_MARK = 'asset-cache-guard-v2';
+
 function ReadyMarker(){
   React.useEffect(()=>{
+    window.__NM_BUILD_HEALTH__ = BUILD_HEALTH_MARK;
     if(typeof window.__NM_MARK_READY__ === 'function'){
       window.__NM_MARK_READY__();
     }else{
