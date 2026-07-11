@@ -140,8 +140,10 @@
 .hero-card .hc-txt{position:relative;z-index:4}
 .hero-card .hc-txt b{display:block;font-family:var(--serif);font-size:22px;font-weight:700;line-height:1.1;color:#fff;text-shadow:0 1px 10px rgba(0,0,0,.45)}
 .hero-card .hc-txt span{font-size:13px;font-weight:600;color:#f0e6ea;text-shadow:0 1px 8px rgba(0,0,0,.4)}
-.hero-card .pill{position:relative;z-index:2;margin-top:8px;display:inline-flex;align-items:center;gap:7px;
+.hero-card .pill{position:relative;z-index:4;margin-top:8px;display:inline-flex;align-items:center;gap:7px;
   background:#fff;padding:7px 14px;border-radius:99px;font-size:13px;font-weight:700;box-shadow:var(--shadow)}
+.sale-card{align-items:flex-end;gap:18px}
+.sale-card .pill{margin:0 0 1px;color:var(--ink);flex:none}
 
 /* ===== Colored category pills (Catalog / New / Sale) ===== */
 .pills{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:18px}

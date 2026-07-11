@@ -46,13 +46,13 @@ export function Hero(){
                 <span style={{color:"#e9dde2"}}>{t("pillNew")}</span>
               </div>
             </a>
-            <a className="hero-card" href="#sale">
+            <a className="hero-card sale-card" href="#sale">
               <Placeholder g={["#cfe0df","#eef4f3"]} ratio="auto" img={HERO_IMG[2]}/>
               <div className="hc-txt">
                 <b>−30%</b>
                 <span>{t("navSale")}</span>
-                <div className="pill"><Icon n="spark" s={14} fill/> {t("featured")}</div>
               </div>
+              <div className="pill"><Icon n="spark" s={14} fill/> {t("featured")}</div>
             </a>
           </div>
         </div>
