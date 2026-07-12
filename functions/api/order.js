@@ -8,6 +8,7 @@ function format(o) {
   const items = (o.items || []).map((it) => `• ${esc(it.name)} × ${it.q} — ${it.price * it.q} lei`).join("\n");
   const c = o.customer || {};
   const addr = [c.city, c.address].filter(Boolean).join(", ");
+  const deliveryFee = Number(o.deliveryFee || 0);
   return [
     `🛍 <b>Новый заказ ${esc(o.no)}</b>`,
     `👤 ${esc(c.name)} — ${esc(c.phone)}`,
@@ -18,6 +19,7 @@ function format(o) {
     items,
     "",
     o.discount > 0 ? `Скидка: −${o.discount} lei` : "",
+    deliveryFee > 0 ? `Доставка: ${deliveryFee} lei` : "",
     `<b>Итого: ${o.total} lei</b>`,
     c.comment ? `📝 ${esc(c.comment)}` : "",
   ].filter(Boolean).join("\n");

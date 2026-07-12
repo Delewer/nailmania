@@ -18,6 +18,7 @@ foreach (($o['items'] ?? []) as $it) {
 }
 $c = $o['customer'] ?? [];
 $addr = trim(implode(', ', array_filter([$c['city'] ?? '', $c['address'] ?? ''])));
+$deliveryFee = (int)($o['deliveryFee'] ?? 0);
 $parts = array_filter([
   '🛍 <b>Новый заказ ' . e($o['no'] ?? '') . '</b>',
   '👤 ' . e($c['name'] ?? '') . ' — ' . e($c['phone'] ?? ''),
@@ -28,6 +29,7 @@ $parts = array_filter([
   implode("\n", $lines),
   '',
   (!empty($o['discount']) && $o['discount'] > 0) ? 'Скидка: −' . $o['discount'] . ' lei' : '',
+  ($deliveryFee > 0) ? 'Доставка: ' . $deliveryFee . ' lei' : '',
   '<b>Итого: ' . ($o['total'] ?? 0) . ' lei</b>',
   !empty($c['comment']) ? '📝 ' . e($c['comment']) : '',
 ]);

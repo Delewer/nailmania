@@ -13,7 +13,8 @@ const baseHtml = fs.readFileSync(path.join(DIST, 'index.html'), 'utf8');
 const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 const escapeXml = escapeHtml;
 const clean = (value, max = 160) => String(value || '').replace(/\s+/g, ' ').trim().slice(0, max);
-const routeUrl = (route) => SITE + (route === '/' ? '/' : route);
+const routePath = (route) => route === '/' ? '/' : route.replace(/\/?$/, '/');
+const routeUrl = (route) => SITE + routePath(route);
 const firstImage = (product) => {
   const image = String(product.image || '').split(/[\s,]+/).find(Boolean);
   if (!image) return DEFAULT_IMAGE;
@@ -63,9 +64,13 @@ function shell(meta, body) {
 
 function writeRoute(route, meta, body) {
   const relative = route.replace(/^\//, '');
-  const file = path.join(DIST, relative + '.html');
-  fs.mkdirSync(path.dirname(file), { recursive:true });
-  fs.writeFileSync(file, shell(meta, body));
+  const htmlFile = path.join(DIST, relative + '.html');
+  fs.mkdirSync(path.dirname(htmlFile), { recursive:true });
+  fs.writeFileSync(htmlFile, shell(meta, body));
+
+  const indexFile = path.join(DIST, relative, 'index.html');
+  fs.mkdirSync(path.dirname(indexFile), { recursive:true });
+  fs.writeFileSync(indexFile, shell(meta, body));
 }
 
 const urls = [{ loc:SITE+'/', priority:'1.0' }];
@@ -75,7 +80,7 @@ for (const category of categories) {
   const title = clean(`${category.label} — produse profesionale | Nail Mania`, 70);
   const description = clean(`Cumpără ${category.label.toLowerCase()} și produse profesionale pentru salon de la Nail Mania. Livrare rapidă în Ungheni, Chișinău și toată Moldova.`);
   const products = catalog.filter((product) => product.cat === category.id).slice(0, 24);
-  const links = products.map((product) => `<li><a href="/product/${encodeURIComponent(product.key)}">${escapeHtml(product.name)}</a></li>`).join('');
+  const links = products.map((product) => `<li><a href="/product/${encodeURIComponent(product.key)}/">${escapeHtml(product.name)}</a></li>`).join('');
   writeRoute(route, { title, description, canonical:routeUrl(route), schema:{ '@context':'https://schema.org', '@type':'CollectionPage', name:category.label, description, url:routeUrl(route) } }, `<h1>${escapeHtml(category.label)}</h1><p>${escapeHtml(description)}</p><ul>${links}</ul>`);
   urls.push({ loc:routeUrl(route), priority:'0.8' });
 }
@@ -85,7 +90,7 @@ for (const brand of brands) {
   const route = '/brand/' + encodeURIComponent(brand);
   const title = clean(`${brand} — produse profesionale | Nail Mania`, 70);
   const description = clean(`Produse profesionale ${brand} pentru manichiură și salon. Prețuri actuale, stoc și livrare în toată Moldova de la Nail Mania.`);
-  const links = catalog.filter((product) => product.brand === brand).slice(0, 24).map((product) => `<li><a href="/product/${encodeURIComponent(product.key)}">${escapeHtml(product.name)}</a></li>`).join('');
+  const links = catalog.filter((product) => product.brand === brand).slice(0, 24).map((product) => `<li><a href="/product/${encodeURIComponent(product.key)}/">${escapeHtml(product.name)}</a></li>`).join('');
   writeRoute(route, { title, description, canonical:routeUrl(route), schema:{ '@context':'https://schema.org', '@type':'CollectionPage', name:`Produse ${brand}`, description, url:routeUrl(route) } }, `<h1>${escapeHtml(brand)}</h1><p>${escapeHtml(description)}</p><ul>${links}</ul>`);
   urls.push({ loc:routeUrl(route), priority:'0.7' });
 }
@@ -103,7 +108,7 @@ for (const product of catalog) {
     offers:{ '@type':'Offer', url:canonical, priceCurrency:'MDL', price:product.price, itemCondition:'https://schema.org/NewCondition', availability:available(product)?'https://schema.org/InStock':'https://schema.org/OutOfStock', seller:{ '@type':'Organization', name:'Nail Mania' } },
   };
   const stock = available(product) ? 'În stoc' : 'Stoc epuizat';
-  writeRoute(route, { title, description, canonical, image, type:'product', schema }, `<article><p><a href="/category/${encodeURIComponent(product.cat)}">${escapeHtml(category)}</a></p><h1>${escapeHtml(product.name)}</h1><img src="${escapeHtml(image)}" alt="${escapeHtml(product.name)}" width="532" height="492"/><p><strong>${escapeHtml(product.price)} lei</strong> · ${stock}</p><p>${escapeHtml(description)}</p><p>Brand: ${escapeHtml(product.brand)} · Cod: ${escapeHtml(product.code || product.key)}</p></article>`);
+  writeRoute(route, { title, description, canonical, image, type:'product', schema }, `<article><p><a href="/category/${encodeURIComponent(product.cat)}/">${escapeHtml(category)}</a></p><h1>${escapeHtml(product.name)}</h1><img src="${escapeHtml(image)}" alt="${escapeHtml(product.name)}" width="532" height="492"/><p><strong>${escapeHtml(product.price)} lei</strong> · ${stock}</p><p>${escapeHtml(description)}</p><p>Brand: ${escapeHtml(product.brand)} · Cod: ${escapeHtml(product.code || product.key)}</p></article>`);
   urls.push({ loc:canonical, priority:'0.6', image, imageTitle:product.name });
 }
 
@@ -120,11 +125,12 @@ for (const [route, title, description] of contentPages) {
 const homeTitle = 'Nail Mania Moldova — produse profesionale pentru manichiură';
 const homeDescription = 'Magazin online cu produse profesionale pentru manichiură, pedichiură și epilare. Peste 1800 de produse, livrare în toată Moldova și magazin în Ungheni.';
 const storeSchema = { '@context':'https://schema.org', '@type':'Store', '@id':SITE+'/#store', name:'Nail Mania', url:SITE+'/', logo:DEFAULT_IMAGE, image:DEFAULT_IMAGE, telephone:'+37368067486', priceRange:'$$', currenciesAccepted:'MDL', address:{ '@type':'PostalAddress', streetAddress:'str. Romană 66/2', addressLocality:'Ungheni', addressCountry:'MD' }, sameAs:['https://www.instagram.com/nailmania_md'] };
-const homeCategoryLinks = categories.map((category) => `<li><a href="/category/${encodeURIComponent(category.id)}">${escapeHtml(category.label)}</a></li>`).join('');
-const homeProductLinks = catalog.filter(available).slice(0, 24).map((product) => `<li><a href="/product/${encodeURIComponent(product.key)}">${escapeHtml(product.name)}</a> — ${escapeHtml(product.price)} lei</li>`).join('');
+const homeCategoryLinks = categories.map((category) => `<li><a href="/category/${encodeURIComponent(category.id)}/">${escapeHtml(category.label)}</a></li>`).join('');
+const homeProductLinks = catalog.filter(available).slice(0, 24).map((product) => `<li><a href="/product/${encodeURIComponent(product.key)}/">${escapeHtml(product.name)}</a> — ${escapeHtml(product.price)} lei</li>`).join('');
 fs.writeFileSync(path.join(DIST, 'index.html'), shell({ title:homeTitle, description:homeDescription, canonical:SITE+'/', schema:storeSchema }, `<h1>Produse profesionale pentru manichiură și pedichiură</h1><p>${escapeHtml(homeDescription)}</p><h2>Categorii</h2><ul>${homeCategoryLinks}</ul><h2>Produse recomandate</h2><ul>${homeProductLinks}</ul>`));
 
 writeRoute('/checkout', { title:'Finalizarea comenzii | Nail Mania', description:'Finalizarea comenzii Nail Mania.', canonical:SITE+'/checkout', robots:'noindex,nofollow' }, '<h1>Finalizarea comenzii</h1>');
+writeRoute('/search', { title:'Cautare produse | Nail Mania', description:'Cautare produse Nail Mania.', canonical:SITE+'/search', robots:'noindex,follow' }, '<h1>Cautare produse</h1>');
 
 const sitemap = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">\n${urls.map((url) => `  <url>\n    <loc>${escapeXml(url.loc)}</loc>\n    <priority>${url.priority}</priority>${url.image ? `\n    <image:image><image:loc>${escapeXml(url.image)}</image:loc><image:title>${escapeXml(url.imageTitle)}</image:title></image:image>` : ''}\n  </url>`).join('\n')}\n</urlset>\n`;
 fs.writeFileSync(path.join(DIST, 'sitemap.xml'), sitemap);

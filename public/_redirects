@@ -1,8 +1,3 @@
-/category/:id  /category/:id.html  200
-/brand/:name    /brand/:name.html    200
-/product/:id    /product/:id.html    200
-/livrare        /livrare.html        200
-/plata          /plata.html          200
-/contacte       /contacte.html       200
-/checkout       /checkout.html       200
-/search         /index.html          200
+# Cloudflare Pages serves extensionless URLs from route/index.html files.
+# Do not rewrite clean URLs to .html files here: Cloudflare's clean-URL
+# normalization redirects .html back to the same clean URL and creates a loop.

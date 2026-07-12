@@ -109,6 +109,7 @@
 .co-opt .ot{flex:1;min-width:0}
 .co-opt .ot b{display:block;font-weight:700;font-size:15px}
 .co-opt .ot span{font-size:13px;color:var(--gray)}
+.co-opt .ot em{display:block;margin-top:4px;font-style:normal;font-size:13px;font-weight:800;color:var(--rose-deep)}
 .co-opt .radio{width:22px;height:22px;border-radius:50%;border:2px solid var(--line-2);flex:none;display:grid;place-items:center;transition:.15s}
 .co-opt.on .radio{border-color:var(--rose)}
 .co-opt.on .radio::after{content:"";width:11px;height:11px;border-radius:50%;background:var(--rose)}

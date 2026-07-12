@@ -7,6 +7,7 @@ const DELIVERY = [
   { id:"courier", icon:"truck", titleKey:"courier", descKey:"courierDesc", needsAddress:true },
   { id:"pickup",  icon:"store", titleKey:"pickup",  descKey:"pickupDesc",  needsAddress:false }
 ];
+const COURIER_FEE = 70;
 const PAYMENT = [
   { id:"mia",  icon:"spark", titleKey:"payMia",  descKey:"payMiaDesc"  },
   { id:"card", icon:"card",  titleKey:"payCard", descKey:"payCardDesc" },
@@ -30,6 +31,9 @@ export default function Checkout(){
   const lines = cart.map(i=>({ ...i, p: find(i.id) })).filter(x=>x.p);
   const discount = lines.reduce((s,l)=> s + (l.p.old>0 ? (l.p.old-l.p.price)*l.q : 0), 0);
   const needsAddress = delivery === "courier";
+  const deliveryFee = delivery === "courier" ? COURIER_FEE : 0;
+  const orderTotal = cartTotal + deliveryFee;
+  const deliveryAmountLabel = delivery ? (deliveryFee ? `+${deliveryFee} ${t("lei")}` : t("freeLabel")) : "—";
 
   const set = (k)=> (e)=> setForm(f=>({ ...f, [k]: e.target.value }));
 
@@ -54,6 +58,8 @@ export default function Checkout(){
     const order = submitOrder({
       customer: { ...form },
       delivery, deliveryLabel: t(DELIVERY.find(d=>d.id===delivery)?.titleKey || ""),
+      deliveryFee,
+      total: orderTotal,
       payment,  paymentLabel:  t(PAYMENT.find(p=>p.id===payment)?.titleKey || ""),
     });
     setDone(order);
@@ -80,7 +86,7 @@ export default function Checkout(){
               ))}
             </div>
             {done.discount>0 && <div className="rrow disc"><span>{t("discountLabel")}</span><b>-{done.discount} {t("lei")}</b></div>}
-            <div className="rrow"><span>{t("deliveryLabel")}</span><span>{done.deliveryLabel}</span></div>
+            <div className="rrow"><span>{t("deliveryLabel")}</span><span>{done.deliveryFee ? `${done.deliveryLabel} +${done.deliveryFee} ${t("lei")}` : t("freeLabel")}</span></div>
             <div className="rrow"><span>{t("paymentSection")}</span><span>{done.paymentLabel}</span></div>
             <div className="rrow grand"><span>{t("total")}</span><b>{done.total} {t("lei")}</b></div>
           </div>
@@ -139,7 +145,11 @@ export default function Checkout(){
               {DELIVERY.map(o=>(
                 <button type="button" key={o.id} className={"co-opt"+(delivery===o.id?" on":"")} onClick={()=>setDelivery(o.id)}>
                   <span className="ico"><Icon n={o.icon} s={22}/></span>
-                  <span className="ot"><b>{t(o.titleKey)}</b><span>{t(o.descKey)}</span></span>
+                  <span className="ot">
+                    <b>{t(o.titleKey)}</b>
+                    <span>{t(o.descKey)}</span>
+                    {o.id === "courier" && <em>+{COURIER_FEE} {t("lei")}</em>}
+                  </span>
                   <span className="radio"/>
                 </button>
               ))}
@@ -214,8 +224,8 @@ export default function Checkout(){
           </div>
           <div className="totrow"><span>{t("itemsLabel")}: {lines.reduce((s,l)=>s+l.q,0)}</span><span>{cartTotal+discount} {t("lei")}</span></div>
           {discount>0 && <div className="totrow disc"><span>{t("discountLabel")}</span><b>-{discount} {t("lei")}</b></div>}
-          <div className="totrow"><span>{t("deliveryLabel")}</span><span>{t("freeLabel")}</span></div>
-          <div className="totrow grand"><span>{t("total")}</span><b>{cartTotal} {t("lei")}</b></div>
+          <div className="totrow"><span>{t("deliveryLabel")}</span><span>{deliveryAmountLabel}</span></div>
+          <div className="totrow grand"><span>{t("total")}</span><b>{orderTotal} {t("lei")}</b></div>
 
           <label className="co-agree">
             <input type="checkbox" checked={agree} onChange={e=>setAgree(e.target.checked)} />

@@ -2,8 +2,7 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
 import { useShop, Icon } from '../shop.jsx'
-import { LogoMark } from './Header.jsx'
-import { CATS } from '../data.js'
+import { CATS, asset } from '../data.js'
 
 export function Brands(){
   const {t} = useShop();
@@ -134,7 +133,7 @@ export function Footer(){
       <div className="wrap">
         <div className="foot-grid">
           <div>
-            <div className="flogo"><LogoMark color="#fff"/><div className="txt">NailMania</div></div>
+            <div className="flogo"><img className="footer-logo-img" src={asset("images/logo-high.png")} alt="Nail Mania" /></div>
             <p className="ab">{t("footAbout")}</p>
           </div>
           <div>
