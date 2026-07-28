@@ -66,9 +66,35 @@ test('administrator helper only generates checksummed SQL and cannot mutate remo
   const report = JSON.parse(readFileSync(path.join(directory, 'tmp', 'd1', 'admin-seed-report.json'), 'utf8'));
   assert.match(sql, /owner\.o''reilly@example\.test/);
   assert.match(sql, /Owner O''Reilly/);
+  assert.match(sql, /'admin', 'active'/);
+  assert.equal(report.role, 'admin');
   assert.equal(report.sqlSha256, createHash('sha256').update(sql).digest('hex'));
   assert.match(report.emailSha256, /^[a-f0-9]{64}$/);
   assert.equal(sql.includes('--remote'), false);
+
+  const manager = spawnSync(process.execPath, [
+    SEED_ADMIN,
+    '--email', 'seller@example.test',
+    '--role', 'manager',
+    '--name', 'Store Seller',
+  ], { cwd: directory, encoding: 'utf8' });
+  assert.equal(manager.status, 0, manager.stderr);
+  const managerSql = readFileSync(path.join(directory, 'tmp', 'd1', 'admin-seed.sql'), 'utf8');
+  const managerReport = JSON.parse(
+    readFileSync(path.join(directory, 'tmp', 'd1', 'admin-seed-report.json'), 'utf8'),
+  );
+  assert.match(managerSql, /'manager', 'active'/);
+  assert.match(managerSql, /role = excluded\.role/);
+  assert.equal(managerReport.role, 'manager');
+  assert.equal(managerReport.sqlSha256, createHash('sha256').update(managerSql).digest('hex'));
+
+  const invalidRole = spawnSync(process.execPath, [
+    SEED_ADMIN,
+    '--email', 'seller@example.test',
+    '--role', 'owner',
+  ], { cwd: directory, encoding: 'utf8' });
+  assert.notEqual(invalidRole.status, 0);
+  assert.match(invalidRole.stderr, /--role must be either manager or admin/);
 });
 
 test('R2 public base guard accepts only an explicit safe HTTPS base', () => {
@@ -249,6 +275,24 @@ if (process.argv.includes('--json')) process.stdout.write(JSON.stringify([{ resu
   assert.match(tampered.stderr, /bookmark is missing or does not match/);
 
   writeFileSync(bookmarkPath, bookmark);
+  const staffArgs = [
+    path.join(scriptsDirectory, 'd1-release.mjs'),
+    'admin', '--environment', 'production',
+    '--confirm', 'nailmania-production',
+    '--expected-commit', commit,
+    '--backup', 'tmp/backups/production.sql',
+    '--email', 'seller@example.test',
+    '--confirm-email', 'seller@example.test',
+  ];
+  const missingRole = spawnSync(process.execPath, staffArgs, { cwd: directory, encoding: 'utf8' });
+  assert.notEqual(missingRole.status, 0);
+  assert.match(missingRole.stderr, /requires an explicit --role manager\|admin/);
+  const mismatchedRole = spawnSync(process.execPath, [
+    ...staffArgs, '--role', 'manager', '--confirm-role', 'admin',
+  ], { cwd: directory, encoding: 'utf8' });
+  assert.notEqual(mismatchedRole.status, 0);
+  assert.match(mismatchedRole.stderr, /matching --role and --confirm-role/);
+
   const applied = spawnSync(process.execPath, guardedArgs, { cwd: directory, encoding: 'utf8' });
   assert.equal(applied.status, 0, applied.stderr);
   const calls = readFileSync(path.join(directory, 'tmp', 'wrangler-calls.log'), 'utf8');

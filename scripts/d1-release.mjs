@@ -30,7 +30,7 @@ const usage = `Usage:
   node scripts/d1-release.mjs backup --environment <preview|production>
   node scripts/d1-release.mjs migrate --environment <preview|production> --confirm <database> --expected-commit <full HEAD SHA> --backup <tmp/backups/...sql>
   node scripts/d1-release.mjs catalog --environment <preview|production> --confirm <database> --expected-commit <full HEAD SHA> --backup <tmp/backups/...sql> --snapshot <csv> --validation-report <json>
-  node scripts/d1-release.mjs admin --environment <preview|production> --confirm <database> --expected-commit <full HEAD SHA> --backup <tmp/backups/...sql> --email <address> --confirm-email <address> [--name <name>]
+  node scripts/d1-release.mjs admin --environment <preview|production> --confirm <database> --expected-commit <full HEAD SHA> --backup <tmp/backups/...sql> --email <address> --confirm-email <address> [--role <manager|admin> --confirm-role <manager|admin>] [--name <name>]
 
 Mutation guards:
   exact environment branch, --expected-commit <full HEAD SHA>, clean worktree and a fresh verified backup
@@ -424,9 +424,20 @@ SELECT
   const email = valueAfter('--email').toLowerCase();
   const confirmedEmail = valueAfter('--confirm-email').toLowerCase();
   if (!email || confirmedEmail !== email) {
-    throw new Error('Administrator grant requires matching --email and --confirm-email values');
+    throw new Error('Staff grant requires matching --email and --confirm-email values');
   }
-  const seedArgs = ['scripts/seed-admin.mjs', '--email', email];
+  const role = valueAfter('--role');
+  const confirmedRole = valueAfter('--confirm-role');
+  if (!role) {
+    throw new Error('Staff grant requires an explicit --role manager|admin');
+  }
+  if (!['manager', 'admin'].includes(role)) {
+    throw new Error('Staff grant --role must be either manager or admin');
+  }
+  if (confirmedRole !== role) {
+    throw new Error('Staff grant requires matching --role and --confirm-role values');
+  }
+  const seedArgs = ['scripts/seed-admin.mjs', '--email', email, '--role', role];
   const name = valueAfter('--name');
   if (name) seedArgs.push('--name', name);
   run(process.execPath, seedArgs);
@@ -436,12 +447,13 @@ SELECT
   try {
     report = JSON.parse(readFileSync(reportPath, 'utf8'));
   } catch {
-    throw new Error('Administrator grant report is missing or invalid JSON');
+    throw new Error('Staff grant report is missing or invalid JSON');
   }
   if (!/^[a-f0-9]{64}$/i.test(String(report.emailSha256 || ''))
       || !/^[a-f0-9]{64}$/i.test(String(report.sqlSha256 || ''))
+      || report.role !== role
       || report.sqlSha256 !== sha256(sqlPath)) {
-    throw new Error('Administrator grant evidence is incomplete or its SQL checksum does not match');
+    throw new Error('Staff grant evidence is incomplete or its SQL checksum does not match');
   }
   wrangler(
     'd1', 'execute', target.database, '--remote', '--config', 'wrangler.toml', '--env', environment,
@@ -449,6 +461,7 @@ SELECT
   );
   administratorEvidence = {
     userId: report.userId,
+    role: report.role,
     emailSha256: report.emailSha256,
     sqlSha256: report.sqlSha256,
   };

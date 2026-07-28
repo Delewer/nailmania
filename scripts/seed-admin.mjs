@@ -18,17 +18,21 @@ if (forbiddenRemoteFlags.length) {
 
 const email = valueAfter('--email').toLowerCase();
 if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('A valid --email value is required');
-const name = valueAfter('--name') || 'Nail Mania Administrator';
-if (name.length > 120) throw new Error('Administrator name must not exceed 120 characters');
+const role = valueAfter('--role') || 'admin';
+if (!['manager', 'admin'].includes(role)) {
+  throw new Error('--role must be either manager or admin');
+}
+const name = valueAfter('--name') || (role === 'manager' ? 'Nail Mania Manager' : 'Nail Mania Administrator');
+if (name.length > 120) throw new Error('Staff name must not exceed 120 characters');
 const quote = (value) => `'${String(value).replaceAll("'", "''")}'`;
-const userId = `admin:${createHash('sha256').update(email).digest('hex').slice(0, 24)}`;
+const userId = `${role}:${createHash('sha256').update(email).digest('hex').slice(0, 24)}`;
 const sql = `PRAGMA foreign_keys = ON;
 
 INSERT INTO users (id, email, name, role, status)
-VALUES (${quote(userId)}, ${quote(email)}, ${quote(name)}, 'admin', 'active')
+VALUES (${quote(userId)}, ${quote(email)}, ${quote(name)}, ${quote(role)}, 'active')
 ON CONFLICT(email) DO UPDATE SET
   name = excluded.name,
-  role = 'admin',
+  role = excluded.role,
   status = 'active',
   updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now');
 `;
@@ -41,10 +45,11 @@ writeFileSync(sqlPath, sql);
 writeFileSync(reportPath, `${JSON.stringify({
   generatedAt: new Date().toISOString(),
   userId,
+  role,
   emailSha256: digest(email),
   sqlSha256: digest(sql),
   sqlFile: path.relative(root, sqlPath),
 }, null, 2)}\n`);
-console.log(`Prepared administrator grant ${userId}`);
+console.log(`Prepared ${role} grant ${userId}`);
 console.log(`SQL: ${path.relative(root, sqlPath)}`);
 console.log(`Report: ${path.relative(root, reportPath)}`);

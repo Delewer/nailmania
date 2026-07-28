@@ -122,11 +122,11 @@ npm run rehost -- --environment <preview-or-production> --confirm-bucket $env:R2
    $previewCatalogManifest = (Get-ChildItem tmp/releases/preview-catalog-*.json | Where-Object { $_.Name -notlike "*postconditions*" } | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
    ```
 
-   Если admin-строки ещё не подготовлены в отдельной preview D1, выдать роль каждому заранее одобренному Access email с двойным подтверждением значения:
+   Если staff-строки ещё не подготовлены в отдельной preview D1, выдать роль каждому заранее одобренному Access email с двойным подтверждением значения. Для продавца использовать `manager`, для владельца — `admin`:
 
    ```powershell
-   $adminEmail = "approved-admin@example.com"
-   npm run release:d1:admin:preview -- --confirm nailmania-preview --expected-commit $commit --backup $backup --email $adminEmail --confirm-email $adminEmail --name "Approved administrator"
+   $staffEmail = "approved-staff@example.com"
+   npm run release:d1:admin:preview -- --confirm nailmania-preview --expected-commit $commit --backup $backup --email $staffEmail --confirm-email $staffEmail --role manager --confirm-role manager --name "Approved seller"
    ```
 
 6. До первой удалённой публикации проверить Pages build manifest из artifact и собрать аттестованный Worker bundle. `dist` для preview не пересобирать: deploy использует точные байты, проверенные readiness workflow. Worker build выполняет локальный Wrangler `--dry-run`, сохраняет bundle и manifest; после человеческого approval deploy wrapper передаёт Wrangler именно сохранённый entrypoint с `--no-bundle`:
@@ -188,11 +188,11 @@ npm run rehost -- --environment <preview-or-production> --confirm-bucket $env:R2
    $productionCatalogManifest = (Get-ChildItem tmp/releases/production-catalog-*.json | Where-Object { $_.Name -notlike "*postconditions*" } | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
    ```
 
-   Отдельно выдать роли только утверждённым production Access email (повторить для второго администратора):
+   Отдельно выдать роли только утверждённым production Access email (повторить для остальных сотрудников и выбрать `manager` либо `admin`):
 
    ```powershell
-   $adminEmail = "approved-admin@example.com"
-   npm run release:d1:admin:production -- --confirm nailmania-production --expected-commit $commit --backup $backup --email $adminEmail --confirm-email $adminEmail --name "Approved administrator"
+   $staffEmail = "approved-staff@example.com"
+   npm run release:d1:admin:production -- --confirm nailmania-production --expected-commit $commit --backup $backup --email $staffEmail --confirm-email $staffEmail --role manager --confirm-role manager --name "Approved seller"
    ```
 
 4. Собрать production Worker bundle guarded wrapper, затем выполнить deploy dry-run. После отдельного approval опубликовать Worker и проверенный Pages bundle. Production Pages guard потребует acceptance evidence, исходный build manifest и D1 manifests принятого preview; все артефакты должны относиться к тому же Git SHA. Production `dist` независимо сверяется с production manifest:
