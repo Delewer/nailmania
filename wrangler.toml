@@ -8,9 +8,15 @@ ENVIRONMENT = "local"
 NODE_VERSION = "24"
 
 [env.preview.vars]
+CF_ACCESS_AUD = "116e64d2aa1fbdd4f8ab1a59be11949d82e7093d791a1dabfe598464b72a6f3d"
+CF_ACCESS_TEAM_DOMAIN = "https://fragrant-smoke-0bc7.cloudflareaccess.com"
+CLOUDFLARE_ACCOUNT_ID = "7528cca2f4b63e24a89a5f27e3f9a635"
+CUSTOMER_PASSWORD_RESET_URL = "https://d1-preview-bootstrap.nailmania.pages.dev/reset-password"
 ENVIRONMENT = "preview"
 NODE_VERSION = "24"
 PRODUCT_ANALYTICS_DATASET = "nailmania_product_events_preview"
+R2_PUBLIC_BASE_URL = "https://preview-images.nailmania.md"
+TURNSTILE_HOSTNAMES = "d1-preview-bootstrap.nailmania.pages.dev"
 
 [[env.preview.d1_databases]]
 binding = "DB"
