@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
+import { assertCanonicalCatalogImagesForRelease } from './catalog-image-policy.mjs';
 import { releaseBundleDigest } from './release-bundle.mjs';
 
 const root = process.cwd();
@@ -71,6 +72,7 @@ if (environment === 'production' && git('branch', '--show-current') !== 'main') 
   throw new Error('Production release build must run from main');
 }
 
+assertCanonicalCatalogImagesForRelease(root);
 run(process.execPath, [path.join(root, 'node_modules', 'vite', 'bin', 'vite.js'), 'build']);
 run(process.execPath, [path.join(root, 'scripts', 'build-seo.mjs')]);
 

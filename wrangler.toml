@@ -38,6 +38,7 @@ CF_ACCESS_TEAM_DOMAIN = "https://fragrant-smoke-0bc7.cloudflareaccess.com"
 ENVIRONMENT = "production"
 NODE_VERSION = "24"
 PRODUCT_ANALYTICS_DATASET = "nailmania_product_events_production"
+R2_PUBLIC_BASE_URL = "https://images.nailmania.md"
 
 [[env.production.d1_databases]]
 binding = "DB"
@@ -47,7 +48,7 @@ migrations_dir = "migrations"
 
 [[env.production.r2_buckets]]
 binding = "PRODUCT_IMAGES"
-bucket_name = "nailmania-product-images-production"
+bucket_name = "nailmania-photos"
 
 [[env.production.analytics_engine_datasets]]
 binding = "PRODUCT_ANALYTICS"

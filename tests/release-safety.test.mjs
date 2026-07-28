@@ -14,6 +14,24 @@ const D1_RELEASE = path.join(ROOT, 'scripts', 'd1-release.mjs');
 const MIGRATION_INTEGRITY = path.join(ROOT, 'scripts', 'migration-integrity.mjs');
 const RELEASE_BUILD = path.join(ROOT, 'scripts', 'release-build.mjs');
 const RELEASE_BUNDLE = path.join(ROOT, 'scripts', 'release-bundle.mjs');
+const CATALOG_IMAGE_POLICY = path.join(ROOT, 'scripts', 'catalog-image-policy.mjs');
+
+function writeCanonicalImagePolicyFixture(directory) {
+  mkdirSync(path.join(directory, 'src'), { recursive: true });
+  writeFileSync(path.join(directory, 'catalog.config.json'), `${JSON.stringify({
+    sheetUrl: '',
+    imagePolicy: {
+      canonicalBaseUrl: 'https://images.example.test',
+      productionBucket: 'production-images',
+      legacySameBucketOrigins: ['https://legacy-images.example.test'],
+      externalUrlMapFile: 'catalog-image-url-map.json',
+    },
+  })}\n`);
+  writeFileSync(path.join(directory, 'catalog-image-url-map.json'), '{}\n');
+  writeFileSync(path.join(directory, 'src', 'catalog.json'), `${JSON.stringify([
+    { key: 'FIXTURE', image: 'https://images.example.test/fixture.webp' },
+  ])}\n`);
+}
 
 test('migration checksum manifest rejects filename and content drift', () => {
   const migrations = {
@@ -197,6 +215,7 @@ test('production D1 wrapper rejects missing/tampered backup and records a guarde
   mkdirSync(backupDirectory, { recursive: true });
   copyFileSync(D1_RELEASE, path.join(scriptsDirectory, 'd1-release.mjs'));
   copyFileSync(MIGRATION_INTEGRITY, path.join(scriptsDirectory, 'migration-integrity.mjs'));
+  copyFileSync(CATALOG_IMAGE_POLICY, path.join(scriptsDirectory, 'catalog-image-policy.mjs'));
   const fixtureMigration = 'CREATE TABLE fixture (id INTEGER PRIMARY KEY);';
   writeFileSync(path.join(migrationsDirectory, '0001_fixture.sql'), `${fixtureMigration}\n`);
   writeFileSync(
@@ -327,6 +346,8 @@ test('catalog D1 wrapper records remote postconditions and fails closed on a mis
   mkdirSync(backupDirectory, { recursive: true });
   copyFileSync(D1_RELEASE, path.join(scriptsDirectory, 'd1-release.mjs'));
   copyFileSync(MIGRATION_INTEGRITY, path.join(scriptsDirectory, 'migration-integrity.mjs'));
+  copyFileSync(CATALOG_IMAGE_POLICY, path.join(scriptsDirectory, 'catalog-image-policy.mjs'));
+  writeCanonicalImagePolicyFixture(directory);
   const fixtureMigration = 'CREATE TABLE fixture (id INTEGER PRIMARY KEY);';
   writeFileSync(path.join(migrationsDirectory, '0001_fixture.sql'), `${fixtureMigration}\n`);
   writeFileSync(
@@ -464,6 +485,8 @@ test('release Pages build fails closed without a production-format Turnstile key
   mkdirSync(path.join(directory, 'node_modules', 'vite', 'bin'), { recursive: true });
   copyFileSync(RELEASE_BUILD, path.join(directory, 'scripts', 'release-build.mjs'));
   copyFileSync(RELEASE_BUNDLE, path.join(directory, 'scripts', 'release-bundle.mjs'));
+  copyFileSync(CATALOG_IMAGE_POLICY, path.join(directory, 'scripts', 'catalog-image-policy.mjs'));
+  writeCanonicalImagePolicyFixture(directory);
   writeFileSync(path.join(directory, 'scripts', 'build-seo.mjs'), `
 import { appendFileSync } from 'node:fs';
 appendFileSync('dist/index.html', '<meta name="seo-fixture">');
@@ -538,4 +561,21 @@ fs.writeFileSync('dist/assets/app.js', 'window.siteKey=' + JSON.stringify(proces
   assert.equal(manifest.vitePublicInputContract, 1);
   assert.deepEqual(manifest.vitePublicInputNames, ['VITE_TURNSTILE_SITE_KEY']);
   assert.match(manifest.bundleSha256, /^[a-f0-9]{64}$/);
+
+  writeFileSync(path.join(directory, 'src', 'catalog.json'), `${JSON.stringify([
+    { key: 'EXTERNAL', image: 'https://supplier.example/fixture.webp' },
+  ])}\n`);
+  runGit('add', 'src/catalog.json');
+  runGit('commit', '-m', 'external image fixture');
+  const externalCommit = runGit('rev-parse', 'HEAD');
+  const refusedExternal = spawnSync(process.execPath, [
+    path.join(directory, 'scripts', 'release-build.mjs'),
+    '--environment', 'preview', '--expected-commit', externalCommit,
+  ], {
+    cwd: directory,
+    encoding: 'utf8',
+    env: { ...process.env, VITE_TURNSTILE_SITE_KEY: siteKey },
+  });
+  assert.notEqual(refusedExternal.status, 0);
+  assert.match(refusedExternal.stderr, /non-canonical image URL/);
 });

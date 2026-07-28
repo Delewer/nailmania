@@ -24,7 +24,7 @@
 |---|---|---|---|
 | local | `nailmania-local` | `nailmania-photos-local` | `nailmania-reservation-maintenance-local` |
 | preview | `nailmania-preview` | `nailmania-product-images-preview` | `nailmania-reservation-maintenance-preview` |
-| production | `nailmania-production` | `nailmania-product-images-production` | `nailmania-reservation-maintenance-production` |
+| production | `nailmania-production` | `nailmania-photos` (`https://images.nailmania.md`) | `nailmania-reservation-maintenance-production` |
 
 Analytics Engine is also isolated: `nailmania_product_events_preview` and `nailmania_product_events_production`. Before preview acceptance, configure `ANALYTICS_INDEX_SECRET`; for optional event metrics in the admin dashboard also configure non-secret `CLOUDFLARE_ACCOUNT_ID` and secret `ANALYTICS_READ_TOKEN`. Never place their values in Wrangler files, GitHub Actions or release artifacts. The exact event/report formulas are documented in `docs/STATISTICS.md`.
 
@@ -78,17 +78,17 @@ Generated `src/catalog.json` и `src/categories.json` должны быть revi
 
 ### R2 maintenance до release
 
-`rehost-images.mjs`, `upload-r2.mjs` и `migrate-drive-r2.mjs` отказываются работать без точного preview/production bucket из `wrangler.toml`, его повторного подтверждения, чистого worktree и полного HEAD SHA. Production дополнительно требует branch `main`. Они не запускаются из `build`/CI; отсутствие credentials и частичная ошибка завершают команду ненулевым кодом. Public URL передаётся явно и не зашит в код. Production URL обязан быть custom domain: `*.r2.dev` release guard не принимает из-за rate limiting.
+`upload-r2.mjs` и `migrate-drive-r2.mjs` отказываются работать без точного preview/production bucket из `wrangler.toml`, его повторного подтверждения, чистого worktree и полного HEAD SHA. `rehost-images.mjs` строже: он разрешён только для production, только на branch `main`, только для exact bucket и canonical host из `catalog.config.json`; попытка указать preview завершается до сетевых запросов и R2 mutation. Эти команды не запускаются из `build`/CI; отсутствие credentials и частичная ошибка завершают команду ненулевым кодом. Public URL передаётся явно. Production URL обязан быть custom domain: `*.r2.dev` release guard не принимает из-за rate limiting.
 
-Если перед release нужно перенести изображения, выполнить операцию как отдельное изменение до canonical catalog validation, затем review/commit получившиеся tracked файлы и повторить все gates. `src/catalog.json` является одним и тем же release artifact для preview и production: `rehost-images`/`migrate-drive-r2` запускаются только один раз для заранее выбранного canonical immutable image host, а не по разу для каждого окружения. Preview обязан проверить именно те URL, которые затем получит production. До выбора схемы сверить фактический bucket, custom domain, object count и доступность объектов. Пример формы команды (target и host выбираются по утверждённой схеме размещения):
+Если перед release нужно перенести изображения, выполнить операцию как отдельное изменение до canonical catalog validation, затем review/commit получившиеся tracked файлы и повторить все gates. `src/catalog.json` является одним и тем же release artifact для preview и production: `rehost-images`/`migrate-drive-r2` запускаются только один раз для заранее выбранного canonical immutable image host, а не по разу для каждого окружения. Preview обязан проверить именно те URL, которые затем получит production. Production canonical host — `https://images.nailmania.md` на bucket `nailmania-photos`; известный legacy `r2.dev` origin переписывается на него без копирования объектов, с сохранением полного пути. Внешние URL после успешного rehost фиксируются в tracked URL map, чтобы следующая сборка из Google Sheet была воспроизводимой. До операции сверить фактический bucket, custom domain, object count и доступность объектов. Пример формы команды:
 
 ```powershell
 $commit = git rev-parse HEAD
-$env:R2_BUCKET = "<exact-bucket-from-wrangler.toml>"
-npm run rehost -- --environment <preview-or-production> --confirm-bucket $env:R2_BUCKET --expected-commit $commit --public-base-url https://<canonical-image-host>
+$env:R2_BUCKET = "nailmania-photos"
+npm run rehost -- --environment production --confirm-bucket nailmania-photos --expected-commit $commit --public-base-url https://images.nailmania.md
 ```
 
-Не использовать production credentials для preview. После R2 maintenance нельзя продолжать rollout с прежним SHA, snapshot или backup.
+Preview bucket для `rehost-images` не использовать: canonical catalog обязан ссылаться на один production image host, который затем проверяет preview storefront. После R2 maintenance нельзя продолжать rollout с прежним SHA, snapshot или backup. Preview/production release-build и guarded D1 catalog import отказываются принимать artifact, пока в нём остаётся хотя бы один внешний image host.
 
 ## Preview rollout
 

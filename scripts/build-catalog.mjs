@@ -17,10 +17,17 @@ import {
   validateCatalogSheetText,
   validateImportCatalog,
 } from './catalog-integrity.mjs';
+import {
+  catalogImagePolicyFromConfig,
+  readExternalImageUrlMap,
+  rewriteImageValue,
+} from './catalog-image-policy.mjs';
 
 const ROOT = process.cwd();
 const LOCAL = path.join(ROOT, 'nailmania-sheet.csv');
 const CONFIG = JSON.parse(readFileSync(path.join(ROOT, 'catalog.config.json'), 'utf8'));
+const IMAGE_POLICY = catalogImagePolicyFromConfig(CONFIG, ROOT);
+const EXTERNAL_IMAGE_URL_MAP = readExternalImageUrlMap(IMAGE_POLICY);
 const cliArgs = process.argv.slice(2);
 const argumentValue = (name) => {
   const inline = cliArgs.find((argument) => argument.startsWith(`${name}=`));
@@ -376,8 +383,9 @@ for (const r of rows.slice(headerIdx + 1)) {
   // prefer the unique `key` over the raw `code`: some source SKUs are reused for
   // different products (e.g. T0014 = Solutie Aerodisin AND BeeNails Polygel), so a
   // code lookup would give the wrong product its twin's photo. key is always unique.
-  const image = PHOTO_OVERRIDES[key] || PHOTO_OVERRIDES[code]
+  const imageSource = PHOTO_OVERRIDES[key] || PHOTO_OVERRIDES[code]
     || cell(r, 'image') || PHOTOS[key] || PHOTOS[code] || '';
+  const image = rewriteImageValue(imageSource, IMAGE_POLICY, EXTERNAL_IMAGE_URL_MAP);
   // collection membership from the flag columns (Summer / Sale)
   const flags = {};
   for (const fc of flagCols) if (flagOn(r[fc.idx])) flags[fc.flag] = true;

@@ -1,3 +1,11 @@
 {
-  "sheetUrl": "https://docs.google.com/spreadsheets/d/1byCd8JbU6vWZhOKrv276g6si4b3ZOaW8PdgdMsffMoU/edit?gid=694098365#gid=694098365"
+  "sheetUrl": "https://docs.google.com/spreadsheets/d/1byCd8JbU6vWZhOKrv276g6si4b3ZOaW8PdgdMsffMoU/edit?gid=694098365#gid=694098365",
+  "imagePolicy": {
+    "canonicalBaseUrl": "https://images.nailmania.md",
+    "productionBucket": "nailmania-photos",
+    "legacySameBucketOrigins": [
+      "https://pub-bdc9e7e148164007b19e2753ba1b49b9.r2.dev"
+    ],
+    "externalUrlMapFile": "catalog-image-url-map.json"
+  }
 }

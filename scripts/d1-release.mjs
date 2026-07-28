@@ -9,6 +9,7 @@ import {
 } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
+import { assertCanonicalCatalogImagesForRelease } from './catalog-image-policy.mjs';
 import { verifyMigrationManifest } from './migration-integrity.mjs';
 
 const root = process.cwd();
@@ -267,6 +268,7 @@ if (operation === 'migrate') {
   if (git('status', '--porcelain')) {
     throw new Error('Validated snapshot changes tracked catalog files; review and commit them before remote import');
   }
+  assertCanonicalCatalogImagesForRelease(root);
   run(process.execPath, ['scripts/import-catalog-d1.mjs']);
   const sqlPath = path.join(root, 'tmp', 'd1', 'catalog-import.sql');
   const importReportPath = path.join(root, 'tmp', 'd1', 'catalog-import-report.json');

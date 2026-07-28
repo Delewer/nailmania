@@ -211,7 +211,16 @@ test('strict build consumes the validated bytes and rejects a checksum mismatch 
   const directory = mkdtempSync(path.join(tmpdir(), 'nailmania-catalog-build-'));
   mkdirSync(path.join(directory, 'src'));
   mkdirSync(path.join(directory, 'tmp'));
-  writeFileSync(path.join(directory, 'catalog.config.json'), '{"sheetUrl":""}\n');
+  writeFileSync(path.join(directory, 'catalog.config.json'), `${JSON.stringify({
+    sheetUrl: '',
+    imagePolicy: {
+      canonicalBaseUrl: 'https://images.nailmania.md',
+      productionBucket: 'nailmania-photos',
+      legacySameBucketOrigins: ['https://legacy-images.example.test'],
+      externalUrlMapFile: 'catalog-image-url-map.json',
+    },
+  })}\n`);
+  writeFileSync(path.join(directory, 'catalog-image-url-map.json'), '{}\n');
   writeFileSync(path.join(directory, 'nailmania-sheet.csv'), snapshotText);
   writeFileSync(path.join(directory, 'tmp', 'catalog-source.csv'), snapshotText);
   writeFileSync(path.join(directory, 'tmp', 'catalog-validation.json'), `${JSON.stringify(report)}\n`);

@@ -16,10 +16,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { catalogImagePolicyFromConfig } from './catalog-image-policy.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
-const R2 = 'https://pub-bdc9e7e148164007b19e2753ba1b49b9.r2.dev/';
+const CONFIG = JSON.parse(fs.readFileSync(path.join(ROOT, 'catalog.config.json'), 'utf8'));
+const IMAGE_POLICY = catalogImagePolicyFromConfig(CONFIG, ROOT);
+const R2 = `${IMAGE_POLICY.canonicalBaseUrl}/`;
 const REPORT = process.argv.includes('--report');
 const GENERIC = new Set(['gel','polish','color','coat','pentru','set','kit','buc','pcs','nr','the']);
 

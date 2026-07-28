@@ -34,6 +34,7 @@ function parseEnvironment(toml, environment) {
   const value = (key) => block.match(new RegExp(`^${key}\\s*=\\s*"([^"]+)"\\s*$`, 'm'))?.[1] || '';
   return {
     environment: value('ENVIRONMENT'),
+    r2PublicBaseUrl: value('R2_PUBLIC_BASE_URL'),
     analyticsDatasetVariable: value('PRODUCT_ANALYTICS_DATASET'),
     analyticsDatasetBinding: block.match(new RegExp(
       `^\\[\\[env\\.${environment}\\.analytics_engine_datasets\\]\\]\\s*[\\s\\S]*?^binding\\s*=\\s*"PRODUCT_ANALYTICS"\\s*$[\\s\\S]*?^dataset\\s*=\\s*"([^"]+)"\\s*$`,
@@ -49,6 +50,7 @@ function parseEnvironment(toml, environment) {
 const pagesConfig = read('wrangler.toml');
 const workerConfig = JSON.parse(read('wrangler.reservations.jsonc'));
 const packageConfig = JSON.parse(read('package.json'));
+const catalogConfig = JSON.parse(read('catalog.config.json'));
 const compatibilityDate = pagesConfig.match(/^compatibility_date\s*=\s*"([^"]+)"\s*$/m)?.[1] || '';
 
 check(workerConfig.workers_dev === false, 'Reservation Worker must keep workers_dev=false');
@@ -102,6 +104,15 @@ for (const environment of ['preview', 'production']) {
 }
 
 check(!/^\[\[analytics_engine_datasets\]\]/m.test(pagesConfig), 'Local Pages config must not bind remote Analytics Engine');
+const productionPages = parseEnvironment(pagesConfig, 'production');
+check(
+  catalogConfig.imagePolicy?.productionBucket === productionPages?.bucketName,
+  'Catalog image policy production bucket must exactly match the production PRODUCT_IMAGES binding',
+);
+check(
+  catalogConfig.imagePolicy?.canonicalBaseUrl === productionPages?.r2PublicBaseUrl,
+  'Catalog image policy canonical base URL must exactly match production R2_PUBLIC_BASE_URL',
+);
 
 const migrationFiles = readdirSync(path.join(root, 'migrations'))
   .filter((file) => file.endsWith('.sql'))
@@ -181,6 +192,21 @@ for (const file of ['rehost-images.mjs', 'upload-r2.mjs', 'migrate-drive-r2.mjs'
   const content = read(`scripts/${file}`);
   check(/\brequireR2MutationTarget\s*\(/.test(content), `${file} must call the R2 target guard`);
   check(!/https:\/\/pub-[a-z0-9]+\.r2\.dev/i.test(content), `${file} must not hard-code an R2 public endpoint`);
+}
+const rehostImages = read('scripts/rehost-images.mjs');
+check(
+  /\bassertProductionRehostTarget\s*\(/.test(rehostImages),
+  'rehost-images.mjs must enforce its exact production-only image target',
+);
+check(
+  /\bfetchPublicImage\s*\(/.test(rehostImages),
+  'rehost-images.mjs must use the SSRF- and size-bounded external image fetcher',
+);
+for (const file of ['release-build.mjs', 'd1-release.mjs']) {
+  check(
+    /\bassertCanonicalCatalogImagesForRelease\s*\(/.test(read(`scripts/${file}`)),
+    `${file} must reject release catalogs with external image hosts`,
+  );
 }
 
 const workflowDirectory = path.join(root, '.github', 'workflows');
