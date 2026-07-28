@@ -1,0 +1,48 @@
+# Cloudflare Pages configuration. Local development uses wrangler.local.jsonc.
+name = "nailmania"
+pages_build_output_dir = "dist"
+compatibility_date = "2026-07-16"
+
+[vars]
+ENVIRONMENT = "local"
+NODE_VERSION = "24"
+
+[env.preview.vars]
+ENVIRONMENT = "preview"
+NODE_VERSION = "24"
+PRODUCT_ANALYTICS_DATASET = "nailmania_product_events_preview"
+
+[[env.preview.d1_databases]]
+binding = "DB"
+database_name = "nailmania-preview"
+database_id = "993c4d91-40d0-47d2-8aa5-358a5e18f22e"
+migrations_dir = "migrations"
+
+[[env.preview.r2_buckets]]
+binding = "PRODUCT_IMAGES"
+bucket_name = "nailmania-product-images-preview"
+
+[[env.preview.analytics_engine_datasets]]
+binding = "PRODUCT_ANALYTICS"
+dataset = "nailmania_product_events_preview"
+
+[env.production.vars]
+CF_ACCESS_AUD = "a0b1d5ea83ed95a84ffe798d7a2e0be15c1e3d8b74f42b93105f5ac28d02f67f"
+CF_ACCESS_TEAM_DOMAIN = "https://fragrant-smoke-0bc7.cloudflareaccess.com"
+ENVIRONMENT = "production"
+NODE_VERSION = "24"
+PRODUCT_ANALYTICS_DATASET = "nailmania_product_events_production"
+
+[[env.production.d1_databases]]
+binding = "DB"
+database_name = "nailmania-production"
+database_id = "0dab0430-cd49-493a-8a27-d92f22c51cc3"
+migrations_dir = "migrations"
+
+[[env.production.r2_buckets]]
+binding = "PRODUCT_IMAGES"
+bucket_name = "nailmania-product-images-production"
+
+[[env.production.analytics_engine_datasets]]
+binding = "PRODUCT_ANALYTICS"
+dataset = "nailmania_product_events_production"

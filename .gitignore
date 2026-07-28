@@ -3,7 +3,11 @@ dist
 tmp/
 *.local
 .vite
-.env
+.wrangler/
+.env*
+!.env.example
+.dev.vars*
+!.dev.vars.example
 # Telegram secret (cPanel) — must never be committed
 public/telegram.config.php
 # Local product photos — served via R2/CDN instead (keeps the repo lean)
@@ -16,6 +20,12 @@ scripts/fetch-images.report.json
 _local-products-backup/
 _r2products/
 _need-products.json
+
+# local source/reference images already served from R2; keep them out of release commits
+/IMG_*.PNG
+/banner_reference.jpg
+/nude_depilation_*.jpg
+/photo_*_2026-*.jpg
 # one-time Tilda import artifacts (regenerable; not needed for prod)
 store-*.csv
 tilda-photos.csv
@@ -28,3 +38,6 @@ _sheets/
 _*
 !public/_headers
 !public/_redirects
+!functions/_middleware.js
+!functions/_lib/
+!functions/_lib/**

@@ -1,3 +1,7 @@
 # Cloudflare Pages serves extensionless URLs from route/index.html files.
 # Do not rewrite clean URLs to .html files here: Cloudflare's clean-URL
 # normalization redirects .html back to the same clean URL and creates a loop.
+
+# Keep exact admin roots behind the same Access paths as their nested routes.
+/admin /admin/orders 302
+/api/admin /api/admin/session 302

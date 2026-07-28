@@ -2,7 +2,9 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
 import { useShop, Icon, Placeholder } from '../shop.jsx'
-import { CATS, HERO_IMG } from '../data.js'
+import { HERO_IMG } from '../data.js'
+import { CATS, CATALOG_ERROR } from '../catalog-data.js'
+import { CatalogUnavailable } from './CatalogState.jsx'
 import heroBottle from '../hero/bottle.webp'
 import heroFile from '../hero/file.webp'
 import heroScissors from '../hero/scissors.webp'
@@ -82,14 +84,16 @@ export function Categories(){
           <h2>{t("catsTitle")}</h2>
           <button className="all" onClick={()=>setDrawer("catalog")}>{t("all")} <Icon n="chev" s={16}/></button>
         </div>
-        <div className="cats-grid">
-          {CATS.map(c=>(
-            <Link className="cat-tile" key={c.id} to={"/category/"+c.id}>
-              <div className="img"><Placeholder g={c.g} icon={c.icon} ratio="4/3" radius={0} img={c.img} label={name(c)}/></div>
-              <div className="cap">{name(c)} <Icon n="arrow" s={16}/></div>
-            </Link>
-          ))}
-        </div>
+        {CATALOG_ERROR ? <CatalogUnavailable/> : (
+          <div className="cats-grid">
+            {CATS.map(c=>(
+              <Link className="cat-tile" key={c.id} to={"/category/"+c.id}>
+                <div className="img"><Placeholder g={c.g} icon={c.icon} ratio="4/3" radius={0} img={c.img} label={name(c)}/></div>
+                <div className="cap">{name(c)} <Icon n="arrow" s={16}/></div>
+              </Link>
+            ))}
+          </div>
+        )}
       </div>
     </section>
   );

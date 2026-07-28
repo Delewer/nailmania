@@ -3,13 +3,16 @@ import React from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useShop, Icon, Placeholder } from '../shop.jsx'
 import { ProductCard } from '../components/Products.jsx'
-import { findCategory, productGallery } from '../data.js'
-import { findProduct, productCode, productDesc, productSpecs, relatedProducts, inStock } from '../catalog-data.js'
+import { productGallery } from '../data.js'
+import { findProduct, productCode, productDesc, productSpecs, relatedProducts, inStock, findCategory, CATALOG_ERROR } from '../catalog-data.js'
+import { CatalogUnavailable } from '../components/CatalogState.jsx'
+import { trackProductEvent } from '../product-analytics.js'
+import { cartLineLimit } from '../cart-quantity.js'
 
 export default function ProductPage(){
   const { id } = useParams();
   const navigate = useNavigate();
-  const { t, lang, name, addToCart, favs, toggleFav, setDrawer, rememberProduct } = useShop();
+  const { t, lang, name, cart, find, addToCart, favs, toggleFav, setDrawer, rememberProduct } = useShop();
   const [shot, setShot] = React.useState(0);
   const [qty, setQty] = React.useState(1);
   const [added, setAdded] = React.useState(false);
@@ -19,13 +22,25 @@ export default function ProductPage(){
   React.useEffect(()=>{ window.scrollTo({top:0}); setShot(0); setQty(1); setAdded(false); }, [id]);
 
   const p = findProduct(id);
+  const liveProduct = p ? (find(p.key) || p) : null;
+  const cartQuantity = p ? (cart.find(item=>item.id===p.key)?.q || 0) : 0;
+  const remainingQuantity = p ? Math.max(0,cartLineLimit(liveProduct)-cartQuantity) : 0;
+  const maxSelectable = Math.max(1,remainingQuantity);
+  const atCartLimit = Boolean(p) && remainingQuantity<=0;
   React.useEffect(()=>{ if(p) rememberProduct(p); },[p, rememberProduct]);
+  React.useEffect(()=>{
+    if(p) trackProductEvent('product_view',{productKey:p.key,language:lang,source:'product_page'});
+  },[p?.key]);
+  React.useEffect(()=>{
+    if(p) setQty(current=>Math.min(Math.max(1,current),maxSelectable));
+  },[p?.key,maxSelectable]);
+  if(CATALOG_ERROR) return <div className="wrap page"><CatalogUnavailable/></div>;
   if(!p){
     return (
       <div className="wrap page">
         <div className="page-empty">
           <Icon n="search" s={60}/>
-          <h2>{t("notFound")}</h2>
+          <h1>{t("notFound")}</h1>
           <Link className="btn btn-dark" to="/">{t("backHome")}</Link>
         </div>
       </div>
@@ -34,18 +49,22 @@ export default function ProductPage(){
 
   const cat = findCategory(p.cat);
   const isFav = favs.includes(p.key);
-  const oos = !inStock(p);
+  const oos = !inStock(liveProduct);
   const [descA, descB] = productDesc(p, lang);
   const save = p.old>0 ? Math.round((1 - p.price/p.old)*100) : 0;
-  // gallery: only the images the product actually has (1+, no empty slots)
+  // gallery: only images the product actually has; an empty list uses Placeholder.
   const gallery = productGallery(p);
   const shades = [p.g, [p.g[1], p.g[0]], ["#fff", p.g[0]], [p.g[0], "#fff"]];
 
   const handleAdd = ()=>{
-    for(let i=0;i<qty;i++) addToCart(p);
+    const addedQuantity = addToCart(p,{quantity:Math.min(qty,remainingQuantity),source:'product_page'});
+    if(addedQuantity<=0) return;
     setAdded(true); clearTimeout(addT.current); addT.current=setTimeout(()=>setAdded(false),1400);
   };
-  const buyNow = ()=>{ for(let i=0;i<qty;i++) addToCart(p); navigate("/checkout"); };
+  const buyNow = ()=>{
+    if(!atCartLimit) addToCart(p,{quantity:Math.min(qty,remainingQuantity),source:'product_page'});
+    navigate("/checkout");
+  };
   const related = relatedProducts(p, 4);
 
   return (
@@ -63,9 +82,9 @@ export default function ProductPage(){
           {gallery.length>1 && (
             <div className="pd-thumbs">
               {gallery.map((src,i)=>(
-                <div key={i} className={"pd-thumb"+(i===shot?" on":"")} onClick={()=>setShot(i)}>
+                <button type="button" key={i} className={"pd-thumb"+(i===shot?" on":"")} onClick={()=>setShot(i)} aria-label={`${name(p)} — ${i+1}/${gallery.length}`} aria-pressed={i===shot}>
                   <Placeholder g={shades[i]||p.g} icon="bottle" ratio="1" radius={0} img={src} label={name(p)}/>
-                </div>
+                </button>
               ))}
             </div>
           )}
@@ -90,12 +109,16 @@ export default function ProductPage(){
             ) : (
               <>
                 <div className="qty">
-                  <button onClick={()=>setQty(q=>Math.max(1,q-1))} aria-label="-"><Icon n="minus" s={16}/></button>
-                  <span>{qty}</span>
-                  <button onClick={()=>setQty(q=>q+1)} aria-label="+"><Icon n="plus" s={16}/></button>
+                  <button type="button" onClick={()=>setQty(q=>Math.max(1,q-1))} disabled={qty<=1} aria-label={t("decreaseQty")}><Icon n="minus" s={16}/></button>
+                  <span aria-live="polite">{qty}</span>
+                  <button type="button" onClick={()=>setQty(q=>Math.min(maxSelectable,q+1))} disabled={qty>=maxSelectable} aria-label={qty>=maxSelectable?t("stockLimitReached"):t("increaseQty")}><Icon n="plus" s={16}/></button>
                 </div>
-                <button className={"addbtn"+(added?" in":"")} onClick={handleAdd}>
-                  {added ? <><Icon n="check" s={18}/>{t("inCart")}</> : <><Icon n="bag" s={18}/>{t("addCart")}</>}
+                <button type="button" className={"addbtn"+(added?" in":atCartLimit?" soldout":"")} onClick={handleAdd} disabled={atCartLimit} aria-label={atCartLimit?t("stockLimitReached"):t("addCart")}>
+                  {added
+                    ? <><Icon n="check" s={18}/>{t("inCart")}</>
+                    : atCartLimit
+                    ? t("stockLimitReached")
+                    : <><Icon n="bag" s={18}/>{t("addCart")}</>}
                 </button>
               </>
             )}
@@ -103,7 +126,7 @@ export default function ProductPage(){
               <Icon n="heart" s={20} fill={isFav}/>
             </button>
           </div>
-          {!oos && <button className="pd-oneclick" onClick={buyNow}><Icon n="check" s={18}/>{t("buyOneClick")}</button>}
+          {!oos && <button type="button" className="pd-oneclick" onClick={buyNow}><Icon n="check" s={18}/>{t(atCartLimit?"goCheckout":"buyOneClick")}</button>}
 
           <div className="pd-block">
             <h2>{t("descTitle")}</h2>

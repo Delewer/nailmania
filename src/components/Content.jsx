@@ -2,7 +2,8 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
 import { useShop, Icon } from '../shop.jsx'
-import { CATS, asset } from '../data.js'
+import { asset } from '../data.js'
+import { CATS, CATALOG_ERROR } from '../catalog-data.js'
 
 export function Brands(){
   const {t} = useShop();
@@ -15,8 +16,10 @@ export function Brands(){
     return ()=>{ alive = false; };
   },[]);
 
+  if(CATALOG_ERROR) return null;
+
   return (
-    <section className="section brands">
+    <section className="section brands" id="brands">
       <div className="wrap">
         <div className="sec-head">
           <div>
@@ -44,16 +47,16 @@ export function About(){
       <div className="wrap">
         <div className="about">
           <div>
-            <h2>{t("deliveryTitle")}</h2>
+            <h1>{t("deliveryTitle")}</h1>
             <p className="sub">{t("deliverySub")}</p>
             <ul>
-              {["d1","d2","d3","d4"].map(k=>(
+              {["d1","d2"].map(k=>(
                 <li key={k}><Icon n="check" s={20}/>{t(k)}</li>
               ))}
             </ul>
             <h3>{t("termsTitle")}</h3>
             <ul className="terms">
-              {["t1","t2","t3","t4","t5"].map(k=>(
+              {["t1","t2"].map(k=>(
                 <li key={k}><Icon n="truck" s={20}/>{t(k)}</li>
               ))}
             </ul>
@@ -69,9 +72,8 @@ export function Social(){
     <div className="wrap">
       <div className="social">
         <a className="ig" href="https://www.instagram.com/nailmania_md" target="_blank" rel="noreferrer" aria-label="Instagram"><Icon n="ig" s={28} fill/></a>
-        <a className="wa" href="#" aria-label="WhatsApp"><Icon n="wa" s={28} fill/></a>
+        <a className="wa" href="https://wa.me/37368067486" target="_blank" rel="noreferrer" aria-label="WhatsApp"><Icon n="wa" s={28} fill/></a>
         <a className="tg" href="https://www.t.me/nailmania_md" target="_blank" rel="noreferrer" aria-label="Telegram"><Icon n="tg" s={28} fill/></a>
-        <a className="fb" href="#" aria-label="Facebook"><Icon n="fb" s={26} fill/></a>
       </div>
     </div>
   );
@@ -86,7 +88,7 @@ export function Payment(){
   return (
     <section className="section info-sec" id="plata">
       <div className="wrap">
-        <div className="sec-head"><h2>{t("payTitle")}</h2></div>
+        <div className="sec-head"><h1>{t("payTitle")}</h1></div>
         <p className="info-lead">{t("payLead")}</p>
         <div className="pay-grid">
           {groups.map(g=>(
@@ -110,7 +112,7 @@ export function Contacts(){
   return (
     <section className="section info-sec" id="contacte">
       <div className="wrap">
-        <div className="sec-head"><h2>{t("contact")}</h2></div>
+        <div className="sec-head"><h1>{t("contact")}</h1></div>
         <p className="info-lead">{t("contIntro")}</p>
         <div className="info-grid">
           <div className="info-row"><Icon n="pin" s={20} fill/><div className="ci-txt"><b>{t("contAddr")}</b></div></div>
@@ -125,8 +127,22 @@ export function Contacts(){
   );
 }
 
+export function NotFound(){
+  const {t} = useShop();
+  return (
+    <div className="wrap page">
+      <div className="page-empty">
+        <Icon n="search" s={60}/>
+        <h1>{t("pageNotFound")}</h1>
+        <p>{t("pageNotFoundText")}</p>
+        <Link className="btn btn-dark" to="/">{t("backHome")}</Link>
+      </div>
+    </div>
+  );
+}
+
 export function Footer(){
-  const {t,name,setDrawer} = useShop();
+  const {t,name} = useShop();
   const cats = CATS.slice(0,7);
   return (
     <footer className="footer">
@@ -146,13 +162,13 @@ export function Footer(){
               <li><Link to="/livrare">{t("navDelivery")}</Link></li>
               <li><Link to="/plata">{t("navPayment")}</Link></li>
               <li><Link to="/contacte">{t("navContact")}</Link></li>
-              <li><a onClick={()=>setDrawer("catalog")}>{t("navBrands")}</a></li>
+              <li><Link to="/#brands">{t("navBrands")}</Link></li>
             </ul>
           </div>
           <div>
             <h4>{t("colContact")}</h4>
-            <div className="ci"><Icon n="phone" s={18}/><span>+373 68 067 486</span></div>
-            <div className="ci"><Icon n="mail" s={18}/><span>nailmania18@gmail.com</span></div>
+            <a className="ci" href="tel:+37368067486"><Icon n="phone" s={18}/><span>+373 68 067 486</span></a>
+            <a className="ci" href="mailto:nailmania18@gmail.com"><Icon n="mail" s={18}/><span>nailmania18@gmail.com</span></a>
             <div className="ci"><Icon n="pin" s={18} fill/><span>str. Romană 66/2,<br/>Ungheni, Moldova</span></div>
           </div>
         </div>

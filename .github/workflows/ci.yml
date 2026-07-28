@@ -1,0 +1,60 @@
+name: CI verification
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out the requested commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install the locked dependency graph
+        run: npm ci
+
+      - name: Audit dependencies with the reviewed upstream exception policy
+        run: npm run audit:security
+
+      - name: Verify release configuration and workflow safety
+        run: node scripts/verify-release-config.mjs
+
+      - name: Run automated tests
+        run: npm test
+
+      - name: Build committed storefront artifacts without a live-sheet fetch
+        run: |
+          npx vite build
+          node scripts/build-seo.mjs
+
+      - name: Compile Pages Functions
+        run: npx wrangler pages functions build functions --project-directory . --build-output-directory dist --outdir tmp/pages-functions --compatibility-date 2026-07-16
+
+      - name: Dry-run both reservation Workers
+        run: |
+          npx wrangler deploy --config wrangler.reservations.jsonc --env preview --dry-run --outdir tmp/worker-preview
+          npx wrangler deploy --config wrangler.reservations.jsonc --env production --dry-run --outdir tmp/worker-production
+
+      - name: Apply every migration to an ephemeral local D1
+        run: |
+          npx wrangler d1 migrations apply nailmania-local --local --config wrangler.local.jsonc --persist-to .wrangler/ci-state
+          node scripts/verify-local-d1.mjs --persist-to .wrangler/ci-state --schema-only

@@ -1,63 +1,87 @@
-# Rebuild the shop from the Google Sheet and publish it.
-#
-# Publishing is ON-DEMAND, not scheduled:
-#   • Recommended (Cloudflare Pages): the client clicks "Опубликовать" in the Google
-#     Sheet → a Cloudflare Deploy Hook rebuilds the site. This workflow isn't even
-#     needed in that setup. See docs/PUBLISH.md.
-#   • This workflow is a fallback / for the cPanel (FTP) path: run it by hand from the
-#     Actions tab ("Run workflow").
-#
-# The default Google Sheet is stored in catalog.config.json. Cloudflare can use
-# its configured CATALOG_SHEET_URL by setting CATALOG_USE_SHEET=1.
-#
-# One-time setup (repo → Settings → Secrets and variables → Actions),
-# choose one deploy target:
-#     • Cloudflare Pages:  CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID, CF_PAGES_PROJECT
-#     • cPanel / iphost (FTP):  FTP_SERVER, FTP_USERNAME, FTP_PASSWORD
-# Deploy steps run only when their secrets are present, so this is safe to commit now.
-
-name: Publish shop
+# This manual workflow is intentionally verification-only. It has no secrets and
+# cannot deploy Pages/Workers, mutate remote D1, or upload to the legacy FTP host.
+# Follow docs/RELEASE.md after every gate is green and a human approves rollout.
+name: Release readiness (no deploy)
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      preview_turnstile_site_key:
+        description: Public Turnstile site key configured for the preview hostname
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-readiness-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  build-and-deploy:
+  readiness:
     runs-on: ubuntu-latest
-    env:
-      CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      FTP_SERVER: ${{ secrets.FTP_SERVER }}
+    timeout-minutes: 35
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
+      - name: Check out the requested release commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          node-version: 20
+          persist-credentials: false
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
           cache: npm
 
-      - run: npm ci
+      - name: Install the locked dependency graph
+        run: npm ci
 
-      - name: Build catalog from the configured Google Sheet (falls back to local CSV)
-        run: npm run catalog
+      - name: Verify configuration and tests
+        run: |
+          node scripts/verify-release-config.mjs
+          npm test
 
-      - run: npm run build
+      - name: Fetch and strictly validate one canonical catalog snapshot
+        run: node scripts/validate-catalog-sheet.mjs
 
-      # --- Deploy option A: Cloudflare Pages (free, recommended) ---
-      - name: Deploy to Cloudflare Pages
-        if: ${{ env.CF_TOKEN != '' }}
-        uses: cloudflare/wrangler-action@v3
+      - name: Build only from the validated bytes
+        run: node scripts/build-catalog.mjs --validated-snapshot tmp/catalog-source.csv --validation-report tmp/catalog-validation.json
+
+      - name: Require reviewed generated catalog files
+        run: git diff --exit-code -- src/catalog.json src/categories.json
+
+      - name: Generate catalog SQL without a remote apply
+        run: node scripts/import-catalog-d1.mjs
+
+      - name: Build storefront and server bundles
+        env:
+          VITE_TURNSTILE_SITE_KEY: ${{ inputs.preview_turnstile_site_key }}
+        run: |
+          npm run release:build:preview -- --expected-commit ${{ github.sha }}
+          npx wrangler pages functions build functions --project-directory . --build-output-directory dist --outdir tmp/pages-functions --compatibility-date 2026-07-16
+          npx wrangler deploy --config wrangler.reservations.jsonc --env preview --dry-run --outdir tmp/worker-preview
+          npx wrangler deploy --config wrangler.reservations.jsonc --env production --dry-run --outdir tmp/worker-production
+
+      - name: Smoke-test migrations and import in an ephemeral local D1
+        run: |
+          npx wrangler d1 migrations apply nailmania-local --local --config wrangler.local.jsonc --persist-to .wrangler/release-state
+          npx wrangler d1 execute nailmania-local --local --config wrangler.local.jsonc --persist-to .wrangler/release-state --file tmp/d1/catalog-import.sql
+          node scripts/verify-local-d1.mjs --persist-to .wrangler/release-state
+
+      - name: Retain the exact non-secret release candidate
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy dist --project-name=${{ secrets.CF_PAGES_PROJECT }}
-
-      # --- Deploy option B: cPanel / iphost over FTP ---
-      - name: Deploy to cPanel (FTP)
-        if: ${{ env.FTP_SERVER != '' }}
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
-        with:
-          server: ${{ secrets.FTP_SERVER }}
-          username: ${{ secrets.FTP_USERNAME }}
-          password: ${{ secrets.FTP_PASSWORD }}
-          local-dir: ./dist/
-          server-dir: ./public_html/
+          name: release-readiness-${{ github.sha }}
+          path: |
+            tmp/catalog-source.csv
+            tmp/catalog-validation.json
+            tmp/catalog-build-integrity.json
+            tmp/d1/catalog-import-validation.json
+            tmp/d1/catalog-import-report.json
+            tmp/d1/catalog-import.sql
+            tmp/releases/preview-pages-build-*.json
+            dist/
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 7
