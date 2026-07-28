@@ -1,35 +1,13 @@
-# Publishing products from Google Sheets
+# Publishing catalog changes
 
-The default product spreadsheet is configured in `catalog.config.json`.
-Cloudflare production uses `CATALOG_SHEET_URL` when `CATALOG_USE_SHEET=1`. The
-current sheet is public and can be read through Google's CSV endpoint; it does
-not need to be separately published as CSV.
+Прежняя схема «кнопка в Google Sheet → Cloudflare Deploy Hook» выведена из нового release-процесса. Deploy Hook может перестроить Pages без строгой SKU-проверки, D1 backup, migrations, catalog import и preview acceptance. Поэтому перед rollout нужно удалить `DEPLOY_HOOK_URL` из Apps Script и отключить соответствующий Cloudflare Pages Deploy Hook; удаления reference-файла из Git недостаточно. По той же причине удалён legacy FTP deployment из GitHub Actions.
 
-Cloudflare Pages rebuilds the storefront when its deploy hook receives a POST
-request. The spreadsheet button does not read or publish products by itself: it
-only calls that hook through a container-bound Google Apps Script.
+Google Sheet остаётся источником каталога, но публикация выполняется по контролируемой процедуре из [RELEASE.md](RELEASE.md):
 
-## Configure the spreadsheet button
+1. скачать и строго проверить один canonical CSV snapshot;
+2. собрать каталог и D1 SQL только из проверенных байтов;
+3. пройти local D1 smoke и preview acceptance;
+4. снять production backup/Time Travel bookmark;
+5. применить migrations/import и опубликовать ровно принятый Git commit.
 
-1. In Cloudflare Pages, open **Settings -> Builds & deployments -> Deploy hooks**
-   and create or copy the hook for the `main` branch.
-2. In the product spreadsheet, open **Extensions -> Apps Script** and paste the
-   contents of `docs/publish-button.gs`.
-3. In Apps Script, open **Project Settings -> Script properties** and add
-   `DEPLOY_HOOK_URL` with the Cloudflare hook URL.
-4. Save the script, run `publishSite` once from Apps Script, and authorize it.
-5. Reload the spreadsheet. Use **Site -> Publish website**. If a drawing is used
-   as a button, assign the script name `publishSite` to it.
-
-The script checks the HTTP status and shows an error dialog when the hook is
-missing, expired, or rejected. This avoids a silent no-op.
-
-## Local verification
-
-```powershell
-npm run catalog
-npm run build
-```
-
-The catalog build falls back to `nailmania-sheet.csv` only when the configured
-Google Sheet cannot be downloaded or does not contain a recognizable catalog.
+`docs/publish-button.gs` сохранён как безопасный tombstone для старой кнопки: он только показывает сообщение и не выполняет сетевых запросов. Release verifier запрещает возвращать в него `UrlFetchApp.fetch`, Script Properties или deploy-hook URL. Read-only аудит 18 июля 2026 года обнаружил повторные production deployments одного старого SHA, совпадающие по времени с изменениями Sheet; до подтверждённого удаления внешнего hook из реально привязанного Apps Script/Pages rollout запрещён. Все Cloudflare/Telegram/R2 credentials хранятся вне репозитория; проверочные GitHub workflows не запрашивают секреты и не выполняют deploy.

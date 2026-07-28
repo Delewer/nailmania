@@ -1,7 +1,8 @@
 import React from 'react'
 import { useLocation } from 'react-router-dom'
-import { findCategory, productGallery } from '../data.js'
-import { findProduct, inStock } from '../catalog-data.js'
+import { catalogImageUrls } from '../../shared/catalog-images.js'
+import { productGallery } from '../data.js'
+import { findCategory, findProduct, inStock, productsByBrand, CATALOG_ERROR } from '../catalog-data.js'
 
 const SITE = 'https://nailmania.md';
 const DEFAULT_IMAGE = SITE + '/images/logo-high.png';
@@ -10,7 +11,7 @@ const DEFAULT_DESC = 'Magazin online cu produse profesionale pentru manichiură,
 
 const clean = (value, max = 160) => String(value || '').replace(/\s+/g, ' ').trim().slice(0, max);
 const absoluteImage = (value) => {
-  const image = String(value || '').split(/[\s,]+/).find(Boolean);
+  const image = catalogImageUrls(value)[0];
   if (!image) return DEFAULT_IMAGE;
   return /^https?:\/\//.test(image) ? image : SITE + '/' + image.replace(/^\//, '');
 };
@@ -26,7 +27,7 @@ const setMeta = (selector, attr, value) => {
   element.setAttribute(attr, value);
 };
 
-function routeSeo(pathname) {
+export function routeSeo(pathname) {
   const canonical = SITE + (pathname === '/' ? '/' : pathname.replace(/\/$/, ''));
   const base = { title: DEFAULT_TITLE, description: DEFAULT_DESC, canonical, image: DEFAULT_IMAGE, type: 'website', robots: 'index,follow,max-image-preview:large' };
 
@@ -39,6 +40,7 @@ function routeSeo(pathname) {
 
   const productMatch = pathname.match(/^\/product\/([^/]+)$/);
   if (productMatch) {
+    if (CATALOG_ERROR) return { ...base, title:'Catalog temporar indisponibil | Nail Mania', robots:'noindex,follow' };
     const product = findProduct(decodeURIComponent(productMatch[1]));
     if (!product) return { ...base, title:'Produs negăsit | Nail Mania', robots:'noindex,follow' };
     const description = clean(`${product.name} de la ${product.brand}, preț ${product.price} lei. ${product.desc || 'Produs profesional cu livrare în toată Moldova.'}`);
@@ -59,15 +61,19 @@ function routeSeo(pathname) {
 
   const categoryMatch = pathname.match(/^\/category\/([^/]+)$/);
   if (categoryMatch) {
+    if (CATALOG_ERROR) return { ...base, title:'Catalog temporar indisponibil | Nail Mania', robots:'noindex,follow' };
     const category = findCategory(decodeURIComponent(categoryMatch[1]));
     if (!category) return { ...base, title:'Categorie negăsită | Nail Mania', robots:'noindex,follow' };
-    const description = clean(`Cumpără ${category.ro.toLowerCase()} și produse profesionale pentru salon de la Nail Mania. Livrare rapidă în Ungheni, Chișinău și toată Moldova.`);
-    return { ...base, title:clean(`${category.ro} — produse profesionale | Nail Mania`, 70), description, schema:{ '@context':'https://schema.org', '@type':'CollectionPage', name:category.ro, description, url:canonical } };
+    const description = clean(category.seoDescriptionRo || `Cumpără ${category.ro.toLowerCase()} și produse profesionale pentru salon de la Nail Mania. Livrare rapidă în Ungheni, Chișinău și toată Moldova.`);
+    const title = clean(category.seoTitleRo || `${category.ro} — produse profesionale | Nail Mania`, 70);
+    return { ...base, title, description, schema:{ '@context':'https://schema.org', '@type':'CollectionPage', name:category.ro, description, url:canonical } };
   }
 
   const brandMatch = pathname.match(/^\/brand\/([^/]+)$/);
   if (brandMatch) {
+    if (CATALOG_ERROR) return { ...base, title:'Catalog temporar indisponibil | Nail Mania', robots:'noindex,follow' };
     const brand = decodeURIComponent(brandMatch[1]);
+    if (!productsByBrand(brand).length) return { ...base, title:'Brand negăsit | Nail Mania', robots:'noindex,follow' };
     const description = clean(`Produse profesionale ${brand} pentru manichiură și salon. Prețuri actuale, stoc și livrare în toată Moldova de la Nail Mania.`);
     return { ...base, title:clean(`${brand} — produse profesionale | Nail Mania`, 70), description, schema:{ '@context':'https://schema.org', '@type':'CollectionPage', name:`Produse ${brand}`, description, url:canonical } };
   }
@@ -79,12 +85,22 @@ function routeSeo(pathname) {
   }
 
   const pages = {
-    '/livrare':['Livrare în Moldova | Nail Mania','Condiții și termene de livrare pentru comenzile Nail Mania în Ungheni, Chișinău, toată Moldova și Europa.'],
+    '/livrare':['Livrare în Moldova | Nail Mania','Condiții și termene de livrare pentru comenzile Nail Mania în Ungheni, Chișinău și în toată Moldova.'],
     '/plata':['Metode de plată | Nail Mania','Metode de plată disponibile pentru comenzile Nail Mania: numerar, card bancar, transfer și plată la livrare.'],
     '/contacte':['Contacte Nail Mania Ungheni','Magazin Nail Mania: str. Romană 66/2, Ungheni, Moldova. Telefon +373 68 067 486. Comenzi online 24/7.'],
   };
   if (pages[pathname]) return { ...base, title:pages[pathname][0], description:pages[pathname][1], schema:{ '@context':'https://schema.org', '@type':'WebPage', name:pages[pathname][0], description:pages[pathname][1], url:canonical } };
   if (pathname === '/checkout') return { ...base, title:'Finalizarea comenzii | Nail Mania', robots:'noindex,nofollow' };
+  const privatePages = {
+    '/login':'Autentificare | Nail Mania',
+    '/register':'Creare cont | Nail Mania',
+    '/forgot-password':'Recuperare parolă | Nail Mania',
+    '/reset-password':'Resetare parolă | Nail Mania',
+    '/logout':'Ieșire din cont | Nail Mania',
+    '/account':'Contul meu | Nail Mania',
+  };
+  const privateTitle = privatePages[pathname] || (/^\/account\/orders\/[^/]+$/.test(pathname) ? 'Detalii comandă | Nail Mania' : '');
+  if (privateTitle) return { ...base, title:privateTitle, robots:'noindex,nofollow' };
   return { ...base, title:'Pagină negăsită | Nail Mania', robots:'noindex,follow' };
 }
 

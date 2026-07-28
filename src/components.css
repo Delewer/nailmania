@@ -52,8 +52,8 @@
 /* live search dropdown */
 .sresults{position:absolute;top:58px;left:0;right:0;background:#fff;border:1px solid var(--line-2);
   border-radius:var(--r);box-shadow:var(--shadow-lg);overflow:hidden;z-index:70;animation:fadeUp .14s ease}
-.sresults .row{display:flex;align-items:center;gap:13px;padding:11px 16px;cursor:pointer;transition:.12s}
-.sresults .row:hover{background:var(--blush-2)}
+.sresults .row{display:flex;width:100%;align-items:center;gap:13px;padding:11px 16px;cursor:pointer;transition:.12s;text-align:left;background:#fff}
+.sresults .row:hover,.sresults .row.active{background:var(--blush-2)}
 .sresults .row .thumb{width:46px;height:46px;border-radius:9px;flex:none;overflow:hidden}
 .sresults .row .thumb .ph{height:100%}
 .sresults .row .nm{font-weight:600;font-size:14px}
@@ -79,15 +79,15 @@
   overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
 .mega .wrap{padding:26px 24px 30px}
 .mega .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px 26px}
-.mega a{display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:11px;transition:.13s;cursor:pointer;min-width:0}
-.mega a>span:not(.dot){min-width:0}
-.mega a .mt{overflow-wrap:anywhere}
-.mega a:hover{background:var(--blush-2)}
+.mega button{display:flex;width:100%;align-items:center;gap:12px;padding:11px 12px;border-radius:11px;transition:.13s;cursor:pointer;min-width:0;text-align:left}
+.mega button>span:not(.dot){min-width:0}
+.mega button .mt{overflow-wrap:anywhere}
+.mega button:hover{background:var(--blush-2)}
 /* position:relative + overflow:hidden contain the PhShape SVG (absolute/inset:0)
    inside the 38px dot — without it the icon escapes and fills the whole panel */
-.mega a .dot{position:relative;overflow:hidden;width:38px;height:38px;border-radius:10px;flex:none;display:grid;place-items:center;color:var(--mauve-deep)}
-.mega a .mt{font-weight:600;font-size:14.5px;line-height:1.2}
-.mega a .mc{font-size:12px;color:var(--gray-2)}
+.mega button .dot{position:relative;overflow:hidden;width:38px;height:38px;border-radius:10px;flex:none;display:grid;place-items:center;color:var(--mauve-deep)}
+.mega button .mt{font-weight:600;font-size:14.5px;line-height:1.2}
+.mega button .mc{font-size:12px;color:var(--gray-2)}
 
 /* ===== Hero ===== */
 .hero .wrap{padding-top:34px;padding-bottom:8px}
@@ -229,7 +229,7 @@
 
 /* ===== About + delivery info ===== */
 .about{max-width:760px}
-.about h2{font-family:var(--serif);font-size:clamp(28px,3.6vw,42px);font-weight:800;margin:0 0 4px}
+.about h1{font-family:var(--serif);font-size:clamp(28px,3.6vw,42px);font-weight:800;margin:0 0 4px}
 .about .sub{color:var(--mauve-deep);font-weight:700;letter-spacing:.02em;margin:0 0 22px}
 .about ul{list-style:none;padding:0;margin:0 0 22px;display:flex;flex-direction:column;gap:11px}
 .about li{display:flex;gap:11px;align-items:flex-start;font-size:15px;color:var(--ink-2);line-height:1.4}
@@ -289,6 +289,7 @@
 .qty{display:inline-flex;align-items:center;border:1px solid var(--line-2);border-radius:99px;background:#fff;margin-top:8px}
 .qty button{width:30px;height:30px;display:grid;place-items:center;color:var(--ink);border-radius:50%}
 .qty button:hover{color:var(--rose-deep)}
+.qty button:disabled{color:var(--gray-2);opacity:.55;cursor:not-allowed}
 .qty span{min-width:26px;text-align:center;font-weight:700;font-size:14px}
 .qty.fav-add{margin-left:auto}
 .dfoot{padding:18px 22px 22px;border-top:1px solid var(--line);background:var(--blush)}
@@ -308,8 +309,8 @@
 .mmenu .mlang{display:flex;gap:8px;margin:6px 0 18px}
 .mmenu .mlang button{flex:1;height:44px;border-radius:11px;border:1.5px solid var(--line-2);font-weight:800;letter-spacing:.04em}
 .mmenu .mlang button.on{background:var(--mauve);border-color:var(--mauve);color:var(--ink)}
-.mmenu a{display:flex;align-items:center;justify-content:space-between;padding:15px 4px;border-bottom:1px solid var(--line);font-weight:600;font-size:16px}
-.mmenu a svg{color:var(--mauve-deep)}
+.mmenu .menu-link{display:flex;width:100%;align-items:center;justify-content:space-between;padding:15px 4px;border-bottom:1px solid var(--line);font-weight:600;font-size:16px;text-align:left}
+.mmenu .menu-link svg{color:var(--mauve-deep)}
 .mmenu .mtitle{font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--gray);margin:18px 0 4px}
 
 /* top-bar info links (desktop) */
@@ -399,9 +400,9 @@ a.info-row:hover{border-color:var(--mauve-deep);box-shadow:var(--shadow-lg)}
   .cats-grid,.prod-grid{grid-template-columns:repeat(2,1fr)}
   .mega .wrap{padding:14px 14px 18px}
   .mega .grid{grid-template-columns:repeat(2,1fr);gap:4px 8px}
-  .mega a{gap:9px;padding:9px 8px}
-  .mega a .dot{width:34px;height:34px}
-  .mega a .mt{font-size:13.5px}
+  .mega button{gap:9px;padding:9px 8px}
+  .mega button .dot{width:34px;height:34px}
+  .mega button .mt{font-size:13.5px}
   .hero-main{padding:30px;min-height:340px}
   .hero-main::before{background:radial-gradient(120% 90% at 0% 0%, rgba(255,255,255,.6), rgba(255,255,255,0) 60%)}
   .hero-main .copy{max-width:74%}
@@ -412,7 +413,7 @@ a.info-row:hover{border-color:var(--mauve-deep);box-shadow:var(--shadow-lg)}
   .hero-side{grid-template-columns:1fr;gap:12px}
   .hero-card{min-height:150px}
   .delivery .bar{height:auto;min-height:62px;line-height:1.35;flex-wrap:wrap}
-  .sec-head h2{font-size:clamp(24px,7vw,30px)}
+  .sec-head h1,.sec-head h2{font-size:clamp(24px,7vw,30px)}
   .sec-head .all{padding:8px 12px;font-size:13px}
   .brand-grid{grid-template-columns:repeat(2,1fr)}
   .foot-grid{grid-template-columns:1fr}

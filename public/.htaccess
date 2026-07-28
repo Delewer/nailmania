@@ -5,7 +5,7 @@
   RewriteEngine On
   RewriteBase /
 
-  # Order endpoint: /api/order → order.php (so the front-end uses one path on any host)
+  # Legacy order tombstone: stale clients get an explicit 410, never the SPA shell.
   RewriteRule ^api/order/?$ order.php [L]
 
   # Don't rewrite real files or directories (assets, images, etc.)
@@ -13,7 +13,8 @@
   RewriteCond %{REQUEST_FILENAME} -d
   RewriteRule ^ - [L]
 
-  # Serve pre-rendered SEO shells for product/category/brand/content routes.
+  # Serve build-time HTML only for catalog-independent content routes.
+  # Product/category SEO and sitemap are generated from D1 by Cloudflare Pages Functions.
   RewriteCond %{DOCUMENT_ROOT}/$1.html -f
   RewriteRule ^(.+?)/?$ $1.html [L]
 

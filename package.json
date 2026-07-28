@@ -3,23 +3,62 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
+  "engines": {
+    "node": "24.x"
+  },
   "scripts": {
     "catalog": "node scripts/build-catalog.mjs",
+    "catalog:validate-source": "node scripts/validate-catalog-sheet.mjs",
+    "catalog:build:validated": "node scripts/build-catalog.mjs --validated-snapshot tmp/catalog-source.csv --validation-report tmp/catalog-validation.json",
+    "catalog:seed:local": "node scripts/import-catalog-d1.mjs --apply-local",
+    "catalog:import:local": "npm run catalog:validate-source && npm run catalog:build:validated && npm run catalog:seed:local",
     "rehost": "node scripts/rehost-images.mjs",
     "dev": "vite",
-    "prebuild": "npm run catalog && npm run rehost",
+    "dev:cloudflare": "vite build && wrangler pages dev dist --d1 DB=00000000-0000-0000-0000-000000000001 --r2 PRODUCT_IMAGES --binding ENVIRONMENT=local --binding ADMIN_DEV_TOKEN=nailmania-local-admin-only --binding ADMIN_DEV_EMAIL=admin@nailmania.local --persist-to .wrangler/state --compatibility-date 2026-07-16",
+    "dev:reservations": "wrangler dev --config wrangler.reservations.local.jsonc --local --persist-to .wrangler/state --port 8790 --test-scheduled",
+    "verify:reservations:preview": "wrangler deploy --config wrangler.reservations.jsonc --env preview --dry-run",
+    "verify:reservations:production": "wrangler deploy --config wrangler.reservations.jsonc --env production --dry-run",
+    "db:migrate:local": "wrangler d1 migrations apply nailmania-local --local --config wrangler.local.jsonc --persist-to .wrangler/state",
+    "release:verify-config": "node scripts/verify-release-config.mjs",
+    "release:d1:status:preview": "node scripts/d1-release.mjs status --environment preview",
+    "release:d1:status:production": "node scripts/d1-release.mjs status --environment production",
+    "release:d1:backup:preview": "node scripts/d1-release.mjs backup --environment preview",
+    "release:d1:backup:production": "node scripts/d1-release.mjs backup --environment production",
+    "release:d1:migrate:preview": "node scripts/d1-release.mjs migrate --environment preview",
+    "release:d1:migrate:production": "node scripts/d1-release.mjs migrate --environment production",
+    "release:d1:catalog:preview": "node scripts/d1-release.mjs catalog --environment preview",
+    "release:d1:catalog:production": "node scripts/d1-release.mjs catalog --environment production",
+    "release:d1:admin:preview": "node scripts/d1-release.mjs admin --environment preview",
+    "release:d1:admin:production": "node scripts/d1-release.mjs admin --environment production",
+    "release:build:preview": "node scripts/release-build.mjs --environment preview",
+    "release:build:production": "node scripts/release-build.mjs --environment production",
+    "release:pages:preview": "node scripts/pages-release.mjs --environment preview",
+    "release:pages:production": "node scripts/pages-release.mjs --environment production",
+    "release:pages:record-preview": "node scripts/record-preview-acceptance.mjs",
+    "release:reservations:build:preview": "node scripts/reservations-release.mjs build --environment preview",
+    "release:reservations:build:production": "node scripts/reservations-release.mjs build --environment production",
+    "release:reservations:preview": "node scripts/reservations-release.mjs deploy --environment preview",
+    "release:reservations:production": "node scripts/reservations-release.mjs deploy --environment production",
+    "db:seed-admin:local": "node scripts/seed-local-admin.mjs",
     "build": "vite build",
     "postbuild": "node scripts/build-seo.mjs",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "smoke:browser": "node scripts/browser-smoke.mjs",
+    "load:check": "node scripts/load-check.mjs",
+    "audit:security": "node scripts/audit-dependencies.mjs",
+    "test": "node --test tests/*.test.mjs"
   },
   "dependencies": {
+    "jose": "^6.2.3",
+    "lucide-react": "^1.24.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-router-dom": "^6.30.4"
+    "react-router-dom": "^7.18.1"
   },
   "devDependencies": {
     "@aws-sdk/client-s3": "^3.1068.0",
-    "@vitejs/plugin-react": "^6.0.2",
-    "vite": "^8.0.16"
+    "@vitejs/plugin-react": "^6.0.4",
+    "vite": "^8.1.5",
+    "wrangler": "^4.114.0"
   }
 }

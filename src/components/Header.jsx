@@ -4,11 +4,13 @@ import { useNavigate, Link } from 'react-router-dom'
 import { useShop, Icon, Placeholder } from '../shop.jsx'
 import { asset } from '../data.js'
 import { searchProducts } from '../search.js'
+import { useAuth } from '../auth.jsx'
+import { accountText } from '../account-copy.js'
 
 export function LogoMark({size=42,color="#1a1a1a"}){
   // stylized "nn" nail monogram
   return (
-    <svg className="mark" width={size} height={size} viewBox="0 0 48 48" fill="none" style={{width:size,height:size}}>
+    <svg className="mark" width={size} height={size} viewBox="0 0 48 48" fill="none" style={{width:size,height:size}} aria-hidden="true">
       <path d="M7 40V20c0-6 3.4-10 8-10 3 0 5 1.6 6 4 1-2.4 3-4 6-4 4.6 0 8 4 8 10v20"
         stroke={color} strokeWidth="3.2" strokeLinecap="round"/>
       <path d="M13 11c0-4 1.4-7 3-7s3 3 3 7" stroke={color} strokeWidth="3.2" strokeLinecap="round"/>
@@ -16,16 +18,16 @@ export function LogoMark({size=42,color="#1a1a1a"}){
     </svg>
   );
 }
-export function Logo({onClick}){
+export function Logo({onClick,label="Nail Mania"}){
   // Uses the real brand logo at public/images/logo-high.png; until that file exists
   // it falls back to the built-in SVG monogram + wordmark so nothing looks broken.
   const [ok,setOk] = React.useState(true);
   return (
-    <div className="logo" onClick={onClick} role="button">
+    <button className="logo" type="button" onClick={onClick} aria-label={label}>
       {ok
         ? <img className="brandimg" src={asset("images/logo-high.png")} alt="Nail Mania" onError={()=>setOk(false)}/>
         : <><LogoMark/><div className="txt"><b>Nail</b><i>Mania</i></div></>}
-    </div>
+    </button>
   );
 }
 
@@ -47,8 +49,8 @@ export function Topbar(){
         <div className="tright">
           <span className="hours"><Icon n="store" s={15}/>{t("workHours")}</span>
           <div className="lang" role="group" aria-label="Language">
-            <button className={lang==="ro"?"on":""} onClick={()=>setLang("ro")}>RO</button>
-            <button className={lang==="ru"?"on":""} onClick={()=>setLang("ru")}>RU</button>
+            <button type="button" className={lang==="ro"?"on":""} aria-pressed={lang==="ro"} onClick={()=>setLang("ro")}>RO</button>
+            <button type="button" className={lang==="ru"?"on":""} aria-pressed={lang==="ru"} onClick={()=>setLang("ru")}>RU</button>
           </div>
         </div>
       </div>
@@ -57,11 +59,13 @@ export function Topbar(){
 }
 
 export function SearchBox(){
-  const {t,name,allProducts,ensureCatalog,catalogLoading} = useShop();
+  const {t,name,allProducts,ensureCatalog,catalogLoading,catalogError} = useShop();
   const navigate = useNavigate();
   const [q,setQ] = React.useState("");
   const [open,setOpen] = React.useState(false);
+  const [activeIndex,setActiveIndex] = React.useState(-1);
   const boxRef = React.useRef(null);
+  const listId = `store-search-${React.useId().replaceAll(':','')}`;
   React.useEffect(()=>{
     const h=(e)=>{ if(boxRef.current && !boxRef.current.contains(e.target)) setOpen(false); };
     document.addEventListener("mousedown",h); return ()=>document.removeEventListener("mousedown",h);
@@ -74,28 +78,72 @@ export function SearchBox(){
     return searchProducts(allProducts, q);
   },[q,allProducts]);
   const results = allResults.slice(0,8);
+  React.useEffect(()=>{
+    if(activeIndex>=results.length) setActiveIndex(results.length-1);
+  },[activeIndex,results.length]);
   const runSearch = React.useCallback(()=>{
     const s = q.trim();
     if(!s) return;
     setOpen(false);
     navigate(`/search?q=${encodeURIComponent(s)}`);
   },[navigate,q]);
+  const openProduct = React.useCallback((product)=>{
+    navigate(`/product/${product.key}`);
+    setOpen(false);
+    setActiveIndex(-1);
+    setQ("");
+  },[navigate]);
+  const onSearchKeyDown = (event)=>{
+    if(event.key === "Escape"){
+      setOpen(false);
+      setActiveIndex(-1);
+      return;
+    }
+    if((event.key === "ArrowDown" || event.key === "ArrowUp") && results.length){
+      event.preventDefault();
+      setOpen(true);
+      setActiveIndex(current=> event.key === "ArrowDown"
+        ? (current+1)%results.length
+        : (current<=0 ? results.length-1 : current-1));
+      return;
+    }
+    if(event.key === "Enter"){
+      event.preventDefault();
+      if(open && activeIndex>=0 && results[activeIndex]) openProduct(results[activeIndex]);
+      else runSearch();
+    }
+  };
   return (
     <div className="searchbox" ref={boxRef}>
       <input value={q} placeholder={t("searchPh")}
-        onChange={e=>{setQ(e.target.value);setOpen(true); if(e.target.value.trim()) loadProducts();}}
+        onChange={e=>{setQ(e.target.value);setOpen(true);setActiveIndex(-1); if(e.target.value.trim()) loadProducts();}}
         onFocus={()=>{setOpen(true); loadProducts();}}
-        onKeyDown={e=>{ if(e.key==="Enter"){ e.preventDefault(); runSearch(); }}}
+        onKeyDown={onSearchKeyDown}
+        role="combobox"
+        aria-autocomplete="list"
+        aria-expanded={Boolean(open && q.trim())}
+        aria-controls={listId}
+        aria-activedescendant={activeIndex>=0 ? `${listId}-option-${activeIndex}` : undefined}
         aria-label={t("search")}/>
       <button className="go" type="button" onClick={runSearch}><Icon n="search" s={18}/><span className="gotxt">{t("search")}</span></button>
       {open && q.trim() && (
-        <div className="sresults nm-scroll" style={{maxHeight:380,overflowY:"auto"}}>
+        <div className="sresults nm-scroll" id={listId} role="listbox" aria-label={t("results")} style={{maxHeight:380,overflowY:"auto"}}>
           {results.length===0
-            ? <div className="empty">{catalogLoading ? `${t("search")}...` : t("noResults")}</div>
+            ? <div className="empty" role="status">{catalogLoading ? `${t("search")}...` : catalogError ? t("catalogUnavailableText") : t("noResults")}</div>
             : <>
-                <div className="head">{allResults.length} {t("results")}</div>
-                {results.map(p=>(
-                  <div className="row" key={p.key} onClick={()=>{navigate("/product/"+p.key);setOpen(false);setQ("");}}>
+                <div className="head" role="presentation">{allResults.length} {t("results")}</div>
+                {results.map((p,index)=>(
+                  <button
+                    className={"row"+(activeIndex===index?" active":"")}
+                    id={`${listId}-option-${index}`}
+                    role="option"
+                    aria-selected={activeIndex===index}
+                    tabIndex={-1}
+                    type="button"
+                    key={p.key}
+                    onMouseDown={(event)=>event.preventDefault()}
+                    onClick={()=>openProduct(p)}
+                  >
                     <div className="thumb">
                       <Placeholder g={p.g} radius={9} img={p.img} label={name(p)}/>
                     </div>
@@ -104,10 +152,10 @@ export function SearchBox(){
                       <div className="br">{p.brand}</div>
                     </div>
                     <div className="pr">{p.price} {t("lei")}</div>
-                  </div>
+                  </button>
                 ))}
                 {allResults.length>results.length && (
-                  <button className="more" type="button" onClick={runSearch}>{t("all")} · {allResults.length}</button>
+                  <button className="more" role="option" aria-selected="false" type="button" onClick={runSearch}>{t("all")} · {allResults.length}</button>
                 )}
               </>}
         </div>
@@ -117,7 +165,8 @@ export function SearchBox(){
 }
 
 export function Header(){
-  const {t,setDrawer,drawer,cartCount,favs} = useShop();
+  const {t,lang,setDrawer,drawer,cartCount,favs} = useShop();
+  const {user} = useAuth();
   const navigate = useNavigate();
   const [stuck,setStuck] = React.useState(false);
   React.useEffect(()=>{
@@ -132,25 +181,32 @@ export function Header(){
       <header className={"header"+(stuck?" stuck":"")}>
         <div className="wrap">
           <div className="bar">
-            <Logo onClick={scrollTop}/>
+            <Logo onClick={scrollTop} label={t("home")}/>
             <button className={"catbtn"+(drawer==="catalog"?" open":"")}
+              type="button"
+              aria-expanded={drawer==="catalog"}
+              aria-controls="catalog-mega"
               onClick={()=>setDrawer(drawer==="catalog"?null:"catalog")}>
               <span className="lines"><i></i><i></i><i></i></span>
               <span className="ctxt">{t("catalog")}</span>
             </button>
             <SearchBox/>
             <div className="actions">
-              <button className="act hide-mob" onClick={()=>setDrawer("fav")}>
+              <button className="act hide-mob act-account" onClick={()=>navigate(user?"/account":"/login")} aria-label={accountText(lang,user?"account":"signIn")}>
+                <Icon n="user" s={22}/>
+                <span className="lbl">{accountText(lang,user?"account":"signIn")}</span>
+              </button>
+              <button className="act hide-mob" type="button" aria-expanded={drawer==="fav"} onClick={()=>setDrawer("fav")}>
                 <Icon n="heart" s={22}/>
                 <span className="lbl">{t("fav")}</span>
                 {favs.length>0 && <span className="badge">{favs.length}</span>}
               </button>
-              <button className="act act-cart" onClick={()=>setDrawer("cart")}>
+              <button className="act act-cart" type="button" aria-expanded={drawer==="cart"} onClick={()=>setDrawer("cart")}>
                 <Icon n="bag" s={22}/>
                 <span className="lbl">{t("cart")}</span>
                 {cartCount>0 && <span className="badge">{cartCount}</span>}
               </button>
-              <button className="act act-menu mobtoggle" onClick={()=>setDrawer("menu")}>
+              <button className="act act-menu mobtoggle" type="button" aria-expanded={drawer==="menu"} onClick={()=>setDrawer("menu")}>
                 <Icon n="menu" s={22}/>
                 <span className="lbl">{t("menu")}</span>
               </button>

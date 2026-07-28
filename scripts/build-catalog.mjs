@@ -1,19 +1,42 @@
 /* Build src/catalog.json + src/categories.json from the product spreadsheet.
 
    Data source (priority):
-     1. Google Sheets — configured in catalog.config.json. Ordinary /edit links
+     1. A checksum-verified snapshot passed with --validated-snapshot.
+     2. Google Sheets — configured in catalog.config.json. Ordinary /edit links
         and published CSV links are both accepted.
-     2. local nailmania-sheet.csv (CSV; an ODS file also works) — offline fallback.
+     3. local nailmania-sheet.csv (CSV; an ODS file also works) — offline fallback.
 
    Run: npm run catalog   (re-run whenever the price list changes). */
-import { readFileSync, writeFileSync, mkdtempSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync, mkdtempSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
+import {
+  canonicalCsvText,
+  sha256,
+  validateCatalogSheetText,
+  validateImportCatalog,
+} from './catalog-integrity.mjs';
+import {
+  catalogImagePolicyFromConfig,
+  readExternalImageUrlMap,
+  rewriteImageValue,
+} from './catalog-image-policy.mjs';
 
 const ROOT = process.cwd();
 const LOCAL = path.join(ROOT, 'nailmania-sheet.csv');
 const CONFIG = JSON.parse(readFileSync(path.join(ROOT, 'catalog.config.json'), 'utf8'));
+const IMAGE_POLICY = catalogImagePolicyFromConfig(CONFIG, ROOT);
+const EXTERNAL_IMAGE_URL_MAP = readExternalImageUrlMap(IMAGE_POLICY);
+const cliArgs = process.argv.slice(2);
+const argumentValue = (name) => {
+  const inline = cliArgs.find((argument) => argument.startsWith(`${name}=`));
+  if (inline) return inline.slice(name.length + 1);
+  const index = cliArgs.indexOf(name);
+  return index >= 0 ? cliArgs[index + 1] : '';
+};
+const validatedSnapshotArgument = argumentValue('--validated-snapshot');
+const validationReportArgument = argumentValue('--validation-report');
 const PHOTO_OVERRIDES = (() => {
   try { return JSON.parse(readFileSync(path.join(ROOT, 'photo-overrides.json'), 'utf8')); }
   catch { return {}; }
@@ -28,16 +51,16 @@ function normalizeSheetUrl(raw) {
   return `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv${gid ? `&gid=${gid}` : ''}`;
 }
 
-// Cloudflare production builds opt in with CATALOG_USE_SHEET=1 and supply the
-// sheet URL as an environment variable. The repository config is the local and
-// CI default, so every build still has an explicit, reviewable source.
+// A direct catalog-maintenance run may override the configured source through
+// environment variables. Release imports never use this path: they require a
+// checksum-verified --validated-snapshot and its validation report.
 const configuredSheetUrl = process.env.CATALOG_USE_SHEET === '1' && process.env.CATALOG_SHEET_URL
   ? process.env.CATALOG_SHEET_URL
   : CONFIG.sheetUrl;
 const SHEET_URL = normalizeSheetUrl(configuredSheetUrl);
 
 // product photos: photos.csv (SKU,Photo) is the photo source, kept separate from
-// the product list. Photo holds local path(s)/URL(s), space/comma separated for
+// the product list. Photo holds local path(s)/URL(s), whitespace-separated for
 // galleries. Matched to products by SKU. (csvRows is hoisted below.)
 const PHOTOS = (() => {
   try {
@@ -113,7 +136,41 @@ const looksLikeCatalog = (r) =>
   r.slice(0, 5).some((row) => row.some((c) => HEADER_HINT.includes(String(c).toLowerCase().trim())));
 
 let rows;
-if (SHEET_URL) {
+let sourceLabel;
+let validatedSnapshotSha256 = '';
+if (validatedSnapshotArgument) {
+  const snapshotPath = path.resolve(ROOT, validatedSnapshotArgument);
+  const reportPath = path.resolve(
+    ROOT,
+    validationReportArgument || path.join(path.dirname(snapshotPath), 'catalog-validation.json'),
+  );
+  const snapshotText = canonicalCsvText(readFileSync(snapshotPath, 'utf8'));
+  const validationReport = JSON.parse(readFileSync(reportPath, 'utf8'));
+  validatedSnapshotSha256 = sha256(snapshotText);
+  const recomputedValidation = validateCatalogSheetText(snapshotText, {
+    checkedAt: validationReport.checkedAt,
+    sourceUrl: validationReport.sourceUrl,
+  }).report;
+  if (!validationReport.valid || validationReport.errorCount !== 0) {
+    throw new Error(`Validated catalog snapshot report contains ${validationReport.errorCount} error(s)`);
+  }
+  if (!recomputedValidation.valid) {
+    throw new Error(`Catalog snapshot contains ${recomputedValidation.errorCount} validation error(s)`);
+  }
+  if (validationReport.snapshotSha256 !== validatedSnapshotSha256) {
+    throw new Error(
+      `Catalog snapshot checksum mismatch: expected ${validationReport.snapshotSha256}, got ${validatedSnapshotSha256}`,
+    );
+  }
+  if (validationReport.rowCount !== recomputedValidation.rowCount
+      || validationReport.uniqueSkuCount !== recomputedValidation.uniqueSkuCount) {
+    throw new Error('Catalog validation report does not describe the supplied snapshot');
+  }
+  rows = csvRows(snapshotText);
+  if (!looksLikeCatalog(rows)) throw new Error('Validated snapshot is not a recognizable catalog CSV');
+  sourceLabel = `validated snapshot ${path.relative(ROOT, snapshotPath)} (${validatedSnapshotSha256})`;
+  console.log(`Loading catalog from ${sourceLabel}`);
+} else if (SHEET_URL) {
   try {
     console.log('Loading catalog from Google Sheet…');
     // cache-buster + no-store so each build pulls the latest sheet, not a stale copy
@@ -123,12 +180,15 @@ if (SHEET_URL) {
     const parsed = csvRows(await res.text());
     if (!looksLikeCatalog(parsed)) throw new Error('response was not a recognizable catalog CSV');
     rows = parsed;
+    sourceLabel = 'Google Sheet (unverified build source)';
   } catch (e) {
     console.warn(`! Google Sheet load failed (${e.message}) — falling back to committed ${path.basename(LOCAL)}`);
     rows = localRows();
+    sourceLabel = `${path.basename(LOCAL)} (unverified fallback)`;
   }
 } else {
   rows = localRows();
+  sourceLabel = `${path.basename(LOCAL)} (unverified local source)`;
 }
 
 // ---- 3. map sheet category -> site category id (must exist in CATS, data.js) ----
@@ -323,8 +383,9 @@ for (const r of rows.slice(headerIdx + 1)) {
   // prefer the unique `key` over the raw `code`: some source SKUs are reused for
   // different products (e.g. T0014 = Solutie Aerodisin AND BeeNails Polygel), so a
   // code lookup would give the wrong product its twin's photo. key is always unique.
-  const image = PHOTO_OVERRIDES[key] || PHOTO_OVERRIDES[code]
+  const imageSource = PHOTO_OVERRIDES[key] || PHOTO_OVERRIDES[code]
     || cell(r, 'image') || PHOTOS[key] || PHOTOS[code] || '';
+  const image = rewriteImageValue(imageSource, IMAGE_POLICY, EXTERNAL_IMAGE_URL_MAP);
   // collection membership from the flag columns (Summer / Sale)
   const flags = {};
   for (const fc of flagCols) if (flagOn(r[fc.idx])) flags[fc.flag] = true;
@@ -354,19 +415,31 @@ if (keyDupes.length) console.warn(`! ${keyDupes.length} duplicate identity keys:
 // never overwrite the catalog with an empty list (would blank the whole site)
 if (products.length === 0) throw new Error('No valid products parsed — refusing to write an empty catalog.');
 
-writeFileSync(path.join(ROOT, 'src', 'catalog.json'), JSON.stringify(products) + '\n');
-
 // categories actually used (id + label + count), busiest first → src/categories.json
 const catList = Object.entries(catLabels)
   .map(([id, label]) => ({ id, label, count: products.filter(p => p.cat === id).length }))
   .sort((a, b) => b.count - a.count);
-writeFileSync(path.join(ROOT, 'src', 'categories.json'), JSON.stringify(catList) + '\n');
+const integrity = {
+  generatedAt: new Date().toISOString(),
+  source: sourceLabel,
+  validatedSnapshotSha256: validatedSnapshotSha256 || null,
+  ...validateImportCatalog(products, catList),
+};
+const integrityPath = path.join(ROOT, 'tmp', 'catalog-build-integrity.json');
+mkdirSync(path.dirname(integrityPath), { recursive: true });
+writeFileSync(integrityPath, `${JSON.stringify(integrity, null, 2)}\n`);
+if (!integrity.valid) {
+  throw new Error(`Catalog build is not importable; see ${path.relative(ROOT, integrityPath)}`);
+}
+writeFileSync(path.join(ROOT, 'src', 'catalog.json'), `${JSON.stringify(products)}\n`);
+writeFileSync(path.join(ROOT, 'src', 'categories.json'), `${JSON.stringify(catList)}\n`);
 
 // ---- 6. report ----
 const cats = {};
 for (const p of products) (cats[p.cat] ||= new Set()).add(p.brand);
 console.log(`✓ ${products.length} products -> src/catalog.json`);
-console.log(`✓ ${catList.length} categories -> src/categories.json (source: ${SHEET_URL ? 'Google Sheet' : 'local file'})\n`);
+console.log(`✓ ${catList.length} categories -> src/categories.json (source: ${sourceLabel})`);
+console.log(`Import integrity: ${integrity.valid ? 'valid' : `${integrity.errorCount} error(s)`} -> ${path.relative(ROOT, integrityPath)}\n`);
 for (const [c, set] of Object.entries(cats).sort())
   console.log(`  ${c.padEnd(14)} ${String(products.filter(p => p.cat === c).length).padStart(4)} items · ${set.size} brand(s)`);
 const fresh = catList.filter(c => !KNOWN_CATS.has(c.id));

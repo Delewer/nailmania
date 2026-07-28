@@ -1,11 +1,26 @@
-import { CATS, I18N, findCategory, productGallery, productImg } from './data.js';
-import catalogUrl from './catalog.json?url';
+import { I18N, decorateCategory, productGallery } from './data.js';
+import {
+  CATEGORIES_ENDPOINT,
+  PRODUCTS_ENDPOINT,
+  loadStorefrontCatalog,
+} from './catalog-api.js';
 
-// ---- Full catalog (generated from the spreadsheet via scripts/build-catalog.mjs) ----
-const CATALOG_RAW = await fetch(catalogUrl).then((res)=>{
-  if(!res.ok) throw new Error(`Failed to load catalog: ${res.status}`);
-  return res.json();
-});
+let snapshot;
+try{
+  snapshot = await loadStorefrontCatalog({
+    productsEndpoint:(import.meta.env && import.meta.env.VITE_CATALOG_ENDPOINT) || PRODUCTS_ENDPOINT,
+    categoriesEndpoint:(import.meta.env && import.meta.env.VITE_CATEGORIES_ENDPOINT) || CATEGORIES_ENDPOINT,
+  });
+}catch(error){
+  console.error('D1 storefront catalog is unavailable:', error);
+  snapshot = { products:[], categories:[], error };
+}
+
+export const CATALOG_ERROR = snapshot.error || null;
+export const CATALOG_AVAILABLE = !CATALOG_ERROR;
+export const CATS = snapshot.categories.map(decorateCategory);
+export const findCategory = (catId)=> CATS.find(c=>c.id===catId);
+const CATALOG_RAW = snapshot.products;
 const _catMeta = Object.fromEntries(CATS.map(c=>[c.id, c]));
 // normalise catalog rows into the same product shape the UI components expect
 export const CATALOG = CATALOG_RAW.map(p=>{
@@ -16,7 +31,7 @@ export const CATALOG = CATALOG_RAW.map(p=>{
     badge: p.old>p.price ? "sale" : "",
     g: c ? c.g : ["#e7d6dd","#f5ebef"],
     icon: c ? c.icon : "bottle",
-    img: p.image ? productGallery(p)[0] : productImg(p.code || p.key || p.id),  // Tilda/supplier photo → local SKU file → gradient
+    img: productGallery(p)[0],             // catalog photo when present; otherwise Placeholder gradient
   };
 });
 

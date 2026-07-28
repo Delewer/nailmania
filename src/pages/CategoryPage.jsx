@@ -3,8 +3,8 @@ import React from 'react'
 import { useParams, useSearchParams, Link } from 'react-router-dom'
 import { useShop, Icon } from '../shop.jsx'
 import { ProductCard, Pager } from '../components/Products.jsx'
-import { findCategory } from '../data.js'
-import { productsByCat, brandsByCat, facetsByCat, specLabel, specValue, inStock } from '../catalog-data.js'
+import { productsByCat, brandsByCat, facetsByCat, specLabel, specValue, inStock, findCategory, CATALOG_ERROR } from '../catalog-data.js'
+import { CatalogUnavailable } from '../components/CatalogState.jsx'
 
 const PER_PAGE = 12;
 const keyOf = (label)=> label.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
@@ -39,12 +39,14 @@ export default function CategoryPage(){
   };
   const clearAll = ()=> setParams(new URLSearchParams());
 
+  if(CATALOG_ERROR) return <div className="wrap page"><CatalogUnavailable/></div>;
+
   if(!cat){
     return (
       <div className="wrap page">
         <div className="page-empty">
           <Icon n="search" s={60}/>
-          <h2>{t("noResults")}</h2>
+          <h1>{t("noResults")}</h1>
           <Link className="btn btn-dark" to="/">{t("backHome")}</Link>
         </div>
       </div>
@@ -75,12 +77,12 @@ export default function CategoryPage(){
 
       {/* brand filter — only brands present in this section */}
       {brands.length>1 && (
-        <div className="brandbar" role="tablist" aria-label={t("filterBrand")}>
-          <button className={"brandchip"+(brand===null?" on":"")} onClick={()=>setBrand(null)}>
+        <div className="brandbar" role="group" aria-label={t("filterBrand")}>
+          <button type="button" aria-pressed={brand===null} className={"brandchip"+(brand===null?" on":"")} onClick={()=>setBrand(null)}>
             {t("allBrands")} <span className="cnt">{products.length}</span>
           </button>
           {brands.map(({brand:b,count})=>(
-            <button key={b} className={"brandchip"+(brand===b?" on":"")} onClick={()=>setBrand(b)}>
+            <button type="button" aria-pressed={brand===b} key={b} className={"brandchip"+(brand===b?" on":"")} onClick={()=>setBrand(b)}>
               {b} <span className="cnt">{count}</span>
             </button>
           ))}
@@ -89,11 +91,11 @@ export default function CategoryPage(){
 
       {/* characteristic filters — auto-shown only where the data has them */}
       {facets.map(f=>(
-        <div className="facet" key={f.label}>
+        <div className="facet" role="group" aria-label={specLabel(f.label, lang)} key={f.label}>
           <span className="facet-lbl">{specLabel(f.label, lang)}</span>
           <div className="facet-chips">
             {f.values.map(v=>(
-              <button key={v.value}
+              <button type="button" aria-pressed={Boolean(selected[f.label]?.has(v.value))} key={v.value}
                 className={"fchip"+(selected[f.label]?.has(v.value)?" on":"")}
                 onClick={()=>toggleFacet(f.label, v.value)}>
                 {specValue(v.value, lang)} <span className="cnt">{v.count}</span>
@@ -104,7 +106,7 @@ export default function CategoryPage(){
       ))}
 
       {activeCount>0 && (
-        <button className="filter-clear" onClick={clearAll}><Icon n="close" s={15}/>{t("clear")}</button>
+        <button type="button" className="filter-clear" onClick={clearAll}><Icon n="close" s={15}/>{t("clear")}</button>
       )}
 
       {slice.length===0 ? (

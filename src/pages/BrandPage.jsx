@@ -3,8 +3,8 @@ import React from 'react'
 import { useParams, useSearchParams, Link } from 'react-router-dom'
 import { useShop, Icon } from '../shop.jsx'
 import { ProductCard, Pager } from '../components/Products.jsx'
-import { findCategory } from '../data.js'
-import { productsByBrand, catsByBrand, inStock } from '../catalog-data.js'
+import { productsByBrand, catsByBrand, inStock, findCategory, CATALOG_ERROR } from '../catalog-data.js'
+import { CatalogUnavailable } from '../components/CatalogState.jsx'
 
 const PER_PAGE = 12;
 
@@ -26,12 +26,14 @@ export default function BrandPage(){
   React.useEffect(()=>{ window.scrollTo({top:0}); }, [brand]);
   React.useEffect(()=>{ setPage(0); }, [brand, cat]);
 
+  if(CATALOG_ERROR) return <div className="wrap page"><CatalogUnavailable/></div>;
+
   if(!products.length){
     return (
       <div className="wrap page">
         <div className="page-empty">
           <Icon n="search" s={60}/>
-          <h2>{t("noResults")}</h2>
+          <h1>{t("noResults")}</h1>
           <Link className="btn btn-dark" to="/">{t("backHome")}</Link>
         </div>
       </div>
@@ -58,14 +60,14 @@ export default function BrandPage(){
 
       {/* category filter — only categories this brand appears in */}
       {cats.length>1 && (
-        <div className="brandbar" aria-label={t("filterCat")}>
-          <button className={"brandchip"+(cat===null?" on":"")} onClick={()=>setCat(null)}>
+        <div className="brandbar" role="group" aria-label={t("filterCat")}>
+          <button type="button" aria-pressed={cat===null} className={"brandchip"+(cat===null?" on":"")} onClick={()=>setCat(null)}>
             {t("allCats")} <span className="cnt">{products.length}</span>
           </button>
           {cats.map(({cat:cid,count})=>{
             const c = findCategory(cid);
             return (
-              <button key={cid} className={"brandchip"+(cat===cid?" on":"")} onClick={()=>setCat(cid)}>
+              <button type="button" aria-pressed={cat===cid} key={cid} className={"brandchip"+(cat===cid?" on":"")} onClick={()=>setCat(cid)}>
                 {c ? name(c) : cid} <span className="cnt">{count}</span>
               </button>
             );

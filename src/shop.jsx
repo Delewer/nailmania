@@ -1,11 +1,27 @@
 /* ===== Shop store: context, state, icons, placeholders ===== */
 import React from 'react'
 import { I18N } from './data.js'
+import { submitOrderRequest } from './order-api.js'
+import { loadFreshStorefrontProducts } from './account-catalog.js'
+import { trackProductEvent } from './product-analytics.js'
+import { completeOrderAttemptKey, purgeLegacyGuestOrderHistory } from './order-attempt.js'
+import { readStoredList, readStoredValue, writeStoredValue } from './storage.js'
+import {
+  clampCartQuantity,
+  incrementCartQuantity,
+  normalizeCartIncrement,
+  reconcileCartItems,
+} from './cart-quantity.js'
 
 let catalogPromise = null;
+let catalogRefreshPromise = null;
 const loadCatalogProducts = ()=> {
-  catalogPromise ||= import('./catalog-data.js').then(m=>m.ALL_PRODUCTS);
+  catalogPromise ||= import('./catalog-data.js').then(m=>({items:m.ALL_PRODUCTS,error:m.CATALOG_ERROR}));
   return catalogPromise;
+};
+const refreshCatalogProducts = ()=> {
+  catalogRefreshPromise ||= loadFreshStorefrontProducts().finally(()=>{ catalogRefreshPromise=null; });
+  return catalogRefreshPromise;
 };
 
 // ---------- Icons (UI only) ----------
@@ -35,7 +51,9 @@ const I = {
   check:   "M5 12l5 5L20 7",
   card:    "M2 7a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2zM2 10h20M6 15h4",
   cash:    "M2 7a1 1 0 0 1 1-1h18a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1zM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6ZM5 9v.01M19 14.99V15",
-  store:   "M4 9l1.2-4.2A1 1 0 0 1 6.2 4h11.6a1 1 0 0 1 1 .8L20 9M4 9v10a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V9M4 9h16M9 20v-6h6v6"
+  store:   "M4 9l1.2-4.2A1 1 0 0 1 6.2 4h11.6a1 1 0 0 1 1 .8L20 9M4 9v10a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V9M4 9h16M9 20v-6h6v6",
+  user:    "M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm7 9a7 7 0 0 0-14 0",
+  logout:  "M10 5H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h5M14 8l4 4-4 4M8 12h10"
 };
 export function Icon({n, s=22, sw=2, fill=false, style}){
   const filled = ["heart","bag","ig","tg","wa","fb","star","spark","pin","check"].includes(n) && fill;
@@ -53,6 +71,7 @@ export function Icon({n, s=22, sw=2, fill=false, style}){
 // so a broken URL never shows a broken image.
 export function Placeholder({g, icon, label, ratio="1", radius=14, img}){
   const [failed, setFailed] = React.useState(false);
+  React.useEffect(()=>setFailed(false),[img]);
   const grad = g && g.length>1
     ? `linear-gradient(150deg, ${g[0]} 0%, ${g[1]} 100%)`
     : `linear-gradient(150deg, var(--peach), var(--blush-2))`;
@@ -86,22 +105,32 @@ export const ShopContext = React.createContext(null);
 export const useShop = () => React.useContext(ShopContext);
 
 export function ShopProvider({children}){
-  const [lang, setLang] = React.useState(()=>localStorage.getItem("nm_lang")||"ro");
-  const [cart, setCart] = React.useState(()=>JSON.parse(localStorage.getItem("nm_cart")||"[]"));
-  const [favs, setFavs] = React.useState(()=>JSON.parse(localStorage.getItem("nm_favs")||"[]"));
-  const [orders, setOrders] = React.useState(()=>JSON.parse(localStorage.getItem("nm_orders")||"[]"));
+  const [lang, setLang] = React.useState(()=>readStoredValue("nm_lang","ro")||"ro");
+  const [cart, setCart] = React.useState(()=>reconcileCartItems(
+    readStoredList("nm_cart"),
+    ()=>null,
+    {keepUnresolved:true},
+  ));
+  const [favs, setFavs] = React.useState(()=>readStoredList("nm_favs"));
   const [drawer, setDrawer] = React.useState(null); // 'cart' | 'fav' | 'menu' | 'catalog'
   const [toast, setToast] = React.useState(null);
   const [allProducts, setAllProducts] = React.useState([]);
   const [knownProducts, setKnownProducts] = React.useState({});
   const [catalogLoading, setCatalogLoading] = React.useState(false);
+  const [catalogLoaded, setCatalogLoaded] = React.useState(false);
+  const [catalogError, setCatalogError] = React.useState(null);
   const toastT = React.useRef(0);
   const hasDrawer = Boolean(drawer);
 
-  React.useEffect(()=>localStorage.setItem("nm_lang",lang),[lang]);
-  React.useEffect(()=>localStorage.setItem("nm_cart",JSON.stringify(cart)),[cart]);
-  React.useEffect(()=>localStorage.setItem("nm_favs",JSON.stringify(favs)),[favs]);
-  React.useEffect(()=>localStorage.setItem("nm_orders",JSON.stringify(orders)),[orders]);
+  React.useEffect(()=>{
+    document.documentElement.lang = lang === "ru" ? "ru" : "ro";
+    writeStoredValue("nm_lang",lang);
+  },[lang]);
+  React.useEffect(()=>writeStoredValue("nm_cart",JSON.stringify(cart)),[cart]);
+  React.useEffect(()=>writeStoredValue("nm_favs",JSON.stringify(favs)),[favs]);
+  // Older builds persisted the complete guest order response, including contact
+  // fields. Guest history has no UI consumer; purge that legacy PII copy.
+  React.useEffect(()=>purgeLegacyGuestOrderHistory(),[]);
   React.useEffect(()=>{
     if(!hasDrawer) return;
     const y = window.scrollY || window.pageYOffset || 0;
@@ -131,7 +160,9 @@ export function ShopProvider({children}){
 
   const rememberProduct = React.useCallback((p)=>{
     if(!p || !p.key) return;
-    setKnownProducts(prev=> prev[p.key] === p ? prev : {...prev, [p.key]:p});
+    // Cards use the build-time snapshot. Do not let a later card render replace
+    // fresher product data already indexed from the storefront API.
+    setKnownProducts(prev=> prev[p.key] ? prev : {...prev, [p.key]:p});
   },[]);
   const indexProducts = React.useCallback((items)=>{
     setKnownProducts(prev=>{
@@ -143,43 +174,147 @@ export function ShopProvider({children}){
       return changed ? next : prev;
     });
   },[]);
-  const ensureCatalog = React.useCallback(()=>{
-    if(allProducts.length) return Promise.resolve(allProducts);
+  const ensureCatalog = React.useCallback((options={})=>{
+    const force = Boolean(options?.force);
+    if(!force && catalogLoaded) return Promise.resolve(allProducts);
     setCatalogLoading(true);
+    if(force){
+      return refreshCatalogProducts()
+        .then(items=>{
+          setCatalogLoaded(true);
+          setCatalogError(null);
+          setAllProducts(items);
+          indexProducts(items);
+          return items;
+        })
+        .finally(()=>setCatalogLoading(false));
+    }
     return loadCatalogProducts()
-      .then(items=>{ setAllProducts(items); indexProducts(items); return items; })
+      .then(({items,error})=>{
+        setCatalogLoaded(true);
+        setCatalogError(error);
+        if(!error){ setAllProducts(items); indexProducts(items); }
+        return error ? [] : items;
+      })
+      .catch(error=>{
+        setCatalogLoaded(true);
+        setCatalogError(error);
+        return [];
+      })
       .finally(()=>setCatalogLoading(false));
-  },[allProducts, indexProducts]);
+  },[allProducts, catalogLoaded, indexProducts]);
 
   // cart/favorites store the stable product key (SKU or hash), not the volatile row id
-  const find = React.useCallback((key)=> knownProducts[key] || allProducts.find(p=>p.key===key), [allProducts, knownProducts]);
+  // Once the live catalog is loaded it takes precedence over product objects
+  // remembered by cards from the build-time snapshot.
+  const find = React.useCallback((key)=> allProducts.find(p=>p.key===key) || knownProducts[key], [allProducts, knownProducts]);
 
   React.useEffect(()=>{
     if((cart.length || favs.length) && !allProducts.length) ensureCatalog();
   },[allProducts.length, cart.length, favs.length, ensureCatalog]);
 
-  // Drop cart/favorite entries that no longer resolve after the catalog is loaded
-  // (e.g. legacy carts saved under the old numeric ids, or removed products)
+  // Reconcile persisted quantities whenever known product data changes. While
+  // the catalog is unavailable, unresolved lines are retained; once a complete
+  // catalog is loaded, removed products are dropped. Stock zero removes a line
+  // and reduced stock clamps it without weakening the server-side stock check.
   React.useEffect(()=>{
-    if(!allProducts.length) return;
-    setCart(c=>{ const f=c.filter(i=>find(i.id)); return f.length===c.length ? c : f; });
-    setFavs(f=>{ const g=f.filter(k=>find(k)); return g.length===f.length ? f : g; });
-  },[allProducts.length, find]);
+    setCart(current=>{
+      const next = reconcileCartItems(current,find,{
+        keepUnresolved:!catalogLoaded || Boolean(catalogError),
+      });
+      const unchanged = next.length===current.length
+        && next.every((item,index)=>item.id===current[index].id && item.q===current[index].q);
+      return unchanged ? current : next;
+    });
+    if(catalogLoaded && !catalogError){
+      setFavs(f=>{ const g=f.filter(k=>find(k)); return g.length===f.length ? f : g; });
+    }
+  },[catalogError, catalogLoaded, find]);
 
   const showToast = (msg)=>{
     setToast(msg); clearTimeout(toastT.current);
     toastT.current = setTimeout(()=>setToast(null), 2200);
   };
-  const addToCart = (p)=>{
-    rememberProduct(p);
-    setCart(c=>{
-      const ex=c.find(i=>i.id===p.key);
-      if(ex) return c.map(i=>i.id===p.key?{...i,q:i.q+1}:i);
-      return [...c,{id:p.key,q:1}];
+  const addToCart = (p, options={})=>{
+    if(!p?.key) return 0;
+    const product = find(p.key) || p;
+    const quantity = normalizeCartIncrement(options.quantity,1);
+    const snapshot = reconcileCartItems(cart,key=>key===p.key ? product : find(key),{
+      keepUnresolved:!catalogLoaded || Boolean(catalogError),
     });
-    showToast(t("addedToast"));
+    const present = snapshot.find(item=>item.id===p.key)?.q || 0;
+    const projected = incrementCartQuantity(present,quantity,product);
+    const addedQuantity = Math.max(0,projected-present);
+    rememberProduct(product);
+    setCart(current=>{
+      const next = reconcileCartItems(current,key=>key===p.key ? product : find(key),{
+        keepUnresolved:!catalogLoaded || Boolean(catalogError),
+      });
+      const index = next.findIndex(item=>item.id===p.key);
+      const currentQuantity = index>=0 ? next[index].q : 0;
+      const total = incrementCartQuantity(currentQuantity,quantity,product);
+      if(total<=0) return index>=0 ? next.filter(item=>item.id!==p.key) : next;
+      if(index>=0){
+        if(next[index].q===total) return next;
+        return next.map((item,itemIndex)=>itemIndex===index ? {...item,q:total} : item);
+      }
+      return [...next,{id:p.key,q:total}];
+    });
+    if(addedQuantity>0){
+      trackProductEvent('add_to_cart',{
+        productKey:p.key,quantity:addedQuantity,language:lang,source:options.source||'product_card',
+      });
+      showToast(t("addedToast"));
+    }else{
+      showToast(t("stockLimitReached"));
+    }
+    return addedQuantity;
   };
-  const setQty=(id,q)=> setCart(c=> q<=0? c.filter(i=>i.id!==id): c.map(i=>i.id===id?{...i,q}:i));
+  const addItemsToCart = (entries, options={})=>{
+    const valid = (entries||[]).filter(entry=>entry?.product?.key && Number(entry.quantity)>0);
+    if(!valid.length) return 0;
+    indexProducts(valid.map(entry=>entry.product));
+    setCart(current=>{
+      const incoming = new Map(valid.map(entry=>[entry.product.key,entry.product]));
+      const next = reconcileCartItems(current,key=>incoming.get(key) || find(key),{
+        keepUnresolved:!catalogLoaded || Boolean(catalogError),
+      });
+      let added = 0;
+      for(const {product,quantity} of valid){
+        const index = next.findIndex(item=>item.id===product.key);
+        const present = index>=0 ? next[index].q : 0;
+        const requested = normalizeCartIncrement(quantity);
+        const total = incrementCartQuantity(present,requested,product);
+        const delta = Math.max(0,total-present);
+        if(!delta) continue;
+        added += delta;
+        if(index>=0) next[index]={...next[index],q:total};
+        else next.push({id:product.key,q:total});
+      }
+      const unchanged = next.length===current.length
+        && next.every((item,index)=>item.id===current[index].id && item.q===current[index].q);
+      return unchanged ? current : next;
+    });
+    for(const {product,quantity} of valid){
+      trackProductEvent('add_to_cart',{
+        productKey:product.key,
+        quantity:Math.min(99,Math.max(1,Math.floor(Number(quantity)||1))),
+        language:lang,
+        source:options.source||'repeat_order',
+      });
+    }
+    showToast(t("addedToast"));
+    return valid.length;
+  };
+  const setQty=(id,q)=> setCart(current=>{
+    const product = find(id);
+    const next = reconcileCartItems(current,find,{
+      keepUnresolved:!catalogLoaded || Boolean(catalogError),
+    });
+    const quantity = clampCartQuantity(q,product);
+    if(quantity<=0) return next.filter(item=>item.id!==id);
+    return next.map(item=>item.id===id ? {...item,q:quantity} : item);
+  });
   const removeFromCart=(id)=> setCart(c=>c.filter(i=>i.id!==id));
   const clearCart=()=> setCart([]);
   const toggleFav=(id)=>{ if(!find(id)) ensureCatalog(); setFavs(f=> f.includes(id)? f.filter(x=>x!==id): [...f,id]); };
@@ -187,39 +322,33 @@ export function ShopProvider({children}){
   const cartCount = cart.reduce((s,i)=>s+i.q,0);
   const cartTotal = cart.reduce((s,i)=>{const p=find(i.id);return s+(p?p.price*i.q:0)},0);
 
-  // Place an order: snapshot the cart + customer details, store it, empty the cart,
-  // and return the saved order so the success screen can recap it.
-  const submitOrder = (details)=>{
-    const no = "NM" + Date.now().toString().slice(-7);
-    const items = cart.map(i=>{
-      const p = find(i.id);
-      return p ? {id:p.key, code:p.code||"", brand:p.brand, name:name(p), price:p.price, q:i.q} : null;
-    }).filter(Boolean);
-    const discount = items.reduce((s,it)=>{ const p=find(it.id); return s + (p&&p.old>0 ? (p.old-p.price)*it.q : 0); }, 0);
-    const order = {
-      no, date:new Date().toISOString(), lang,
-      items, count:items.reduce((s,it)=>s+it.q,0), total:cartTotal, discount,
-      ...details,
-    };
-    setOrders(o=>[order, ...o].slice(0,50));
-    // notify the shop owner via the serverless endpoint (Telegram). Fire-and-forget
-    // so checkout never blocks; the endpoint keeps the bot token server-side.
-    try{
-      const endpoint = (import.meta.env && import.meta.env.VITE_ORDER_ENDPOINT) || "/api/order";
-      fetch(endpoint, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(order) }).catch(()=>{});
-    }catch{}
+  // D1 is the only order authority: the server owns prices, totals and stock
+  // reservation. The cart is cleared only after the API confirms the order.
+  const submitOrder = async (details)=>{
+    const savedOrder = await submitOrderRequest({
+      items:cart.map(item=>({productKey:item.id,quantity:item.q})),
+      customer:details.customer,
+      delivery:details.delivery,
+      payment:details.payment,
+      promoCode:details.promoCode || undefined,
+      turnstileToken:details.turnstileToken,
+      idempotencyKey:details.idempotencyKey,
+      expectedQuote:details.expectedQuote,
+      lang,
+    });
     clearCart();
-    return order;
+    completeOrderAttemptKey(details.idempotencyKey);
+    return savedOrder;
   };
 
   const value = {
     lang,setLang,t,name,
-    cart,addToCart,setQty,removeFromCart,clearCart,cartCount,cartTotal,
-    orders,submitOrder,
+    cart,addToCart,addItemsToCart,setQty,removeFromCart,clearCart,cartCount,cartTotal,
+    submitOrder,
     favs,toggleFav,
     drawer,setDrawer,
     toast,showToast,
-    find,allProducts,ensureCatalog,catalogLoading,rememberProduct
+    find,allProducts,ensureCatalog,catalogLoading,catalogLoaded,catalogError,rememberProduct
   };
   return <ShopContext.Provider value={value}>{children}</ShopContext.Provider>;
 }

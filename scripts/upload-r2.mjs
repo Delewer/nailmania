@@ -8,8 +8,8 @@
  *   R2_BUCKET            = bucket name (e.g. nailmania-photos)
  *
  * Usage:
- *   node scripts/upload-r2.mjs                      # upload public/images/tilda
- *   node scripts/upload-r2.mjs <dir> --prefix img   # custom source dir / key prefix
+ *   node scripts/upload-r2.mjs <dir> --prefix img --environment preview \
+ *     --confirm-bucket <bucket> --expected-commit <full-sha>
  *
  * Resumable: skips objects already present in the bucket.
  */
@@ -17,6 +17,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { S3Client, PutObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
+import { requireR2MutationTarget } from './r2-target-guard.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -32,6 +33,7 @@ if (!R2_ACCOUNT_ID || !R2_ACCESS_KEY_ID || !R2_SECRET_ACCESS_KEY || !R2_BUCKET) 
   console.error('Missing R2 credentials. Set R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET (env or .env).');
   process.exit(1);
 }
+const target = requireR2MutationTarget({ root: ROOT });
 
 const arg = (k, d) => { const i = process.argv.indexOf(k); return i >= 0 ? process.argv[i + 1] : d; };
 const SRC = (process.argv[2] && !process.argv[2].startsWith('--')) ? path.resolve(process.argv[2]) : path.join(ROOT, 'public', 'images', 'tilda');
@@ -47,14 +49,18 @@ const s3 = new S3Client({
 });
 
 const files = fs.readdirSync(SRC).filter((f) => CT[path.extname(f).toLowerCase()]);
-console.log(`Source : ${SRC}\nBucket : ${R2_BUCKET}${PREFIX ? ' /' + PREFIX : ''}\nFiles  : ${files.length}\n`);
+console.log(`Source : ${SRC}\nTarget : ${target.environment}\nBucket : ${R2_BUCKET}${PREFIX ? ' /' + PREFIX : ''}\nFiles  : ${files.length}\n`);
 
 let done = 0, up = 0, skip = 0, fail = 0;
 const failures = [];
 
 async function exists(k) {
   try { await s3.send(new HeadObjectCommand({ Bucket: R2_BUCKET, Key: k })); return true; }
-  catch { return false; }
+  catch (error) {
+    const status = Number(error?.$metadata?.httpStatusCode || 0);
+    if (status === 404 || error?.name === 'NotFound' || error?.name === 'NoSuchKey') return false;
+    throw error;
+  }
 }
 async function one(name) {
   const k = key(name);
@@ -79,5 +85,12 @@ let idx = 0;
 const worker = async () => { while (idx < files.length) await one(files[idx++]); };
 await Promise.all(Array.from({ length: CONC }, worker));
 process.stdout.write('\n');
-if (failures.length) { fs.writeFileSync(path.join(__dirname, 'upload-r2.failures.json'), JSON.stringify(failures, null, 2)); console.log(`failures -> scripts/upload-r2.failures.json (${failures.length})`); }
+if (failures.length) {
+  const failureDirectory = path.join(ROOT, 'tmp', 'r2');
+  const failurePath = path.join(failureDirectory, 'upload-r2.failures.json');
+  fs.mkdirSync(failureDirectory, { recursive: true });
+  fs.writeFileSync(failurePath, JSON.stringify(failures, null, 2));
+  console.log(`failures -> ${path.relative(ROOT, failurePath)} (${failures.length})`);
+}
 console.log(`Done. uploaded=${up} skipped=${skip} failed=${fail}`);
+if (failures.length) process.exitCode = 1;

@@ -11,8 +11,8 @@ export default function Home(){
 
   React.useEffect(()=>{
     let alive = true;
-    import('../catalog-data.js').then(({ featured, SALE_PRODUCTS, SUMMER_PRODUCTS, NEW_PRODUCTS })=>{
-      if(!alive) return;
+    import('../catalog-data.js').then(({ featured, SALE_PRODUCTS, SUMMER_PRODUCTS, NEW_PRODUCTS, CATALOG_ERROR })=>{
+      if(!alive || CATALOG_ERROR) return;
       setSections({
         best: featured(1, 8),
         newItems: NEW_PRODUCTS.length ? NEW_PRODUCTS : featured(7, 8),

@@ -1,0 +1,37 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "nailmania-reservation-maintenance",
+  "main": "workers/reservations.js",
+  "compatibility_date": "2026-07-16",
+  "workers_dev": false,
+  "env": {
+    "preview": {
+      "name": "nailmania-reservation-maintenance-preview",
+      "triggers": {
+        "crons": ["*/5 * * * *"]
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "nailmania-preview",
+          "database_id": "993c4d91-40d0-47d2-8aa5-358a5e18f22e",
+          "migrations_dir": "migrations"
+        }
+      ]
+    },
+    "production": {
+      "name": "nailmania-reservation-maintenance-production",
+      "triggers": {
+        "crons": ["*/5 * * * *"]
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "nailmania-production",
+          "database_id": "0dab0430-cd49-493a-8a27-d92f22c51cc3",
+          "migrations_dir": "migrations"
+        }
+      ]
+    }
+  }
+}

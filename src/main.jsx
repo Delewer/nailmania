@@ -4,6 +4,7 @@ import App from './App.jsx'
 import './styles.css'
 import './components.css'
 import './pages.css'
+import './account.css'
 
 const BUILD_HEALTH_MARK = 'asset-cache-guard-v2';
 

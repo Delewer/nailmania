@@ -2,21 +2,30 @@ import React from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useShop, Icon } from '../shop.jsx'
 import { ProductCard, Pager } from '../components/Products.jsx'
-import { ALL_PRODUCTS } from '../catalog-data.js'
+import { ALL_PRODUCTS, CATALOG_ERROR } from '../catalog-data.js'
 import { searchProducts } from '../search.js'
+import { CatalogUnavailable } from '../components/CatalogState.jsx'
+import { trackProductEvent } from '../product-analytics.js'
 
 const PER_PAGE = 24;
 
 export default function SearchPage(){
   const [params] = useSearchParams();
   const q = params.get("q") || "";
-  const { t } = useShop();
+  const { t, lang } = useShop();
   const [page,setPage] = React.useState(0);
   const results = React.useMemo(()=>searchProducts(ALL_PRODUCTS, q), [q]);
   const pages = Math.ceil(results.length / PER_PAGE);
   const slice = results.slice(page*PER_PAGE, (page+1)*PER_PAGE);
 
   React.useEffect(()=>{ setPage(0); }, [q]);
+  React.useEffect(()=>{
+    if(q.trim()) trackProductEvent('search',{
+      language:lang,source:'search',resultCount:results.length,queryLength:q.length,
+    });
+  },[q,results.length,lang]);
+
+  if(CATALOG_ERROR) return <div className="wrap page"><CatalogUnavailable/></div>;
 
   return (
     <div className="wrap page cat-page search-page">
