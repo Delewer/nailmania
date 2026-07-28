@@ -85,7 +85,7 @@ Generated `src/catalog.json` и `src/categories.json` должны быть revi
 ```powershell
 $commit = git rev-parse HEAD
 $env:R2_BUCKET = "nailmania-photos"
-npm run rehost -- --environment production --confirm-bucket nailmania-photos --expected-commit $commit --public-base-url https://images.nailmania.md
+npm run rehost -- -- --environment production --confirm-bucket nailmania-photos --expected-commit $commit --public-base-url https://images.nailmania.md
 ```
 
 Preview bucket для `rehost-images` не использовать: canonical catalog обязан ссылаться на один production image host, который затем проверяет preview storefront. После R2 maintenance нельзя продолжать rollout с прежним SHA, snapshot или backup. Preview/production release-build и guarded D1 catalog import отказываются принимать artifact, пока в нём остаётся хотя бы один внешний image host.
