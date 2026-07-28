@@ -145,7 +145,8 @@ FROM (
 CREATE TRIGGER promo_redemptions_validate_insert
 BEFORE INSERT ON promo_redemptions
 BEGIN
-  SELECT CASE WHEN NOT EXISTS (
+  SELECT RAISE(ABORT, 'promo validation failed')
+  WHERE NOT EXISTS (
     SELECT 1
     FROM promo_order_calculations calc
     JOIN promo_codes pc ON pc.id = calc.promo_code_id
@@ -165,16 +166,18 @@ BEGIN
       AND (pc.ends_at IS NULL OR pc.ends_at > NEW.created_at)
       AND o.items_subtotal >= pc.min_order_amount
       AND (o.user_id IS NEW.user_id)
-  ) THEN RAISE(ABORT, 'promo validation failed') END;
+  );
 
-  SELECT CASE WHEN EXISTS (
+  SELECT RAISE(ABORT, 'promo login required')
+  WHERE EXISTS (
     SELECT 1 FROM promo_codes pc
     WHERE pc.id = NEW.promo_code_id
       AND pc.per_user_limit IS NOT NULL
       AND NEW.user_id IS NULL
-  ) THEN RAISE(ABORT, 'promo login required') END;
+  );
 
-  SELECT CASE WHEN EXISTS (
+  SELECT RAISE(ABORT, 'promo total limit reached')
+  WHERE EXISTS (
     SELECT 1 FROM promo_codes pc
     WHERE pc.id = NEW.promo_code_id
       AND pc.total_use_limit IS NOT NULL
@@ -182,9 +185,10 @@ BEGIN
         SELECT COUNT(*) FROM promo_redemptions pr
         WHERE pr.promo_code_id = pc.id AND pr.released_at IS NULL
       ) >= pc.total_use_limit
-  ) THEN RAISE(ABORT, 'promo total limit reached') END;
+  );
 
-  SELECT CASE WHEN EXISTS (
+  SELECT RAISE(ABORT, 'promo user limit reached')
+  WHERE EXISTS (
     SELECT 1 FROM promo_codes pc
     WHERE pc.id = NEW.promo_code_id
       AND pc.per_user_limit IS NOT NULL
@@ -195,7 +199,7 @@ BEGIN
           AND pr.user_id = NEW.user_id
           AND pr.released_at IS NULL
       ) >= pc.per_user_limit
-  ) THEN RAISE(ABORT, 'promo user limit reached') END;
+  );
 END;
 
 CREATE TRIGGER promo_redemptions_immutable_delete
