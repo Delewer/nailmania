@@ -9,6 +9,8 @@ import {
   parseStatisticsQuery,
 } from '../functions/_lib/statistics.js';
 import { onRequestGet as statisticsEndpoint } from '../functions/api/admin/statistics/index.js';
+import { onRequestGet as statisticsEventsEndpoint } from '../functions/api/admin/statistics/events.js';
+import { onRequestGet as statisticsExportEndpoint } from '../functions/api/admin/statistics/export.js';
 
 const migration = (name) => readFileSync(new URL(`../migrations/${name}`, import.meta.url), 'utf8');
 const schema = [
@@ -53,6 +55,7 @@ function setup() {
 
     INSERT INTO users (id, email, name, role, status)
     VALUES ('manager-1', 'manager@example.test', 'Manager', 'manager', 'active'),
+           ('admin-1', 'admin@example.test', 'Admin', 'admin', 'active'),
            ('customer-1', 'customer@example.test', 'Customer', 'customer', 'active');
 
     INSERT INTO orders (
@@ -226,32 +229,55 @@ test('CSV is UTF-8 BOM, always quoted and neutralizes spreadsheet formulas witho
   assert.match(sales, /"refund","return-old","NM-OLD"/);
 });
 
-test('manager and admin statistics API is no-store while customer role is rejected', async (t) => {
+test('statistics, event metrics and exports are admin-only', async (t) => {
   const db = setup();
   t.after(() => db.close());
   const url = `https://shop.test/api/admin/statistics?from=${encodeURIComponent(FROM)}&to=${encodeURIComponent(TO)}`;
-  const manager = await statisticsEndpoint({
-    request: new Request(url, { headers: { authorization: 'Bearer test-admin-token' } }),
+  const endpointContext = (requestUrl, email) => ({
+    request: new Request(requestUrl, {
+      headers: { authorization: 'Bearer test-admin-token' },
+    }),
     env: {
       DB: db,
       ENVIRONMENT: 'local',
       ADMIN_DEV_TOKEN: 'test-admin-token',
-      ADMIN_DEV_EMAIL: 'manager@example.test',
+      ADMIN_DEV_EMAIL: email,
     },
   });
-  assert.equal(manager.status, 200);
-  assert.equal(manager.headers.get('cache-control'), 'no-store');
-  assert.equal((await manager.json()).summary.netRevenue, 80);
 
-  const customer = await statisticsEndpoint({
-    request: new Request(url, { headers: { authorization: 'Bearer test-admin-token' } }),
-    env: {
-      DB: db,
-      ENVIRONMENT: 'local',
-      ADMIN_DEV_TOKEN: 'test-admin-token',
-      ADMIN_DEV_EMAIL: 'customer@example.test',
-    },
-  });
+  for (const endpoint of [
+    statisticsEndpoint,
+    statisticsEventsEndpoint,
+    statisticsExportEndpoint,
+  ]) {
+    const requestUrl = endpoint === statisticsExportEndpoint
+      ? `${url}&report=sales`
+      : url;
+    const manager = await endpoint(endpointContext(requestUrl, 'manager@example.test'));
+    assert.equal(manager.status, 403);
+    assert.equal((await manager.json()).error.code, 'ADMIN_FORBIDDEN');
+  }
+
+  const admin = await statisticsEndpoint(endpointContext(url, 'admin@example.test'));
+  assert.equal(admin.status, 200);
+  assert.equal(admin.headers.get('cache-control'), 'no-store');
+  assert.equal((await admin.json()).summary.netRevenue, 80);
+
+  const adminEvents = await statisticsEventsEndpoint(
+    endpointContext(url, 'admin@example.test'),
+  );
+  assert.equal(adminEvents.status, 200);
+  assert.equal((await adminEvents.json()).configured, false);
+
+  const adminExport = await statisticsExportEndpoint(
+    endpointContext(`${url}&report=sales`, 'admin@example.test'),
+  );
+  assert.equal(adminExport.status, 200);
+  assert.match(adminExport.headers.get('content-type'), /^text\/csv/);
+
+  const customer = await statisticsEndpoint(
+    endpointContext(url, 'customer@example.test'),
+  );
   assert.equal(customer.status, 403);
 });
 

@@ -5,7 +5,7 @@ import { parseStatisticsQuery } from '../../../_lib/statistics.js';
 
 export async function onRequestGet(context) {
   try {
-    await requireAdmin(context, ['manager', 'admin']);
+    await requireAdmin(context, ['admin']);
     const range = parseStatisticsQuery(new URL(context.request.url).searchParams);
     const result = await readAnalyticsMetrics(context.env, range);
     return json({

@@ -108,6 +108,13 @@ test('admin mobile navigation and editors retain accessible names and focus hand
   assert.match(orders, /href="\/cdn-cgi\/access\/logout"/);
   assert.match(orders, /aria-label="Motivul returului"/);
   assert.match(orders, /aria-label="Comentariu intern manager"/);
+  assert.match(orders, /const isAdmin = session\.user\.role === 'admin'/);
+  assert.match(orders, /\{isAdmin && <Link aria-label="Coduri promo"/);
+  assert.match(orders, /\{isAdmin && <Link aria-label="Statistică"/);
+  assert.match(orders, /promosMode \? \(isAdmin \? <AdminPromos/);
+  assert.match(orders, /statisticsMode \? \(isAdmin \? <AdminStatistics/);
+  assert.match(orders, /canViewPromoCodes && order\.promoCode/);
+  assert.match(orders, /canViewPromoCodes=\{isAdmin\}/);
   assert.match(products, /handleTabListKeyDown/);
   assert.match(products, /aria-label=\{`Denumirea specificației/);
   assert.match(products, /aria-label="Adresa imaginii"/);

@@ -15,6 +15,10 @@ import { transitionOrder } from '../functions/_lib/order-lifecycle.js';
 import { createOrderReturn } from '../functions/_lib/order-returns.js';
 import { getAdminOrder } from '../functions/_lib/admin-orders.js';
 import { onRequestGet as listAdminOrders } from '../functions/api/admin/orders/index.js';
+import {
+  onRequestGet as getAdminOrderEndpoint,
+  onRequestPatch as updateAdminOrderEndpoint,
+} from '../functions/api/admin/orders/[id].js';
 import { newSessionRecord } from '../functions/_lib/customer-auth.js';
 import { withOrderContract } from './helpers/order-fixture.mjs';
 import {
@@ -61,6 +65,7 @@ function setup() {
     VALUES (1, 1, 20, 0, 'i:1'), (2, 1, 20, 0, 'i:2'), (3, 1, 20, 0, 'i:3');
     INSERT INTO users (id, email, name, role, status)
     VALUES ('admin-1', 'admin@example.test', 'Promo Admin', 'admin', 'active'),
+           ('manager-1', 'manager@example.test', 'Promo Manager', 'manager', 'active'),
            ('customer-1', 'customer@example.test', 'Promo Customer', 'customer', 'active');
   `);
   return db;
@@ -162,7 +167,9 @@ function promoValidationContext(db, body) {
     }),
   };
 }
-function adminContext(db, path, { method = 'GET', body, params = {} } = {}) {
+function adminContext(db, path, {
+  method = 'GET', body, params = {}, email = 'admin@example.test',
+} = {}) {
   const headers = new Headers({ authorization: 'Bearer promo-admin-token' });
   if (method !== 'GET') headers.set('origin', 'http://127.0.0.1:8788');
   if (body !== undefined) headers.set('content-type', 'application/json');
@@ -171,7 +178,7 @@ function adminContext(db, path, { method = 'GET', body, params = {} } = {}) {
       DB: db,
       ENVIRONMENT: 'local',
       ADMIN_DEV_TOKEN: 'promo-admin-token',
-      ADMIN_DEV_EMAIL: 'admin@example.test',
+      ADMIN_DEV_EMAIL: email,
     },
     params,
     request: new Request(`http://127.0.0.1:8788${path}`, {
@@ -379,6 +386,87 @@ test('delivery threshold is evaluated before promo and returns reverse the exact
     db.sqlite.prepare('SELECT product_id, on_hand FROM inventory WHERE product_id IN (1, 2) ORDER BY product_id').all().map((row) => ({ ...row })),
     [{ product_id: 1, on_hand: 20 }, { product_id: 2, on_hand: 20 }],
   );
+});
+
+test('manager cannot list, view, create, update or deactivate promo codes', async (t) => {
+  const db = setup();
+  t.after(() => db.close());
+  const promo = insertPromo(db);
+  const manager = { email: 'manager@example.test' };
+  const responses = [
+    await listPromos(adminContext(db, '/api/admin/promos', manager)),
+    await getPromo(adminContext(db, `/api/admin/promos/${promo.id}`, {
+      ...manager,
+      params: { id: promo.id },
+    })),
+    await createPromo(adminContext(db, '/api/admin/promos', {
+      ...manager,
+      method: 'POST',
+      body: { code: 'DENIED' },
+    })),
+    await updatePromo(adminContext(db, `/api/admin/promos/${promo.id}`, {
+      ...manager,
+      method: 'PATCH',
+      params: { id: promo.id },
+      body: { revision: `revision:${promo.id}`, discountValue: 20 },
+    })),
+    await deactivatePromo(adminContext(db, `/api/admin/promos/${promo.id}`, {
+      ...manager,
+      method: 'DELETE',
+      params: { id: promo.id },
+      body: { revision: `revision:${promo.id}` },
+    })),
+  ];
+
+  for (const response of responses) {
+    assert.equal(response.status, 403);
+    assert.equal((await response.json()).error.code, 'ADMIN_FORBIDDEN');
+  }
+});
+
+test('manager order list, detail and transition responses redact exact promo identifiers', async (t) => {
+  const db = setup();
+  t.after(() => db.close());
+  const promo = insertPromo(db, { code: 'ORDER10' });
+  const orderResponse = await createOrder(orderContext(db, orderBody({ promoCode: promo.code })));
+  assert.equal(orderResponse.status, 201);
+  const order = (await orderResponse.json()).order;
+  const manager = { email: 'manager@example.test' };
+  const assertManagerOrder = (value) => {
+    assert.equal(value.promoDiscount, 10);
+    assert.equal(Object.hasOwn(value, 'promoCode'), false);
+    assert.equal(Object.hasOwn(value, 'promoCodeId'), false);
+  };
+
+  const listResponse = await listAdminOrders(adminContext(db, '/api/admin/orders?limit=30', manager));
+  assert.equal(listResponse.status, 200);
+  const listItem = (await listResponse.json()).items.find((item) => item.id === order.id);
+  assertManagerOrder(listItem);
+
+  const detailResponse = await getAdminOrderEndpoint(adminContext(db, `/api/admin/orders/${order.id}`, {
+    ...manager,
+    params: { id: order.id },
+  }));
+  assert.equal(detailResponse.status, 200);
+  assertManagerOrder((await detailResponse.json()).order);
+
+  const transitionResponse = await updateAdminOrderEndpoint(adminContext(db, `/api/admin/orders/${order.id}`, {
+    ...manager,
+    method: 'PATCH',
+    params: { id: order.id },
+    body: { status: 'confirmed', comment: 'Confirmed by seller' },
+  }));
+  assert.equal(transitionResponse.status, 200);
+  assertManagerOrder((await transitionResponse.json()).order);
+
+  const adminDetailResponse = await getAdminOrderEndpoint(adminContext(db, `/api/admin/orders/${order.id}`, {
+    params: { id: order.id },
+  }));
+  assert.equal(adminDetailResponse.status, 200);
+  const adminOrder = (await adminDetailResponse.json()).order;
+  assert.equal(adminOrder.promoCode, promo.code);
+  assert.equal(adminOrder.promoCodeId, promo.id);
+  assert.equal(adminOrder.promoDiscount, 10);
 });
 
 test('admin promo CRUD preserves scopes, revision guards, metrics and linked order history', async (t) => {

@@ -25,7 +25,7 @@ Migration `0010_statistics_and_analytics.sql` adds immutable category ID/name an
 
 ## Administrative endpoints
 
-All endpoints require an active D1 `manager` or `admin` after Cloudflare Access (or the local admin token) and return `Cache-Control: no-store`.
+All endpoints require an active D1 `admin` after Cloudflare Access (or the local admin token) and return `Cache-Control: no-store`. The operational `manager` role cannot access statistics or exports.
 
 - `GET /api/admin/statistics?from=...&to=...` returns summary, daily ledger, product/category/brand reports, inventory value and paginated product filters (`q`, `category`, `brand`, `stock=low|out|no_sales`, `limit`, `offset`).
 - `GET /api/admin/statistics/events?from=...&to=...` returns optional Analytics Engine funnel metrics. It returns `configured:false` when read credentials are intentionally absent.

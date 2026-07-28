@@ -1,5 +1,5 @@
 import { requireAdmin, requireSameOrigin } from '../../../_lib/admin-auth.js';
-import { getAdminOrder } from '../../../_lib/admin-orders.js';
+import { adminOrderForRole, getAdminOrder } from '../../../_lib/admin-orders.js';
 import { apiError, handleApiError, json } from '../../../_lib/http.js';
 import { OrderLifecycleError, transitionOrder } from '../../../_lib/order-lifecycle.js';
 
@@ -7,12 +7,12 @@ const orderId = (params) => decodeURIComponent(String(params.id || '')).trim().s
 
 export async function onRequestGet(context) {
   try {
-    const { db } = await requireAdmin(context);
+    const { db, user } = await requireAdmin(context);
     const id = orderId(context.params);
     if (!id) return apiError('INVALID_ORDER_ID', 'Order id is required', 400);
     const order = await getAdminOrder(db, id);
     if (!order) return apiError('ORDER_NOT_FOUND', 'Order not found', 404);
-    return json({ ok: true, order }, 200, { 'cache-control': 'no-store' });
+    return json({ ok: true, order: adminOrderForRole(order, user.role) }, 200, { 'cache-control': 'no-store' });
   } catch (error) {
     return handleApiError(error);
   }
@@ -36,7 +36,11 @@ export async function onRequestPatch(context) {
       comment,
     });
     const order = await getAdminOrder(db, id);
-    return json({ ok: true, transition, order }, 200, { 'cache-control': 'no-store' });
+    return json({
+      ok: true,
+      transition,
+      order: adminOrderForRole(order, user.role),
+    }, 200, { 'cache-control': 'no-store' });
   } catch (error) {
     if (error instanceof OrderLifecycleError) {
       return apiError(error.code, error.message, error.status, error.details);

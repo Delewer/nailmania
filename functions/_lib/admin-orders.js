@@ -23,6 +23,14 @@ export const adminOrderSummary = (row) => ({
   reservationExpiresAt: row.reservation_expires_at,
 });
 
+export function adminOrderForRole(order, role) {
+  if (!order || role === 'admin') return order;
+  const redacted = { ...order };
+  delete redacted.promoCode;
+  delete redacted.promoCodeId;
+  return redacted;
+}
+
 export async function getAdminOrder(db, id) {
   const order = await db.prepare(`
     SELECT o.*, COALESCE(pr.code_snapshot, pc.code) AS promo_code

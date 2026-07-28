@@ -1,5 +1,5 @@
 import { requireAdmin, requireSameOrigin } from '../../../../_lib/admin-auth.js';
-import { getAdminOrder } from '../../../../_lib/admin-orders.js';
+import { adminOrderForRole, getAdminOrder } from '../../../../_lib/admin-orders.js';
 import { apiError, handleApiError, json } from '../../../../_lib/http.js';
 import { createOrderReturn, OrderReturnError } from '../../../../_lib/order-returns.js';
 
@@ -24,7 +24,12 @@ export async function onRequestPost(context) {
     });
     const order = await getAdminOrder(db, id);
     return json(
-      { ok: true, created: result.created, return: result.return, order },
+      {
+        ok: true,
+        created: result.created,
+        return: result.return,
+        order: adminOrderForRole(order, user.role),
+      },
       result.created ? 201 : 200,
       { 'cache-control': 'no-store' },
     );

@@ -122,7 +122,7 @@ npm run rehost -- --environment <preview-or-production> --confirm-bucket $env:R2
    $previewCatalogManifest = (Get-ChildItem tmp/releases/preview-catalog-*.json | Where-Object { $_.Name -notlike "*postconditions*" } | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
    ```
 
-   Если staff-строки ещё не подготовлены в отдельной preview D1, выдать роль каждому заранее одобренному Access email с двойным подтверждением значения. Для продавца использовать `manager`, для владельца — `admin`:
+   Если staff-строки ещё не подготовлены в отдельной preview D1, выдать роль каждому заранее одобренному Access email с двойным подтверждением значения. Для продавца использовать `manager` (без промокодов, статистики, audit и readiness; точные promo code/id удаляются и из ответов заказов, но сумма скидки сохраняется), для владельца — `admin`:
 
    ```powershell
    $staffEmail = "approved-staff@example.com"

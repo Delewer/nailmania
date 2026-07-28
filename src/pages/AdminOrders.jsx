@@ -203,6 +203,7 @@ function OrderDrawer({
   order,
   loading,
   error,
+  canViewPromoCodes,
   onClose,
   onTransition,
   onReturn,
@@ -390,7 +391,12 @@ function OrderDrawer({
                     <dl className="adm-totals">
                       <div><dt>Produse</dt><dd>{money(order.itemsSubtotal)}</dd></div>
                       {order.catalogDiscount > 0 && <div><dt>Reducere catalog</dt><dd>-{money(order.catalogDiscount)}</dd></div>}
-                      {order.promoDiscount > 0 && <div><dt>Promocod{order.promoCode ? ` ${order.promoCode}` : ''}</dt><dd>-{money(order.promoDiscount)}</dd></div>}
+                      {order.promoDiscount > 0 && (
+                        <div>
+                          <dt>{canViewPromoCodes && order.promoCode ? `Promocod ${order.promoCode}` : 'Reducere promo'}</dt>
+                          <dd>-{money(order.promoDiscount)}</dd>
+                        </div>
+                      )}
                       <div><dt>Livrare</dt><dd>{money(order.deliveryFee)}</dd></div>
                       <div className="grand"><dt>Total</dt><dd>{money(order.total)}</dd></div>
                     </dl>
@@ -619,6 +625,8 @@ export default function AdminOrders() {
   if (!authChecked) return <div className="adm-boot" role="status" aria-label="Se verifică accesul"><LoaderCircle className="adm-spin" size={26}/></div>;
   if (!session) return <AdminLogin initialError={authError} onAuthenticated={(payload) => { setSession(payload); setAuthError(''); }}/>;
 
+  const isAdmin = session.user.role === 'admin';
+  const adminOnlyMessage = <div className="adm-list-message adm-error"><AlertTriangle size={18}/>Acces permis doar administratorilor</div>;
   const totalPages = Math.max(1, Math.ceil(pagination.total / PAGE_SIZE));
   const currentPage = Math.floor(pagination.offset / PAGE_SIZE) + 1;
   return (
@@ -629,10 +637,10 @@ export default function AdminOrders() {
           <Link aria-label="Comenzi" aria-current={ordersMode ? 'page' : undefined} className={ordersMode ? 'active' : ''} to="/admin/orders"><ShoppingBag size={19}/><span>Comenzi</span>{(counts.pending || 0) > 0 && <i>{counts.pending}</i>}</Link>
           <Link aria-label="Produse" aria-current={productsMode ? 'page' : undefined} className={productsMode ? 'active' : ''} to="/admin/products"><Boxes size={19}/><span>Produse</span></Link>
           <Link aria-label="Categorii" aria-current={categoriesMode ? 'page' : undefined} className={categoriesMode ? 'active' : ''} to="/admin/categories"><FolderTree size={19}/><span>Categorii</span></Link>
-          <Link aria-label="Coduri promo" aria-current={promosMode ? 'page' : undefined} className={promosMode ? 'active' : ''} to="/admin/promos"><TicketPercent size={19}/><span>Coduri promo</span></Link>
+          {isAdmin && <Link aria-label="Coduri promo" aria-current={promosMode ? 'page' : undefined} className={promosMode ? 'active' : ''} to="/admin/promos"><TicketPercent size={19}/><span>Coduri promo</span></Link>}
           <Link aria-label="Jurnal stoc" aria-current={inventoryMode ? 'page' : undefined} className={inventoryMode ? 'active' : ''} to="/admin/inventory"><ClipboardList size={19}/><span>Jurnal stoc</span></Link>
-          <Link aria-label="Statistică" aria-current={statisticsMode ? 'page' : undefined} className={statisticsMode ? 'active' : ''} to="/admin/statistics"><BarChart3 size={19}/><span>Statistică</span></Link>
-          {session.user.role === 'admin' && <Link aria-label="Audit" aria-current={auditMode ? 'page' : undefined} className={auditMode ? 'active' : ''} to="/admin/audit"><ScrollText size={19}/><span>Audit</span></Link>}
+          {isAdmin && <Link aria-label="Statistică" aria-current={statisticsMode ? 'page' : undefined} className={statisticsMode ? 'active' : ''} to="/admin/statistics"><BarChart3 size={19}/><span>Statistică</span></Link>}
+          {isAdmin && <Link aria-label="Audit" aria-current={auditMode ? 'page' : undefined} className={auditMode ? 'active' : ''} to="/admin/audit"><ScrollText size={19}/><span>Audit</span></Link>}
           <Link aria-label="Deschide magazinul într-o filă nouă" to="/" target="_blank" rel="noopener noreferrer"><ExternalLink size={19}/><span>Magazin</span></Link>
         </nav>
         <div className="adm-sidebar-user">
@@ -646,12 +654,10 @@ export default function AdminOrders() {
       <main className="adm-main">
         {productsMode ? <AdminProducts onUnauthorized={invalidateSession}/>
           : categoriesMode ? <AdminCategories onUnauthorized={invalidateSession}/>
-            : promosMode ? <AdminPromos onUnauthorized={invalidateSession}/>
+            : promosMode ? (isAdmin ? <AdminPromos onUnauthorized={invalidateSession}/> : adminOnlyMessage)
               : inventoryMode ? <AdminInventoryJournal onUnauthorized={invalidateSession}/>
-              : statisticsMode ? <AdminStatistics onUnauthorized={invalidateSession}/>
-              : auditMode ? (session.user.role === 'admin'
-                ? <AdminAuditLog onUnauthorized={invalidateSession}/>
-                : <div className="adm-list-message adm-error"><AlertTriangle size={18}/>Acces permis doar administratorilor</div>) : (
+              : statisticsMode ? (isAdmin ? <AdminStatistics onUnauthorized={invalidateSession}/> : adminOnlyMessage)
+              : auditMode ? (isAdmin ? <AdminAuditLog onUnauthorized={invalidateSession}/> : adminOnlyMessage) : (
           <>
             <header className="adm-topbar">
               <div><span>Vânzări</span><h1>Comenzi</h1></div>
@@ -715,6 +721,7 @@ export default function AdminOrders() {
           order={detail}
           loading={detailLoading}
           error={detailError}
+          canViewPromoCodes={isAdmin}
           onClose={closeOrder}
           onTransition={transition}
           onReturn={createReturn}

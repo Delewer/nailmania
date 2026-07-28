@@ -1,12 +1,12 @@
 import { requireAdmin } from '../../../_lib/admin-auth.js';
-import { adminOrderSummary } from '../../../_lib/admin-orders.js';
+import { adminOrderForRole, adminOrderSummary } from '../../../_lib/admin-orders.js';
 import { handleApiError, json } from '../../../_lib/http.js';
 import { ORDER_TRANSITIONS } from '../../../_lib/order-lifecycle.js';
 import { clampLikeTerm, likeContainsPattern } from '../../../_lib/search-pattern.js';
 
 export async function onRequestGet(context) {
   try {
-    const { db } = await requireAdmin(context);
+    const { db, user } = await requireAdmin(context);
     const url = new URL(context.request.url);
     const limit = Math.min(100, Math.max(1, Number.parseInt(url.searchParams.get('limit') || '30', 10)));
     const offset = Math.max(0, Number.parseInt(url.searchParams.get('offset') || '0', 10));
@@ -48,7 +48,7 @@ export async function onRequestGet(context) {
 
     return json({
       ok: true,
-      items: (ordersResult.results || []).map(adminOrderSummary),
+      items: (ordersResult.results || []).map((row) => adminOrderForRole(adminOrderSummary(row), user.role)),
       counts,
       pagination: { limit, offset, total: Number(countRow?.count || 0) },
     }, 200, { 'cache-control': 'no-store' });

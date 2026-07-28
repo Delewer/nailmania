@@ -6,7 +6,7 @@ const reportName = (value) => String(value || '').trim().toLowerCase();
 
 export async function onRequestGet(context) {
   try {
-    const { db } = await requireAdmin(context, ['manager', 'admin']);
+    const { db } = await requireAdmin(context, ['admin']);
     const url = new URL(context.request.url);
     const filters = parseStatisticsQuery(url.searchParams);
     const report = reportName(url.searchParams.get('report'));

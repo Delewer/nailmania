@@ -47,7 +47,7 @@ const scopeInsert = (db, table, column, promoId, values, now, guard = null) => {
 
 export async function onRequestGet(context) {
   try {
-    const { db } = await requireAdmin(context, ['manager', 'admin']);
+    const { db } = await requireAdmin(context, ['admin']);
     const url = new URL(context.request.url);
     const state = String(url.searchParams.get('state') || 'all').trim();
     const search = clampLikeTerm(url.searchParams.get('q'));
@@ -88,7 +88,7 @@ export async function onRequestGet(context) {
 export async function onRequestPost(context) {
   try {
     requireSameOrigin(context.request, context.env);
-    const { db, user } = await requireAdmin(context, ['manager', 'admin']);
+    const { db, user } = await requireAdmin(context, ['admin']);
     let body;
     try { body = await context.request.json(); }
     catch { return apiError('INVALID_JSON', 'Request body must be valid JSON', 400); }

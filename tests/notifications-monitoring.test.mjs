@@ -283,6 +283,9 @@ test('admin Telegram resend is idempotent, audited, same-origin protected, and r
   assert.equal(createdPayload.order.notifications[0].status, 'sent');
   assert.equal(createdPayload.order.notifications[0].actor.id, 'manager-1');
   assert.equal(createdPayload.order.notifications[0].actor.name, 'manager user');
+  assert.equal(Object.hasOwn(createdPayload.order, 'promoCode'), false);
+  assert.equal(Object.hasOwn(createdPayload.order, 'promoCodeId'), false);
+  assert.equal(createdPayload.order.promoDiscount, 0);
   assert.equal(deliveries, 1);
   assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM notification_attempts WHERE event_type = 'order_resend'").get().count, 1);
   assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM admin_audit_log WHERE action = 'order.notification.telegram.resend'").get().count, 1);
@@ -417,6 +420,9 @@ test('internal manager comment uses a separate optimistic revision and immutable
   assert.equal(first.status, 200);
   const firstPayload = await first.json();
   assert.match(firstPayload.order.internalCommentRevision, /^[0-9a-f-]{36}$/i);
+  assert.equal(Object.hasOwn(firstPayload.order, 'promoCode'), false);
+  assert.equal(Object.hasOwn(firstPayload.order, 'promoCodeId'), false);
+  assert.equal(firstPayload.order.promoDiscount, 0);
 
   const stale = await updateInternalComment(adminContext(db, '/api/admin/orders/order-1/internal-comment', {
     method: 'PATCH',

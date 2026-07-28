@@ -1,5 +1,5 @@
 import { requireAdmin, requireSameOrigin } from '../../../../_lib/admin-auth.js';
-import { getAdminOrder } from '../../../../_lib/admin-orders.js';
+import { adminOrderForRole, getAdminOrder } from '../../../../_lib/admin-orders.js';
 import { apiError, handleApiError, json } from '../../../../_lib/http.js';
 import { OrderOperationError, updateOrderInternalComment } from '../../../../_lib/order-operations.js';
 
@@ -27,7 +27,11 @@ export async function onRequestPatch(context) {
       actorUserId: user.id,
     });
     const order = await getAdminOrder(db, id);
-    return json({ ok: true, result, order }, 200, { 'cache-control': 'no-store' });
+    return json({
+      ok: true,
+      result,
+      order: adminOrderForRole(order, user.role),
+    }, 200, { 'cache-control': 'no-store' });
   } catch (error) {
     if (error instanceof OrderOperationError) {
       return apiError(error.code, error.message, error.status, error.details);

@@ -1,5 +1,5 @@
 import { requireAdmin, requireSameOrigin } from '../../../../../_lib/admin-auth.js';
-import { getAdminOrder } from '../../../../../_lib/admin-orders.js';
+import { adminOrderForRole, getAdminOrder } from '../../../../../_lib/admin-orders.js';
 import { apiError, handleApiError, json } from '../../../../../_lib/http.js';
 import {
   deliverTelegramNotification,
@@ -54,7 +54,7 @@ export async function onRequestPost(context) {
     });
     const updatedOrder = await getAdminOrder(db, order.id);
     return json(
-      { ok: true, ...result, order: updatedOrder },
+      { ok: true, ...result, order: adminOrderForRole(updatedOrder, user.role) },
       result.created ? 201 : 200,
       { 'cache-control': 'no-store' },
     );

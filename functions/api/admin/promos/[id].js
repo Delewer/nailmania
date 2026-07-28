@@ -18,7 +18,7 @@ const changedRows = (result) => Number(result?.meta?.changes ?? result?.changes 
 
 export async function onRequestGet(context) {
   try {
-    const { db } = await requireAdmin(context, ['manager', 'admin']);
+    const { db } = await requireAdmin(context, ['admin']);
     const id = promoId(context.params);
     if (!id) return apiError('INVALID_PROMO_ID', 'Promo id is required', 400);
     const promo = await getAdminPromo(db, id);
@@ -32,7 +32,7 @@ export async function onRequestGet(context) {
 export async function onRequestPatch(context) {
   try {
     requireSameOrigin(context.request, context.env);
-    const { db, user } = await requireAdmin(context, ['manager', 'admin']);
+    const { db, user } = await requireAdmin(context, ['admin']);
     const id = promoId(context.params);
     if (!id) return apiError('INVALID_PROMO_ID', 'Promo id is required', 400);
     let body;
@@ -93,7 +93,7 @@ export async function onRequestPatch(context) {
 export async function onRequestDelete(context) {
   try {
     requireSameOrigin(context.request, context.env);
-    const { db, user } = await requireAdmin(context, ['manager', 'admin']);
+    const { db, user } = await requireAdmin(context, ['admin']);
     const id = promoId(context.params);
     if (!id) return apiError('INVALID_PROMO_ID', 'Promo id is required', 400);
     let body;

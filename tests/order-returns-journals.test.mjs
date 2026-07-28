@@ -244,6 +244,10 @@ test('manager can operate returns and inventory journal, while audit log is admi
     body: { reason: 'Manager return', items: [{ orderItemId: itemId, quantity: 1 }] },
   }));
   assert.equal(managerReturn.status, 201);
+  const managerReturnPayload = await managerReturn.json();
+  assert.equal(Object.hasOwn(managerReturnPayload.order, 'promoCode'), false);
+  assert.equal(Object.hasOwn(managerReturnPayload.order, 'promoCodeId'), false);
+  assert.equal(managerReturnPayload.order.promoDiscount, 0);
 
   const customerReturn = await returnOrder(context(db, '/api/admin/orders/order-roles/returns', {
     email: 'customer@example.test', method: 'POST', params: { id: 'order-roles' },

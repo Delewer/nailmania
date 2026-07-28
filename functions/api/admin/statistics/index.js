@@ -4,7 +4,7 @@ import { loadStatistics, parseStatisticsQuery } from '../../../_lib/statistics.j
 
 export async function onRequestGet(context) {
   try {
-    const { db } = await requireAdmin(context, ['manager', 'admin']);
+    const { db } = await requireAdmin(context, ['admin']);
     const filters = parseStatisticsQuery(new URL(context.request.url).searchParams);
     const report = await loadStatistics(db, filters);
     return json({ ok: true, ...report }, 200, { 'cache-control': 'no-store' });
