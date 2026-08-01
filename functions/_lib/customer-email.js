@@ -1,4 +1,6 @@
 const DELIVERY_TIMEOUT_MS = 8_000;
+const RESEND_ENDPOINT = 'https://api.resend.com/emails';
+const EMAIL_ADDRESS = /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/;
 
 export class CustomerEmailError extends Error {
   constructor(
@@ -27,6 +29,42 @@ const serviceFetcher = (env) => (typeof env?.CUSTOMER_EMAIL_SERVICE?.fetch === '
   ? env.CUSTOMER_EMAIL_SERVICE
   : null);
 
+function endpointUrl(env) {
+  const configured = String(env?.CUSTOMER_EMAIL_ENDPOINT || '').trim();
+  if (!configured) return null;
+  let url;
+  try { url = new URL(configured); }
+  catch { return null; }
+  if (env?.ENVIRONMENT !== 'local' && url.protocol !== 'https:') return null;
+  return url;
+}
+
+function senderAddress(value) {
+  const configured = String(value || '').trim();
+  if (!configured || configured.length > 320 || /[\r\n]/.test(configured)) return '';
+  const bracketed = configured.match(/<([^<>]+)>$/);
+  const address = String(bracketed?.[1] || configured).trim();
+  return EMAIL_ADDRESS.test(address) ? configured : '';
+}
+
+function isResendEndpoint(url) {
+  return url?.toString() === RESEND_ENDPOINT;
+}
+
+function resendConfig(env, url = endpointUrl(env)) {
+  if (!isResendEndpoint(url)) return null;
+  const apiToken = String(env?.CUSTOMER_EMAIL_API_TOKEN || '').trim();
+  const from = senderAddress(env?.CUSTOMER_EMAIL_FROM);
+  return apiToken && from ? { apiToken, from } : null;
+}
+
+export function customerEmailDeliveryConfigured(env) {
+  if (customSender(env) || serviceFetcher(env)) return true;
+  const url = endpointUrl(env);
+  if (!url) return false;
+  return isResendEndpoint(url) ? Boolean(resendConfig(env, url)) : true;
+}
+
 function configuredResetBase(request, env) {
   const configured = String(env?.CUSTOMER_PASSWORD_RESET_URL || '').trim();
   const fallback = env?.ENVIRONMENT === 'local' ? new URL('/reset-password', request.url).toString() : '';
@@ -43,12 +81,7 @@ function configuredResetBase(request, env) {
 }
 
 export function assertPasswordResetEmailConfigured(request, env) {
-  const hasDelivery = Boolean(
-    customSender(env)
-      || serviceFetcher(env)
-      || String(env?.CUSTOMER_EMAIL_ENDPOINT || '').trim(),
-  );
-  if (!hasDelivery) throw new CustomerEmailError();
+  if (!customerEmailDeliveryConfigured(env)) throw new CustomerEmailError();
   return configuredResetBase(request, env);
 }
 
@@ -106,6 +139,42 @@ async function checkedSender(sender, payload) {
   }
 }
 
+const escapeHtml = (value) => String(value ?? '')
+  .replaceAll('&', '&amp;')
+  .replaceAll('<', '&lt;')
+  .replaceAll('>', '&gt;')
+  .replaceAll('"', '&quot;')
+  .replaceAll("'", '&#39;');
+
+function passwordResetCopy(payload) {
+  const resetUrl = String(payload.resetUrl || '');
+  const safeResetUrl = escapeHtml(resetUrl);
+  if (payload.locale === 'ru') {
+    return {
+      subject: 'Восстановление пароля Nail Mania',
+      text: [
+        'Вы запросили восстановление пароля аккаунта Nail Mania.',
+        '',
+        `Откройте ссылку: ${resetUrl}`,
+        '',
+        'Ссылка действует один час. Если вы не запрашивали восстановление пароля, проигнорируйте это письмо.',
+      ].join('\n'),
+      html: `<p>Вы запросили восстановление пароля аккаунта Nail Mania.</p><p><a href="${safeResetUrl}">Восстановить пароль</a></p><p>Ссылка действует один час. Если вы не запрашивали восстановление пароля, проигнорируйте это письмо.</p>`,
+    };
+  }
+  return {
+    subject: 'Resetarea parolei Nail Mania',
+    text: [
+      'Ai solicitat resetarea parolei contului Nail Mania.',
+      '',
+      `Deschide linkul: ${resetUrl}`,
+      '',
+      'Linkul este valabil timp de o oră. Dacă nu ai solicitat resetarea parolei, ignoră acest mesaj.',
+    ].join('\n'),
+    html: `<p>Ai solicitat resetarea parolei contului Nail Mania.</p><p><a href="${safeResetUrl}">Resetează parola</a></p><p>Linkul este valabil timp de o oră. Dacă nu ai solicitat resetarea parolei, ignoră acest mesaj.</p>`,
+  };
+}
+
 export async function sendPasswordResetEmail(env, message) {
   const payload = {
     type: 'password-reset',
@@ -133,19 +202,33 @@ export async function sendPasswordResetEmail(env, message) {
     return;
   }
 
-  const endpoint = String(env?.CUSTOMER_EMAIL_ENDPOINT || '').trim();
-  if (!endpoint) throw new CustomerEmailError();
-  let endpointUrl;
-  try { endpointUrl = new URL(endpoint); }
-  catch { throw new CustomerEmailError(); }
-  if (env?.ENVIRONMENT !== 'local' && endpointUrl.protocol !== 'https:') throw new CustomerEmailError();
+  const url = endpointUrl(env);
+  if (!url) throw new CustomerEmailError();
   const headers = { 'content-type': 'application/json' };
   const apiToken = String(env?.CUSTOMER_EMAIL_API_TOKEN || '').trim();
   if (apiToken) headers.authorization = `Bearer ${apiToken}`;
+  let body = payload;
+  const resend = resendConfig(env, url);
+  if (isResendEndpoint(url)) {
+    if (!resend) throw new CustomerEmailError();
+    const copy = passwordResetCopy(payload);
+    headers.accept = 'application/json';
+    headers['user-agent'] = 'nailmania-password-reset/1.0';
+    body = {
+      from: resend.from,
+      to: [payload.to],
+      subject: copy.subject,
+      text: copy.text,
+      html: copy.html,
+    };
+    if (message.idempotencyKey) {
+      headers['idempotency-key'] = String(message.idempotencyKey).slice(0, 256);
+    }
+  }
   const fetcher = env?.CUSTOMER_EMAIL_FETCH || fetch;
-  await checkedFetch((request, init) => fetcher(request, init), new Request(endpointUrl, {
+  await checkedFetch((request, init) => fetcher(request, init), new Request(url, {
     method: 'POST',
     headers,
-    body: JSON.stringify(payload),
+    body: JSON.stringify(body),
   }));
 }

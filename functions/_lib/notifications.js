@@ -382,6 +382,7 @@ export async function deliverPasswordResetNotification({
       locale,
       resetUrl: passwordResetUrl(request, env, token),
       expiresAt,
+      idempotencyKey: `password-reset-${tokenId}`,
     });
     const attempt = await recordNotificationOutcome(db, claimed.attempt.id, { status: 'sent' });
     logNotificationEvent({

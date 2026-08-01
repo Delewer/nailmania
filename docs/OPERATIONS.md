@@ -16,9 +16,11 @@
 - `TURNSTILE_SECRET_KEY` — production Turnstile secret; frontend отдельно получает соответствующий `VITE_TURNSTILE_SITE_KEY` во время build.
 - `TELEGRAM_BOT_TOKEN` и `TELEGRAM_CHAT_ID` — параметры Telegram delivery. Для приватности оба следует задавать через Cloudflare Secrets, а не хранить в репозитории.
 - `CUSTOMER_PASSWORD_RESET_URL` — HTTPS URL страницы сброса пароля.
-- Один email transport: service binding `CUSTOMER_EMAIL_SERVICE`, HTTPS `CUSTOMER_EMAIL_ENDPOINT` или поддерживаемый runtime sender. Для HTTP provider при необходимости задаётся `CUSTOMER_EMAIL_API_TOKEN` как Secret.
+- Один email transport: service binding `CUSTOMER_EMAIL_SERVICE`, HTTPS `CUSTOMER_EMAIL_ENDPOINT` или поддерживаемый runtime sender. Для HTTP provider при необходимости задаётся `CUSTOMER_EMAIL_API_TOKEN` как Secret. Для встроенной интеграции Resend используются endpoint `https://api.resend.com/emails`, подтверждённый sender в `CUSTOMER_EMAIL_FROM` и отдельный `CUSTOMER_EMAIL_API_TOKEN` для preview/production.
 
 Preview получает собственные D1/R2 и тестовые provider credentials. Production secrets не копируются в preview.
+
+Для Resend подтверждается почтовый поддомен `mail.nailmania.md` через выданные провайдером SPF/DKIM DNS records. Sender приложения — `Nail Mania <no-reply@mail.nailmania.md>`. API key создаётся только с правом `Sending access`, ограничивается доменом `mail.nailmania.md` и добавляется как encrypted Secret `CUSTOMER_EMAIL_API_TOKEN`; он не хранится в `wrangler.toml`, Git, логах или D1. Preview и production используют разные API keys, чтобы их можно было отзывать независимо.
 
 Pages Functions работают с R2 только через `PRODUCT_IMAGES`. S3 management credentials `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ACCOUNT_ID` и `R2_BUCKET` не нужны в Pages runtime и не должны быть доступны приложению; они используются только из отдельного локального maintenance-окружения для guarded R2-утилит. После maintenance удалить их из Pages secrets.
 

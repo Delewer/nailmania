@@ -148,7 +148,7 @@ Preview bucket для `rehost-images` не использовать: canonical c
    npm run release:pages:preview -- --manifest $previewManifest --d1-migration-manifest $previewMigrationManifest --d1-catalog-manifest $previewCatalogManifest --expected-commit $commit --confirm-project nailmania --confirm-branch d1-preview-bootstrap --confirm-deploy $deployConfirmation
    ```
 
-8. В Cloudflare проверить, что deployment использует preview D1/R2/Analytics Engine и не имеет production secrets. Выполнить acceptance: каталог/карточка/поиск, Access-вход обоих администраторов, сохранение товара/фото, тестовый заказ, повтор того же idempotency key, обработка изменившейся quote, бесплатная доставка от 2200 лей, промокод, резерв, отмена/освобождение, уведомления/readiness/статистика и статус cron. Удалить тестовые данные только штатными API/админскими действиями, сохранив audit trail. После полного прохождения записать sanitized evidence; loopback/private URL и HTTP команда не принимает:
+8. В Cloudflare проверить, что deployment использует preview D1/R2/Analytics Engine и не имеет production secrets. Выполнить acceptance: каталог/карточка/поиск, Access-вход обоих администраторов, сохранение товара/фото, тестовый заказ, повтор того же idempotency key, обработка изменившейся quote, бесплатная доставка от 2200 лей, промокод, резерв, отмена/освобождение, Telegram в закрытый preview-чат, password-reset письмо через отдельный preview Resend key, readiness/статистика и статус cron. Удалить тестовые данные только штатными API/админскими действиями, сохранив audit trail. После полного прохождения записать sanitized evidence; loopback/private URL и HTTP команда не принимает:
 
    ```powershell
    $previewUrl = "https://d1-preview-bootstrap.nailmania.pages.dev"

@@ -1,3 +1,5 @@
+import { customerEmailDeliveryConfigured } from './customer-email.js';
+
 const present = (value) => typeof value === 'string'
   ? value.trim().length > 0
   : value !== null && value !== undefined;
@@ -16,13 +18,6 @@ const productionR2PublicUrl = (value) => {
     return false;
   }
 };
-
-function emailDeliveryConfigured(env) {
-  return typeof env?.CUSTOMER_EMAIL_SEND === 'function'
-    || typeof env?.CUSTOMER_EMAIL_SERVICE?.sendPasswordReset === 'function'
-    || typeof env?.CUSTOMER_EMAIL_SERVICE?.fetch === 'function'
-    || httpsUrl(env?.CUSTOMER_EMAIL_ENDPOINT);
-}
 
 const validCloudflareAccountId = (value) => /^[a-f0-9]{32}$/i.test(String(value || '').trim());
 const validAnalyticsDataset = (value) => /^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(String(value || '').trim());
@@ -54,7 +49,7 @@ export async function productionReadiness(env, db) {
     turnstileSecret: present(env?.TURNSTILE_SECRET_KEY),
     telegramBotToken: present(env?.TELEGRAM_BOT_TOKEN),
     telegramChatId: present(env?.TELEGRAM_CHAT_ID),
-    customerEmailDelivery: emailDeliveryConfigured(env),
+    customerEmailDelivery: customerEmailDeliveryConfigured(env),
     customerPasswordResetUrl: httpsUrl(env?.CUSTOMER_PASSWORD_RESET_URL),
     productImagesBinding: present(env?.PRODUCT_IMAGES),
     r2PublicBaseUrl: productionR2PublicUrl(env?.R2_PUBLIC_BASE_URL),
