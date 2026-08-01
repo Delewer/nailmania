@@ -36,7 +36,7 @@ FROM ${dataset}
 WHERE timestamp >= toDateTime('${from}', 'Etc/UTC')
   AND timestamp < toDateTime('${to}', 'Etc/UTC')
 GROUP BY blob1
-ORDER BY blob1
+ORDER BY event
 FORMAT JSON`;
 }
 

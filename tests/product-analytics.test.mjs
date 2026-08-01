@@ -187,6 +187,8 @@ test('Analytics SQL reader is optional, template-only and weights sampled rows',
   assert.match(sql, /SUM\(_sample_interval\) AS events/);
   assert.match(sql, /SUM\(_sample_interval \* double3\) AS value_lei/);
   assert.match(sql, /2026-07-10 00:00:00/);
+  assert.match(sql, /ORDER BY event/);
+  assert.doesNotMatch(sql, /ORDER BY blob1/);
   assert.doesNotMatch(sql, /\.000Z/);
 
   let request;
