@@ -15,6 +15,7 @@ const MIGRATION_INTEGRITY = path.join(ROOT, 'scripts', 'migration-integrity.mjs'
 const RELEASE_BUILD = path.join(ROOT, 'scripts', 'release-build.mjs');
 const RELEASE_BUNDLE = path.join(ROOT, 'scripts', 'release-bundle.mjs');
 const CATALOG_IMAGE_POLICY = path.join(ROOT, 'scripts', 'catalog-image-policy.mjs');
+const CATALOG_IMAGES = path.join(ROOT, 'shared', 'catalog-images.js');
 
 function writeCanonicalImagePolicyFixture(directory) {
   mkdirSync(path.join(directory, 'src'), { recursive: true });
@@ -31,6 +32,12 @@ function writeCanonicalImagePolicyFixture(directory) {
   writeFileSync(path.join(directory, 'src', 'catalog.json'), `${JSON.stringify([
     { key: 'FIXTURE', image: 'https://images.example.test/fixture.webp' },
   ])}\n`);
+}
+
+function writeCatalogImagesFixture(directory) {
+  mkdirSync(path.join(directory, 'shared'), { recursive: true });
+  copyFileSync(CATALOG_IMAGES, path.join(directory, 'shared', 'catalog-images.js'));
+  writeFileSync(path.join(directory, 'shared', 'package.json'), '{"type":"module"}\n');
 }
 
 test('migration checksum manifest rejects filename and content drift', () => {
@@ -216,6 +223,7 @@ test('production D1 wrapper rejects missing/tampered backup and records a guarde
   copyFileSync(D1_RELEASE, path.join(scriptsDirectory, 'd1-release.mjs'));
   copyFileSync(MIGRATION_INTEGRITY, path.join(scriptsDirectory, 'migration-integrity.mjs'));
   copyFileSync(CATALOG_IMAGE_POLICY, path.join(scriptsDirectory, 'catalog-image-policy.mjs'));
+  writeCatalogImagesFixture(directory);
   const fixtureMigration = 'CREATE TABLE fixture (id INTEGER PRIMARY KEY);';
   writeFileSync(path.join(migrationsDirectory, '0001_fixture.sql'), `${fixtureMigration}\n`);
   writeFileSync(
@@ -347,7 +355,24 @@ test('catalog D1 wrapper records remote postconditions and fails closed on a mis
   copyFileSync(D1_RELEASE, path.join(scriptsDirectory, 'd1-release.mjs'));
   copyFileSync(MIGRATION_INTEGRITY, path.join(scriptsDirectory, 'migration-integrity.mjs'));
   copyFileSync(CATALOG_IMAGE_POLICY, path.join(scriptsDirectory, 'catalog-image-policy.mjs'));
+  writeCatalogImagesFixture(directory);
   writeCanonicalImagePolicyFixture(directory);
+  writeFileSync(path.join(sourceDirectory, 'catalog.json'), `${JSON.stringify([
+    {
+      id: 1,
+      key: 'T1',
+      code: 'T1',
+      cat: 'category',
+      image: 'https://images.example.test/t1.webp',
+    },
+    {
+      id: 2,
+      key: 'T2',
+      code: 'T2',
+      cat: 'category',
+      image: 'https://images.example.test/t2-a.webp https://images.example.test/t2-b.webp',
+    },
+  ])}\n`);
   const fixtureMigration = 'CREATE TABLE fixture (id INTEGER PRIMARY KEY);';
   writeFileSync(path.join(migrationsDirectory, '0001_fixture.sql'), `${fixtureMigration}\n`);
   writeFileSync(
@@ -380,18 +405,79 @@ const path = require('node:path');
 fs.mkdirSync(path.join(process.cwd(), 'tmp'), { recursive: true });
 fs.appendFileSync(path.join(process.cwd(), 'tmp', 'wrangler-calls.log'), process.argv.slice(2).join(' ') + '\\n');
 if (process.argv.includes('--json')) {
-  const row = {
-    active_products: Number(process.env.POST_ACTIVE_PRODUCTS || 2),
-    active_categories: 1,
-    unexpected_active_import_categories: Number(process.env.POST_UNEXPECTED_ACTIVE_IMPORT_CATEGORIES || 0),
-    referenced_categories: 1,
-    images: 3,
-    missing_inventory: 0,
-    orphan_products: 0,
-    invalid_inventory: 0,
-    invalid_images: 0,
-  };
-  process.stdout.write(JSON.stringify([{ results: [row] }]));
+  const commandIndex = process.argv.indexOf('--command');
+  const sql = commandIndex === -1 ? '' : String(process.argv[commandIndex + 1] || '').toLowerCase();
+  if (sql.includes('catalog_key') && sql.includes('inventory_rows')) {
+    const rows = [
+      {
+        catalog_key: 'T1',
+        source_type: 'import',
+        is_active: 1,
+        category_id: 'category',
+        category_active: 1,
+        has_admin_revision: 0,
+        has_admin_audit: 0,
+        inventory_rows: 1,
+        invalid_inventory: 0,
+        image_count: 1,
+        image_urls_json: JSON.stringify(['https://images.example.test/t1.webp']),
+      },
+      {
+        catalog_key: 'T2',
+        source_type: 'import',
+        is_active: 1,
+        category_id: 'category',
+        category_active: 1,
+        has_admin_revision: 0,
+        has_admin_audit: 0,
+        inventory_rows: 1,
+        invalid_inventory: 0,
+        image_count: process.env.POST_IMPORT_IMAGE_MISMATCH === '1' ? 1 : 2,
+        image_urls_json: JSON.stringify(process.env.POST_IMPORT_IMAGE_MISMATCH === '1'
+          ? ['https://images.example.test/t2-a.webp']
+          : ['https://images.example.test/t2-a.webp', 'https://images.example.test/t2-b.webp']),
+      },
+    ];
+    if (process.env.POST_ADMIN_OVERRIDE === '1'
+        || process.env.POST_INVALID_ADMIN_INVENTORY === '1'
+        || process.env.POST_INVALID_ADMIN_IMAGE === '1'
+        || process.env.POST_UNPROVEN_ADMIN === '1'
+        || process.env.POST_INACTIVE_ADMIN === '1') {
+      Object.assign(rows[0], {
+        source_type: 'admin',
+        has_admin_revision: process.env.POST_UNPROVEN_ADMIN === '1' ? 0 : 1,
+        has_admin_audit: process.env.POST_UNPROVEN_ADMIN === '1' ? 0 : 1,
+      });
+    }
+    if (process.env.POST_INVALID_ADMIN_INVENTORY === '1') rows[0].invalid_inventory = 1;
+    if (process.env.POST_INVALID_ADMIN_IMAGE === '1') rows[0].image_urls_json = JSON.stringify(['https://']);
+    if (process.env.POST_INACTIVE_ADMIN === '1') rows[0].is_active = 0;
+    if (process.env.POST_ACTIVE_PRODUCTS === '1') rows[1].is_active = 0;
+    if (process.env.POST_MISSING_PRODUCT === '1') {
+      rows.splice(1, 1, {
+        catalog_key: 'ADMIN-EXTRA',
+        source_type: 'admin',
+        is_active: 1,
+        category_id: 'category',
+        category_active: 1,
+        has_admin_revision: 1,
+        has_admin_audit: 1,
+        inventory_rows: 1,
+        invalid_inventory: 0,
+        image_count: 1,
+        image_urls_json: JSON.stringify(['https://images.example.test/admin-extra.webp']),
+      });
+    }
+    process.stdout.write(JSON.stringify([{ results: rows }]));
+  } else if (sql.includes('active_categories') && sql.includes('unexpected_active_import_categories')) {
+    process.stdout.write(JSON.stringify([{ results: [{
+      active_categories: 1,
+      unexpected_active_import_categories: Number(process.env.POST_UNEXPECTED_ACTIVE_IMPORT_CATEGORIES || 0),
+    }] }]));
+  } else {
+    process.stderr.write('Unexpected fixture postcondition query: ' + sql + '\\n');
+    process.exitCode = 2;
+  }
 }
 `);
   const runGit = (...args) => {
@@ -438,42 +524,112 @@ if (process.argv.includes('--json')) {
     '--validation-report', 'tmp/catalog-validation.json',
   ];
 
-  const passed = spawnSync(process.execPath, command, { cwd: directory, encoding: 'utf8' });
-  assert.equal(passed.status, 0, passed.stderr);
   const releaseDirectory = path.join(directory, 'tmp', 'releases');
+  const clearReleaseEvidence = () => rmSync(releaseDirectory, { recursive: true, force: true });
+  const readPostconditions = () => {
+    const file = readdirSync(releaseDirectory)
+      .find((candidate) => candidate.includes('catalog-postconditions'));
+    assert.ok(file, 'catalog postcondition evidence must be written');
+    return JSON.parse(readFileSync(path.join(releaseDirectory, file), 'utf8'));
+  };
+  const runCatalog = (env = {}) => spawnSync(process.execPath, command, {
+    cwd: directory,
+    encoding: 'utf8',
+    env: { ...process.env, ...env },
+  });
+
+  const passed = runCatalog();
+  assert.equal(passed.status, 0, passed.stderr);
   const passedFiles = readdirSync(releaseDirectory);
   const postconditionFile = passedFiles.find((file) => file.includes('catalog-postconditions'));
   const manifestFile = passedFiles.find((file) => file.startsWith('production-catalog-') && !file.includes('postconditions'));
   const postconditions = JSON.parse(readFileSync(path.join(releaseDirectory, postconditionFile), 'utf8'));
   const manifest = JSON.parse(readFileSync(path.join(releaseDirectory, manifestFile), 'utf8'));
+  assert.equal(postconditions.schemaVersion, 2);
   assert.equal(postconditions.valid, true);
   assert.equal(postconditions.actual.activeProducts, 2);
+  assert.equal(postconditions.actual.images, 3);
   assert.equal(postconditions.actual.unexpectedActiveImportCategories, 0);
+  assert.equal(postconditions.adminOverrides.count, 0);
   assert.equal(manifest.catalog.postconditions.valid, true);
   assert.match(manifest.catalog.postconditions.sha256, /^[a-f0-9]{64}$/);
 
-  rmSync(releaseDirectory, { recursive: true, force: true });
-  const failed = spawnSync(process.execPath, command, {
-    cwd: directory,
-    encoding: 'utf8',
-    env: { ...process.env, POST_ACTIVE_PRODUCTS: '1' },
-  });
+  clearReleaseEvidence();
+  const adminOverride = runCatalog({ POST_ADMIN_OVERRIDE: '1' });
+  assert.equal(adminOverride.status, 0, adminOverride.stderr);
+  const overrideEvidence = readPostconditions();
+  assert.equal(overrideEvidence.valid, true);
+  assert.equal(overrideEvidence.adminOverrides.count, 1);
+  assert.equal(overrideEvidence.adminOverrides.active, 1);
+  assert.equal(overrideEvidence.adminOverrides.inactive, 0);
+  assert.equal(overrideEvidence.actual.activeProducts, 1);
+  assert.equal(overrideEvidence.actual.images, 2);
+
+  clearReleaseEvidence();
+  const inactiveAdminOverride = runCatalog({ POST_INACTIVE_ADMIN: '1' });
+  assert.equal(inactiveAdminOverride.status, 0, inactiveAdminOverride.stderr);
+  const inactiveOverrideEvidence = readPostconditions();
+  assert.equal(inactiveOverrideEvidence.valid, true);
+  assert.equal(inactiveOverrideEvidence.adminOverrides.count, 1);
+  assert.equal(inactiveOverrideEvidence.adminOverrides.active, 0);
+  assert.equal(inactiveOverrideEvidence.adminOverrides.inactive, 1);
+
+  clearReleaseEvidence();
+  const unprovenAdminOverride = runCatalog({ POST_UNPROVEN_ADMIN: '1' });
+  assert.notEqual(unprovenAdminOverride.status, 0);
+  const unprovenOverrideEvidence = readPostconditions();
+  assert.equal(unprovenOverrideEvidence.valid, false);
+  assert.equal(unprovenOverrideEvidence.actual.unprovenAdminCollisions, 1);
+
+  clearReleaseEvidence();
+  const missingProduct = runCatalog({ POST_MISSING_PRODUCT: '1' });
+  assert.notEqual(missingProduct.status, 0);
+  assert.match(missingProduct.stderr, /Remote catalog postconditions failed/);
+  const missingEvidence = readPostconditions();
+  assert.equal(missingEvidence.valid, false);
+  assert.equal(missingEvidence.actual.resolvedCatalogProducts, 1);
+  assert.equal(missingEvidence.actual.missingCatalogProducts, 1);
+  assert.equal(missingEvidence.adminOverrides.count, 0);
+  assert.match(missingEvidence.failures.join('\n'), /T2|missing/i);
+
+  clearReleaseEvidence();
+  const invalidAdminInventory = runCatalog({ POST_INVALID_ADMIN_INVENTORY: '1' });
+  assert.notEqual(invalidAdminInventory.status, 0);
+  assert.match(invalidAdminInventory.stderr, /Remote catalog postconditions failed/);
+  const invalidAdminEvidence = readPostconditions();
+  assert.equal(invalidAdminEvidence.adminOverrides.count, 1);
+  assert.equal(invalidAdminEvidence.valid, false);
+  assert.equal(invalidAdminEvidence.actual.invalidInventory, 1);
+  assert.match(invalidAdminEvidence.failures.join('\n'), /T1.*inventory|inventory.*T1|invalidInventory/i);
+
+  clearReleaseEvidence();
+  const invalidAdminImage = runCatalog({ POST_INVALID_ADMIN_IMAGE: '1' });
+  assert.notEqual(invalidAdminImage.status, 0);
+  const invalidAdminImageEvidence = readPostconditions();
+  assert.equal(invalidAdminImageEvidence.valid, false);
+  assert.equal(invalidAdminImageEvidence.actual.invalidImages, 1);
+
+  clearReleaseEvidence();
+  const imageMismatch = runCatalog({ POST_IMPORT_IMAGE_MISMATCH: '1' });
+  assert.notEqual(imageMismatch.status, 0);
+  assert.match(imageMismatch.stderr, /Remote catalog postconditions failed/);
+  const imageEvidence = readPostconditions();
+  assert.equal(imageEvidence.valid, false);
+  assert.equal(imageEvidence.actual.importImageMismatches, 1);
+  assert.match(imageEvidence.failures.join('\n'), /T2.*image|image.*T2|images: expected 3, got 2/i);
+
+  clearReleaseEvidence();
+  const failed = runCatalog({ POST_ACTIVE_PRODUCTS: '1' });
   assert.notEqual(failed.status, 0);
   assert.match(failed.stderr, /Remote catalog postconditions failed/);
-  const failedEvidenceFile = readdirSync(releaseDirectory)
-    .find((file) => file.includes('catalog-postconditions'));
-  const failedEvidence = JSON.parse(readFileSync(path.join(releaseDirectory, failedEvidenceFile), 'utf8'));
+  const failedEvidence = readPostconditions();
   assert.equal(failedEvidence.valid, false);
   assert.equal(failedEvidence.expected.activeProducts, 2);
   assert.equal(failedEvidence.actual.activeProducts, 1);
   assert.match(failedEvidence.failures.join('\n'), /activeProducts: expected 2, got 1/);
 
-  rmSync(releaseDirectory, { recursive: true, force: true });
-  const staleCategory = spawnSync(process.execPath, command, {
-    cwd: directory,
-    encoding: 'utf8',
-    env: { ...process.env, POST_UNEXPECTED_ACTIVE_IMPORT_CATEGORIES: '1' },
-  });
+  clearReleaseEvidence();
+  const staleCategory = runCatalog({ POST_UNEXPECTED_ACTIVE_IMPORT_CATEGORIES: '1' });
   assert.notEqual(staleCategory.status, 0);
   assert.match(staleCategory.stderr, /unexpectedActiveImportCategories: expected 0, got 1/);
 });

@@ -9,6 +9,7 @@ import {
 } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
+import { catalogImageUrls, isValidCatalogImageUrl } from '../shared/catalog-images.js';
 import { assertCanonicalCatalogImagesForRelease } from './catalog-image-policy.mjs';
 import { verifyMigrationManifest } from './migration-integrity.mjs';
 
@@ -63,7 +64,7 @@ const wrangler = (...args) => run(process.execPath, [
   path.join(root, 'node_modules', 'wrangler', 'bin', 'wrangler.js'),
   ...args,
 ]);
-const remoteRow = (sql, keys, label = 'remote query') => {
+const remoteRows = (sql, label = 'remote query') => {
   const raw = run(process.execPath, [
     path.join(root, 'node_modules', 'wrangler', 'bin', 'wrangler.js'),
     'd1', 'execute', target.database, '--remote', '--config', 'wrangler.toml',
@@ -75,22 +76,31 @@ const remoteRow = (sql, keys, label = 'remote query') => {
   } catch {
     throw new Error(`Wrangler returned invalid JSON for ${label}`);
   }
-  const find = (value) => {
+  const findResults = (value) => {
     if (Array.isArray(value)) {
       for (const entry of value) {
-        const found = find(entry);
-        if (found) return found;
+        const found = findResults(entry);
+        if (found !== null) return found;
       }
     } else if (value && typeof value === 'object') {
-      if (keys.every((key) => Object.hasOwn(value, key))) return value;
+      if (Array.isArray(value.results)) return value.results;
       for (const entry of Object.values(value)) {
-        const found = find(entry);
-        if (found) return found;
+        const found = findResults(entry);
+        if (found !== null) return found;
       }
     }
     return null;
   };
-  const row = find(payload);
+  const rows = findResults(payload);
+  if (!rows) throw new Error(`${label} did not return a results array`);
+  if (rows.some((row) => !row || typeof row !== 'object' || Array.isArray(row))) {
+    throw new Error(`${label} returned an invalid result row`);
+  }
+  return rows;
+};
+const remoteRow = (sql, keys, label = 'remote query') => {
+  const row = remoteRows(sql, label)
+    .find((entry) => keys.every((key) => Object.hasOwn(entry, key)));
   if (!row) throw new Error(`${label} did not return ${keys.join(', ')}`);
   return row;
 };
@@ -272,13 +282,16 @@ if (operation === 'migrate') {
   run(process.execPath, ['scripts/import-catalog-d1.mjs']);
   const sqlPath = path.join(root, 'tmp', 'd1', 'catalog-import.sql');
   const importReportPath = path.join(root, 'tmp', 'd1', 'catalog-import-report.json');
+  const catalogPath = path.join(root, 'src', 'catalog.json');
   const categoriesPath = path.join(root, 'src', 'categories.json');
   let validationReport;
   let importReport;
+  let releaseCatalog;
   let releaseCategories;
   try {
     validationReport = JSON.parse(readFileSync(path.resolve(root, report), 'utf8'));
     importReport = JSON.parse(readFileSync(importReportPath, 'utf8'));
+    releaseCatalog = JSON.parse(readFileSync(catalogPath, 'utf8'));
     releaseCategories = JSON.parse(readFileSync(categoriesPath, 'utf8'));
   } catch {
     throw new Error('Catalog validation/import report is missing or invalid JSON');
@@ -300,97 +313,261 @@ if (operation === 'migrate') {
   if (categoryIds.some((id) => !id) || new Set(categoryIds).size !== categoryIds.length) {
     throw new Error('Release categories contain a blank or duplicate id');
   }
-  const expectedCounts = {
-    activeProducts: Number(importReport.products),
-    activeCategories: Number(importReport.categories),
-    unexpectedActiveImportCategories: 0,
-    referencedCategories: Number(importReport.categories),
-    images: Number(importReport.images),
-    missingInventory: 0,
-    orphanProducts: 0,
-    invalidInventory: 0,
-    invalidImages: 0,
-  };
-  if (!Number.isInteger(expectedCounts.activeProducts) || expectedCounts.activeProducts < 1
-      || !Number.isInteger(expectedCounts.activeCategories) || expectedCounts.activeCategories < 1
-      || categoryIds.length !== expectedCounts.activeCategories
-      || !Number.isInteger(expectedCounts.images) || expectedCounts.images < 0) {
+  const catalogProducts = Array.isArray(releaseCatalog) ? releaseCatalog : [];
+  const catalogByKey = new Map();
+  let sourceImageCount = 0;
+  for (const product of catalogProducts) {
+    const key = String(product?.key || '').trim();
+    if (!key || catalogByKey.has(key)) {
+      throw new Error('Release catalog contains a blank or duplicate key');
+    }
+    const categoryId = String(product?.cat || '').trim();
+    if (!categoryIds.includes(categoryId)) {
+      throw new Error(`Release catalog product ${key} references an unknown category`);
+    }
+    const imageUrls = catalogImageUrls(product?.image);
+    sourceImageCount += imageUrls.length;
+    catalogByKey.set(key, { categoryId, imageCount: imageUrls.length, imageUrls });
+  }
+  if (!Number.isInteger(Number(importReport.products)) || Number(importReport.products) < 1
+      || catalogByKey.size !== Number(importReport.products)
+      || !Number.isInteger(Number(importReport.categories)) || Number(importReport.categories) < 1
+      || categoryIds.length !== Number(importReport.categories)
+      || !Number.isInteger(Number(importReport.images)) || Number(importReport.images) < 0
+      || sourceImageCount !== Number(importReport.images)) {
     throw new Error('Catalog import report contains invalid expected postcondition counts');
   }
   wrangler(
     'd1', 'execute', target.database, '--remote', '--config', 'wrangler.toml', '--env', environment,
     '--file', sqlPath,
   );
-  const postconditionKeys = [
-    'active_products',
-    'active_categories',
-    'unexpected_active_import_categories',
-    'referenced_categories',
-    'images',
-    'missing_inventory',
-    'orphan_products',
-    'invalid_inventory',
-    'invalid_images',
-  ];
-  const postconditionRow = remoteRow(`
+  const productRows = remoteRows(`
 SELECT
-  (SELECT COUNT(*) FROM products
-    WHERE source_type = 'import' AND is_active = 1) AS active_products,
+  product.catalog_key,
+  product.source_type,
+  product.is_active,
+  product.category_id,
+  CASE WHEN category.id IS NOT NULL AND category.is_active = 1 THEN 1 ELSE 0 END AS category_active,
+  CASE WHEN product.admin_revision IS NOT NULL AND trim(product.admin_revision) <> ''
+    THEN 1 ELSE 0 END AS has_admin_revision,
+  CASE WHEN EXISTS (
+    SELECT 1 FROM admin_audit_log audit
+    WHERE audit.entity_type = 'product'
+      AND audit.entity_id = CAST(product.id AS TEXT)
+      AND audit.action IN ('product.create', 'product.update', 'product.delete')
+      AND audit.created_at = product.updated_at
+  ) THEN 1 ELSE 0 END AS has_admin_audit,
+  (SELECT COUNT(*) FROM inventory stock
+    WHERE stock.product_id = product.id AND stock.warehouse_id = 1) AS inventory_rows,
+  (SELECT COUNT(*) FROM inventory stock
+    WHERE stock.product_id = product.id AND stock.warehouse_id = 1
+      AND (stock.on_hand < 0 OR stock.reserved < 0 OR stock.reserved > stock.on_hand)) AS invalid_inventory,
+  (SELECT COUNT(*) FROM product_images image
+    WHERE image.product_id = product.id) AS image_count,
+  COALESCE((
+    SELECT json_group_array(ordered.public_url)
+    FROM (
+      SELECT image.public_url
+      FROM product_images image
+      WHERE image.product_id = product.id
+      ORDER BY image.sort_order, image.id
+    ) ordered
+  ), '[]') AS image_urls_json
+FROM products product
+LEFT JOIN categories category ON category.id = product.category_id
+WHERE product.source_type IN ('import', 'admin')
+ORDER BY product.catalog_key;
+  `, 'remote catalog product postcondition query');
+  const categoryRow = remoteRow(`
+SELECT
   (SELECT COUNT(*) FROM categories
     WHERE is_active = 1
       AND id IN (${categoryIds.map(sqlString).join(', ')})) AS active_categories,
   (SELECT COUNT(*) FROM categories
     WHERE source_type = 'import' AND is_active = 1
-      AND id NOT IN (${categoryIds.map(sqlString).join(', ')})) AS unexpected_active_import_categories,
-  (SELECT COUNT(DISTINCT category_id) FROM products
-    WHERE source_type = 'import' AND is_active = 1) AS referenced_categories,
-  (SELECT COUNT(*) FROM product_images image
-    JOIN products product ON product.id = image.product_id
-    WHERE product.source_type = 'import' AND product.is_active = 1) AS images,
-  (SELECT COUNT(*) FROM products product
-    LEFT JOIN inventory stock
-      ON stock.product_id = product.id AND stock.warehouse_id = 1
-    WHERE product.source_type = 'import' AND product.is_active = 1
-      AND stock.product_id IS NULL) AS missing_inventory,
-  (SELECT COUNT(*) FROM products product
-    LEFT JOIN categories category ON category.id = product.category_id
-    WHERE product.source_type = 'import' AND product.is_active = 1
-      AND (category.id IS NULL OR category.is_active <> 1)) AS orphan_products,
-  (SELECT COUNT(*) FROM inventory stock
-    JOIN products product ON product.id = stock.product_id
-    WHERE product.source_type = 'import' AND product.is_active = 1
-      AND stock.warehouse_id = 1
-      AND (stock.on_hand < 0 OR stock.reserved < 0 OR stock.reserved > stock.on_hand)) AS invalid_inventory,
-  (SELECT COUNT(*) FROM product_images image
-    JOIN products product ON product.id = image.product_id
-    WHERE product.source_type = 'import' AND product.is_active = 1
-      AND (image.public_url IS NULL OR trim(image.public_url) = ''
-        OR (lower(trim(image.public_url)) NOT LIKE 'https://%'
-          AND lower(trim(image.public_url)) NOT LIKE 'http://%'))) AS invalid_images;
-  `, postconditionKeys, 'remote catalog postcondition query');
-  const actualCounts = {
-    activeProducts: Number(postconditionRow.active_products),
-    activeCategories: Number(postconditionRow.active_categories),
-    unexpectedActiveImportCategories: Number(postconditionRow.unexpected_active_import_categories),
-    referencedCategories: Number(postconditionRow.referenced_categories),
-    images: Number(postconditionRow.images),
-    missingInventory: Number(postconditionRow.missing_inventory),
-    orphanProducts: Number(postconditionRow.orphan_products),
-    invalidInventory: Number(postconditionRow.invalid_inventory),
-    invalidImages: Number(postconditionRow.invalid_images),
-  };
+      AND id NOT IN (${categoryIds.map(sqlString).join(', ')})) AS unexpected_active_import_categories;
+  `, ['active_categories', 'unexpected_active_import_categories'], 'remote catalog category postcondition query');
+
   const postconditionFailures = [];
+  const booleanFields = [
+    'is_active',
+    'category_active',
+    'has_admin_revision',
+    'has_admin_audit',
+  ];
+  const countFields = [
+    'inventory_rows',
+    'invalid_inventory',
+    'image_count',
+  ];
+  const normalizedProducts = [];
+  const productsByKey = new Map();
+  for (const row of productRows) {
+    const key = String(row.catalog_key || '').trim();
+    if (!key) {
+      postconditionFailures.push('remote product row has a blank catalog_key');
+      continue;
+    }
+    if (productsByKey.has(key)) {
+      postconditionFailures.push(`duplicate remote catalog product: ${key}`);
+      continue;
+    }
+    const normalized = {
+      key,
+      sourceType: String(row.source_type || '').trim(),
+      categoryId: String(row.category_id || '').trim(),
+    };
+    for (const field of booleanFields) {
+      const value = Number(row[field]);
+      if (![0, 1].includes(value)) {
+        postconditionFailures.push(`${key}.${field} is not 0 or 1`);
+        normalized[field] = null;
+      } else {
+        normalized[field] = value;
+      }
+    }
+    for (const field of countFields) {
+      const value = Number(row[field]);
+      if (!Number.isInteger(value) || value < 0) {
+        postconditionFailures.push(`${key}.${field} is not a non-negative integer`);
+        normalized[field] = null;
+      } else {
+        normalized[field] = value;
+      }
+    }
+    try {
+      const imageUrls = Array.isArray(row.image_urls_json)
+        ? row.image_urls_json
+        : JSON.parse(String(row.image_urls_json || ''));
+      if (!Array.isArray(imageUrls) || imageUrls.length !== normalized.image_count) {
+        throw new Error('image URL list does not match image_count');
+      }
+      normalized.imageUrls = imageUrls;
+    } catch {
+      postconditionFailures.push(`${key}.image_urls_json is invalid or does not match image_count`);
+      normalized.imageUrls = [];
+    }
+    normalizedProducts.push(normalized);
+    productsByKey.set(key, normalized);
+  }
+
+  const importedCatalogRows = [];
+  const adminOverrideRows = [];
+  let resolvedCatalogProducts = 0;
+  let missingCatalogProducts = 0;
+  let inactiveImportProducts = 0;
+  let unprovenAdminCollisions = 0;
+  let importCategoryMismatches = 0;
+  let importImageMismatches = 0;
+  let missingInventory = 0;
+  let orphanProducts = 0;
+  let invalidInventory = 0;
+  let invalidImages = 0;
+  for (const [key, sourceProduct] of catalogByKey) {
+    const remoteProduct = productsByKey.get(key);
+    if (!remoteProduct) {
+      missingCatalogProducts += 1;
+      continue;
+    }
+    resolvedCatalogProducts += 1;
+    if (remoteProduct.sourceType === 'import') {
+      importedCatalogRows.push({ ...remoteProduct, sourceProduct });
+      if (remoteProduct.is_active !== 1) inactiveImportProducts += 1;
+      if (remoteProduct.categoryId !== sourceProduct.categoryId) importCategoryMismatches += 1;
+      if (remoteProduct.image_count !== sourceProduct.imageCount
+          || remoteProduct.imageUrls.some((url, index) => url !== sourceProduct.imageUrls[index])) {
+        importImageMismatches += 1;
+      }
+    } else if (remoteProduct.sourceType === 'admin') {
+      adminOverrideRows.push(remoteProduct);
+      if (remoteProduct.has_admin_revision !== 1 || remoteProduct.has_admin_audit !== 1) {
+        unprovenAdminCollisions += 1;
+      }
+    } else {
+      postconditionFailures.push(`${key}.source_type is neither import nor admin`);
+    }
+    if (remoteProduct.is_active === 1) {
+      if (remoteProduct.inventory_rows !== 1) missingInventory += 1;
+      if (remoteProduct.category_active !== 1) orphanProducts += 1;
+      if (Number.isInteger(remoteProduct.invalid_inventory)) {
+        invalidInventory += remoteProduct.invalid_inventory;
+      }
+      invalidImages += remoteProduct.imageUrls
+        .filter((url) => !isValidCatalogImageUrl(url)).length;
+    }
+  }
+
+  const unexpectedActiveImportRows = normalizedProducts.filter((product) => (
+    product.sourceType === 'import'
+      && product.is_active === 1
+      && !catalogByKey.has(product.key)
+  ));
+  const activeImportRows = normalizedProducts.filter((product) => (
+    product.sourceType === 'import' && product.is_active === 1
+  ));
+  const expectedImportImages = importedCatalogRows
+    .reduce((sum, product) => sum + product.sourceProduct.imageCount, 0);
+  const actualImportImages = activeImportRows
+    .reduce((sum, product) => sum + (Number.isInteger(product.image_count) ? product.image_count : 0), 0);
+  const expectedImportCategories = new Set(
+    importedCatalogRows.map((product) => product.sourceProduct.categoryId),
+  );
+  const actualImportCategories = new Set(activeImportRows.map((product) => product.categoryId));
+  const expectedCounts = {
+    activeProducts: importedCatalogRows.length,
+    activeCategories: Number(importReport.categories),
+    unexpectedActiveImportCategories: 0,
+    referencedCategories: expectedImportCategories.size,
+    images: expectedImportImages,
+    missingInventory: 0,
+    orphanProducts: 0,
+    invalidInventory: 0,
+    invalidImages: 0,
+    resolvedCatalogProducts: Number(importReport.products),
+    missingCatalogProducts: 0,
+    inactiveImportProducts: 0,
+    unexpectedActiveImportProducts: 0,
+    unprovenAdminCollisions: 0,
+    importCategoryMismatches: 0,
+    importImageMismatches: 0,
+  };
+  const actualCounts = {
+    activeProducts: activeImportRows.length,
+    activeCategories: Number(categoryRow.active_categories),
+    unexpectedActiveImportCategories: Number(categoryRow.unexpected_active_import_categories),
+    referencedCategories: actualImportCategories.size,
+    images: actualImportImages,
+    missingInventory,
+    orphanProducts,
+    invalidInventory,
+    invalidImages,
+    resolvedCatalogProducts,
+    missingCatalogProducts,
+    inactiveImportProducts,
+    unexpectedActiveImportProducts: unexpectedActiveImportRows.length,
+    unprovenAdminCollisions,
+    importCategoryMismatches,
+    importImageMismatches,
+  };
   for (const [name, expected] of Object.entries(expectedCounts)) {
     const actual = actualCounts[name];
     if (!Number.isFinite(actual)) postconditionFailures.push(`${name} is not numeric`);
     else if (actual !== expected) postconditionFailures.push(`${name}: expected ${expected}, got ${actual}`);
   }
+  const overrideKeys = adminOverrideRows.map((product) => product.key).sort();
+  const adminOverrides = {
+    count: overrideKeys.length,
+    active: adminOverrideRows.filter((product) => product.is_active === 1).length,
+    inactive: adminOverrideRows.filter((product) => product.is_active === 0).length,
+    keysSha256: createHash('sha256').update(`${overrideKeys.join('\n')}\n`).digest('hex'),
+    sample: overrideKeys.slice(0, 20),
+  };
   const postconditionReportPath = path.join(
     releaseDirectory,
     `${environment}-catalog-postconditions-${stamp}.json`,
   );
   writeFileSync(postconditionReportPath, `${JSON.stringify({
-    schemaVersion: 1,
+    schemaVersion: 2,
     environment,
     database: target.database,
     commit: head,
@@ -398,6 +575,7 @@ SELECT
     valid: postconditionFailures.length === 0,
     expected: expectedCounts,
     actual: actualCounts,
+    adminOverrides,
     failures: postconditionFailures,
     catalogSha256: importReport.catalogSha256,
     sqlSha256: importReport.sqlSha256,
@@ -408,6 +586,7 @@ SELECT
     valid: postconditionFailures.length === 0,
     expected: expectedCounts,
     actual: actualCounts,
+    adminOverrides,
   };
   if (postconditionFailures.length) {
     throw new Error(

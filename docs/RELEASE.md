@@ -122,6 +122,8 @@ Preview bucket для `rehost-images` не использовать: canonical c
    $previewCatalogManifest = (Get-ChildItem tmp/releases/preview-catalog-*.json | Where-Object { $_.Name -notlike "*postconditions*" } | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
    ```
 
+   Postconditions сопоставляют точное множество SKU snapshot с D1, а не только общие totals. Для import-owned карточек проверяются active state, категория и число изображений по каждому SKU. Admin-owned collision сохраняется как явное переопределение только при наличии `admin_revision` и product audit; для активного переопределения всё равно обязательны активная категория, корректный warehouse-1 inventory и валидные URL изображений. Inactive admin override разрешён как сохранённое административное отключение и отдельно аттестуется в evidence. Лишний активный import SKU, отсутствующий snapshot SKU или admin-extra, пытающийся замаскировать пропуск, останавливают rollout.
+
    Если staff-строки ещё не подготовлены в отдельной preview D1, выдать роль каждому заранее одобренному Access email с двойным подтверждением значения. Для продавца использовать `manager` (без промокодов, статистики, audit и readiness; точные promo code/id удаляются и из ответов заказов, но сумма скидки сохраняется), для владельца — `admin`:
 
    ```powershell
