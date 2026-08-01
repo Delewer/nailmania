@@ -494,6 +494,30 @@ async function putOneProductInLocalCart(client) {
   return evaluate(client, expression, { awaitPromise: true, timeoutMs: PAGE_TIMEOUT_MS });
 }
 
+async function verifyCartPersistenceUpdate(client, baseOrigin) {
+  const selected = await putOneProductInLocalCart(client);
+  const requiredCheckout = [
+    { selector: 'form h1', control: false },
+    { selector: '.co-sum .sline', control: false },
+    { selector: '.co-place[type="submit"]', control: true },
+  ];
+  const navigation = await client.send('Page.navigate', { url: `${baseOrigin}/checkout` }, PAGE_TIMEOUT_MS);
+  if (navigation.errorText) throw new Error(`Navigation failed for cart persistence check: ${navigation.errorText}`);
+  await waitForPage(client, requiredCheckout);
+  const removed = await evaluate(client, `(() => {
+    const button = document.querySelector('.co-sum .srm');
+    if (!button) return false;
+    button.click();
+    return true;
+  })()`);
+  if (!removed) throw new Error('Cart persistence check could not find the remove control');
+  await waitForPage(client, [
+    { selector: '.page-empty h2', control: false },
+    { selector: '.page-empty a[href="/"]', control: true },
+  ]);
+  return { productKey: selected.key, cartQuantityAfter: 0 };
+}
+
 const uniqueBy = (items, keyOf) => [...new Map(items.map((item) => [keyOf(item), item])).values()];
 
 export async function runBrowserSmoke({
@@ -528,6 +552,7 @@ export async function runBrowserSmoke({
   const pageErrors = [];
   const pages = [];
   let selectedProduct;
+  let cartPersistenceUpdate = null;
 
   try {
     const debuggerUrl = await waitForDebugger(port, child);
@@ -665,6 +690,10 @@ export async function runBrowserSmoke({
         }
       }
     }
+
+    currentRoute = 'cart-persistence-update';
+    cartPersistenceUpdate = await verifyCartPersistenceUpdate(client, baseOrigin);
+    await sleep(250);
   } finally {
     currentRoute = null;
     if (client) {
@@ -686,6 +715,7 @@ export async function runBrowserSmoke({
   const forbiddenWriteAttempts = uniqueWrites.filter((item) => item.sameOrigin && item.path !== '/api/events');
   const pageFailureCount = pages.filter((page) => !page.passed).length;
   const passed = Boolean(selectedProduct)
+    && cartPersistenceUpdate?.cartQuantityAfter === 0
     && pageFailureCount === 0
     && unexpectedFailedResponses.length === 0
     && uniqueErrors.length === 0
@@ -704,6 +734,7 @@ export async function runBrowserSmoke({
       blockedWriteRequestCount: uniqueWrites.length,
       forbiddenWriteAttemptCount: forbiddenWriteAttempts.length,
       cartQuantity: selectedProduct?.quantity || 0,
+      cartPersistenceUpdate,
     },
     selectedProduct: selectedProduct ? { key: selectedProduct.key } : null,
     summary: {

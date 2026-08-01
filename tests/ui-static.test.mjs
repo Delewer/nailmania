@@ -41,6 +41,13 @@ test('checkout keeps authoritative quote UX and exposes native accessible contro
   assert.doesNotMatch(checkout, /agreeLink|co-agree-term/);
 });
 
+test('storefront persistence effects never return storage status as React cleanup', () => {
+  const shop = source('src/shop.jsx');
+  assert.match(shop, /useEffect\(\(\)=>\{ writeStoredValue\("nm_cart",JSON\.stringify\(cart\)\); \},\[cart\]\)/);
+  assert.match(shop, /useEffect\(\(\)=>\{ writeStoredValue\("nm_favs",JSON\.stringify\(favs\)\); \},\[favs\]\)/);
+  assert.doesNotMatch(shop, /useEffect\(\(\)=>writeStoredValue\(/);
+});
+
 test('storefront overlays and live search have keyboard and dialog semantics', () => {
   const header = source('src/components/Header.jsx');
   const menus = source('src/components/Menus.jsx');

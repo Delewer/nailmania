@@ -126,8 +126,11 @@ export function ShopProvider({children}){
     document.documentElement.lang = lang === "ru" ? "ru" : "ro";
     writeStoredValue("nm_lang",lang);
   },[lang]);
-  React.useEffect(()=>writeStoredValue("nm_cart",JSON.stringify(cart)),[cart]);
-  React.useEffect(()=>writeStoredValue("nm_favs",JSON.stringify(favs)),[favs]);
+  // Storage helpers return a success boolean. Keep it out of the effect return
+  // value: React treats every non-undefined return as an effect cleanup and
+  // would try to call that boolean on the next cart/favourites update.
+  React.useEffect(()=>{ writeStoredValue("nm_cart",JSON.stringify(cart)); },[cart]);
+  React.useEffect(()=>{ writeStoredValue("nm_favs",JSON.stringify(favs)); },[favs]);
   // Older builds persisted the complete guest order response, including contact
   // fields. Guest history has no UI consumer; purge that legacy PII copy.
   React.useEffect(()=>purgeLegacyGuestOrderHistory(),[]);
