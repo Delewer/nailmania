@@ -18,7 +18,7 @@
 - `CUSTOMER_PASSWORD_RESET_URL` — HTTPS URL страницы сброса пароля.
 - Один email transport: service binding `CUSTOMER_EMAIL_SERVICE`, HTTPS `CUSTOMER_EMAIL_ENDPOINT` или поддерживаемый runtime sender. Для HTTP provider при необходимости задаётся `CUSTOMER_EMAIL_API_TOKEN` как Secret. Для встроенной интеграции Resend используются endpoint `https://api.resend.com/emails`, подтверждённый sender в `CUSTOMER_EMAIL_FROM` и отдельный `CUSTOMER_EMAIL_API_TOKEN` для preview/production.
 
-Preview получает собственные D1/R2 и тестовые provider credentials. Production secrets не копируются в preview.
+Preview получает собственные D1/R2 и тестовые provider credentials. Production secrets не копируются в preview автоматически. Если владелец явно одобрил общий Telegram bot/chat для acceptance, оба значения повторно вводятся как Preview Secrets; каждая первичная, повторная и recovery-отправка при `ENVIRONMENT=preview` начинается с `🧪 ТЕСТОВЫЙ ЗАКАЗ — НЕ ОБРАБАТЫВАТЬ`, чтобы тестовые заказы нельзя было принять за реальные.
 
 Для Resend подтверждается почтовый поддомен `mail.nailmania.md` через выданные провайдером SPF/DKIM DNS records. Sender приложения — `Nail Mania <no-reply@mail.nailmania.md>`. API key создаётся только с правом `Sending access`, ограничивается доменом `mail.nailmania.md` и добавляется как encrypted Secret `CUSTOMER_EMAIL_API_TOKEN`; он не хранится в `wrangler.toml`, Git, логах или D1. Preview и production используют разные API keys, чтобы их можно было отзывать независимо.
 

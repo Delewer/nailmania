@@ -14,12 +14,16 @@ const escapeHtml = (value) => String(value ?? '')
   .replaceAll('<', '&lt;')
   .replaceAll('>', '&gt;');
 
-function telegramMessage(order) {
+function telegramMessage(env, order) {
   const items = order.items
     .map((item) => `• ${escapeHtml(item.name)} × ${item.quantity} — ${item.lineTotal} lei`)
     .join('\n');
   const address = [order.customer.city, order.customer.address].filter(Boolean).join(', ');
+  const previewLabel = String(env?.ENVIRONMENT || '').trim().toLowerCase() === 'preview'
+    ? '🧪 <b>ТЕСТОВЫЙ ЗАКАЗ — НЕ ОБРАБАТЫВАТЬ</b>'
+    : '';
   return [
+    previewLabel,
     `🛍 <b>Новый заказ ${escapeHtml(order.no)}</b>`,
     `👤 ${escapeHtml(order.customer.name)} — ${escapeHtml(order.customer.phone)}`,
     order.customer.email ? `✉️ ${escapeHtml(order.customer.email)}` : '',
@@ -79,7 +83,7 @@ export async function sendTelegramOrder(env, order, options = {}) {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         chat_id: chatId,
-        text: telegramMessage(order),
+        text: telegramMessage(env, order),
         parse_mode: 'HTML',
         disable_web_page_preview: true,
       }),

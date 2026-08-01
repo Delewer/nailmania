@@ -7,6 +7,7 @@ import { cleanupCustomerAuthRecords } from '../functions/_lib/customer-maintenan
 import {
   deliverTelegramNotification,
 } from '../functions/_lib/notifications.js';
+import { sendTelegramOrder } from '../functions/_lib/telegram.js';
 import { onRequestPost as forgotPassword } from '../functions/api/auth/forgot-password.js';
 import { onRequestPost as resendTelegram } from '../functions/api/admin/orders/[id]/notifications/telegram.js';
 import { onRequestPatch as updateInternalComment } from '../functions/api/admin/orders/[id]/internal-comment.js';
@@ -67,6 +68,34 @@ const telegramOrder = {
   deliveryFee: 0,
   total: 100,
 };
+
+async function captureTelegramPayload(environment) {
+  let payload = null;
+  await sendTelegramOrder({
+    ENVIRONMENT: environment,
+    TELEGRAM_BOT_TOKEN: 'test-token',
+    TELEGRAM_CHAT_ID: 'test-chat',
+    TELEGRAM_FETCH: async (_url, init) => {
+      payload = JSON.parse(init.body);
+      return Response.json({ ok: true });
+    },
+  }, telegramOrder);
+  return payload;
+}
+
+test('Preview Telegram orders carry an unmistakable test-order label', async () => {
+  const previewPayload = await captureTelegramPayload('preview');
+  const productionPayload = await captureTelegramPayload('production');
+  const label = '🧪 <b>ТЕСТОВЫЙ ЗАКАЗ — НЕ ОБРАБАТЫВАТЬ</b>';
+  assert.equal(previewPayload.text, `${label}\n${productionPayload.text}`);
+  assert.equal(previewPayload.text.split(label).length - 1, 1);
+});
+
+test('Production Telegram orders do not carry the Preview test-order label', async () => {
+  const payload = await captureTelegramPayload('production');
+  assert.doesNotMatch(payload.text, /ТЕСТОВЫЙ ЗАКАЗ|НЕ ОБРАБАТЫВАТЬ/);
+  assert.match(payload.text, /^🛍 <b>Новый заказ NM-TEST-1<\/b>/);
+});
 
 function adminEnv(db, email = 'manager@example.test', extra = {}) {
   return {
