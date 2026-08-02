@@ -80,10 +80,12 @@ async function loadAuthoritativeOrderQuote(db, request, userId) {
   const keys = request.items.map((item) => item.productKey);
   const productResult = await db.prepare(`
     SELECT p.id, p.catalog_key, p.sku, p.brand, p.name_ro, p.name_ru, p.category_id,
-           p.price, p.old_price, p.cost_price,
+           prices.effective_price AS price, prices.effective_old_price AS old_price,
+           p.cost_price,
            c.name_ro AS category_name_ro, c.name_ru AS category_name_ru,
            i.on_hand, i.reserved
     FROM products p
+    JOIN product_catalog_prices prices ON prices.product_id = p.id
     JOIN categories c ON c.id = p.category_id
     JOIN inventory i ON i.product_id = p.id AND i.warehouse_id = 1
     WHERE p.is_active = 1 AND p.deleted_at IS NULL AND c.is_active = 1

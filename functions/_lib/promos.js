@@ -66,6 +66,7 @@ export function pricePromoCart(items, products) {
       productId: Number(product.id),
       productKey: product.catalog_key,
       categoryId: product.category_id,
+      brand: product.brand || '',
       quantity: item.quantity,
       unitPrice,
       lineTotal,
@@ -96,11 +97,15 @@ export function allocatePromoDiscount(items, promotion) {
   if (!discount) return items.map((item) => ({ ...item, promoDiscountAllocation: 0 }));
   const scopedProducts = new Set((promotion?.productIds || []).map(Number));
   const scopedCategories = new Set(promotion?.categoryIds || []);
-  const hasScopes = scopedProducts.size > 0 || scopedCategories.size > 0;
+  const scopedBrands = new Set((promotion?.brands || []).map((brand) => String(brand).toLowerCase()));
+  const hasScopes = scopedProducts.size > 0 || scopedCategories.size > 0 || scopedBrands.size > 0;
   const eligible = items.map((item, index) => ({
     index,
     item,
-    eligible: !hasScopes || scopedProducts.has(Number(item.productId)) || scopedCategories.has(item.categoryId),
+    eligible: !hasScopes
+      || scopedProducts.has(Number(item.productId))
+      || scopedCategories.has(item.categoryId)
+      || scopedBrands.has(String(item.brand || '').toLowerCase()),
   })).filter((entry) => entry.eligible && Number(entry.item.lineTotal) > 0);
   const subtotal = eligible.reduce((sum, entry) => sum + Number(entry.item.lineTotal), 0);
   if (!subtotal || discount > subtotal) {
@@ -159,9 +164,10 @@ async function loadPromotion(db, code, userId) {
     LIMIT 1
   `).bind(userId || null, code).first();
   if (!promo) throw new PromoValidationError('PROMO_NOT_FOUND', 'Promo code was not found', 404);
-  const [categoriesResult, productsResult] = await Promise.all([
+  const [categoriesResult, productsResult, brandsResult] = await Promise.all([
     db.prepare('SELECT category_id FROM promo_code_categories WHERE promo_code_id = ?').bind(promo.id).all(),
     db.prepare('SELECT product_id FROM promo_code_products WHERE promo_code_id = ?').bind(promo.id).all(),
+    db.prepare('SELECT brand FROM promo_code_brands WHERE promo_code_id = ?').bind(promo.id).all(),
   ]);
   return {
     id: promo.id,
@@ -179,6 +185,7 @@ async function loadPromotion(db, code, userId) {
     userUsageCount: Number(promo.user_usage_count || 0),
     categoryIds: new Set((categoriesResult.results || []).map((row) => row.category_id)),
     productIds: new Set((productsResult.results || []).map((row) => Number(row.product_id))),
+    brands: new Set((brandsResult.results || []).map((row) => String(row.brand).toLowerCase())),
   };
 }
 
@@ -219,11 +226,12 @@ export async function validatePromotion(db, options) {
     throw new PromoValidationError('PROMO_USER_LIMIT_REACHED', 'Your promo code usage limit has been reached');
   }
 
-  const hasScopes = promo.categoryIds.size > 0 || promo.productIds.size > 0;
+  const hasScopes = promo.categoryIds.size > 0 || promo.productIds.size > 0 || promo.brands.size > 0;
   const eligibleSubtotal = items.reduce((sum, item) => {
     const eligible = !hasScopes
       || promo.productIds.has(Number(item.productId))
-      || promo.categoryIds.has(item.categoryId);
+      || promo.categoryIds.has(item.categoryId)
+      || promo.brands.has(String(item.brand || '').toLowerCase());
     return sum + (eligible ? Number(item.lineTotal || 0) : 0);
   }, 0);
   const discountAmount = calculatePromoDiscount(promo, eligibleSubtotal);
@@ -234,6 +242,7 @@ export async function validatePromotion(db, options) {
     ...promo,
     categoryIds: [...promo.categoryIds],
     productIds: [...promo.productIds],
+    brands: [...promo.brands],
     merchandiseSubtotal,
     eligibleSubtotal,
     discountAmount,

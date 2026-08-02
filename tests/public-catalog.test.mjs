@@ -1,17 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { SqliteD1 } from './helpers/sqlite-d1.mjs';
 import { loadStorefrontCatalog } from '../src/catalog-api.js';
 import { onRequestGet as listProducts } from '../functions/api/products/index.js';
 import { onRequestGet as getProduct } from '../functions/api/products/[key].js';
 import { onRequestGet as getAvailability } from '../functions/api/products/[id]/availability.js';
 import { onRequestGet as listCategories } from '../functions/api/categories.js';
+import { fullSchema } from './helpers/full-schema.mjs';
 
-const schema = [
-  readFileSync(new URL('../migrations/0001_initial.sql', import.meta.url), 'utf8'),
-  readFileSync(new URL('../migrations/0007_catalog_cache.sql', import.meta.url), 'utf8'),
-].join('\n');
+const schema = fullSchema;
 
 test('the public D1 product and category routes satisfy the storefront contract', async (t) => {
   const db = new SqliteD1(schema);

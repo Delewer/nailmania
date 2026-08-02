@@ -10,8 +10,11 @@ export function withOrderContract(db, input, { idempotencyKey = crypto.randomUUI
   const body = { ...input };
   const items = (body.items || []).map((requested) => {
     const product = sqlite.prepare(`
-      SELECT id, catalog_key, category_id, price, old_price
-      FROM products WHERE catalog_key = ?
+      SELECT product.id, product.catalog_key, product.category_id, product.brand,
+             prices.effective_price AS price, prices.effective_old_price AS old_price
+      FROM products product
+      JOIN product_catalog_prices prices ON prices.product_id = product.id
+      WHERE product.catalog_key = ?
     `).get(requested.productKey);
     if (!product) throw new TypeError(`Unknown fixture product: ${requested.productKey}`);
     const quantity = Number(requested.quantity);
@@ -21,6 +24,7 @@ export function withOrderContract(db, input, { idempotencyKey = crypto.randomUUI
       productId: Number(product.id),
       productKey: product.catalog_key,
       categoryId: product.category_id,
+      brand: product.brand,
       quantity,
       unitPrice,
       listPrice,
@@ -43,9 +47,13 @@ export function withOrderContract(db, input, { idempotencyKey = crypto.randomUUI
     const categoryScopes = new Set(sqlite.prepare(
       'SELECT category_id FROM promo_code_categories WHERE promo_code_id = ?',
     ).all(promo.id).map((row) => row.category_id));
-    const hasScopes = productScopes.size > 0 || categoryScopes.size > 0;
+    const brandScopes = new Set(sqlite.prepare(
+      'SELECT brand FROM promo_code_brands WHERE promo_code_id = ?',
+    ).all(promo.id).map((row) => String(row.brand).toLowerCase()));
+    const hasScopes = productScopes.size > 0 || categoryScopes.size > 0 || brandScopes.size > 0;
     const eligibleSubtotal = items.reduce((sum, item) => sum + (
       !hasScopes || productScopes.has(item.productId) || categoryScopes.has(item.categoryId)
+        || brandScopes.has(String(item.brand || '').toLowerCase())
         ? item.lineTotal
         : 0
     ), 0);

@@ -309,6 +309,7 @@ function ProductEditor({ product, categories, loading, error, onClose, onSave, o
                     </section>
                     <section className="adm-form-section">
                       <h3>Preț și praguri</h3>
+                      <p className="adm-form-hint">Acestea sunt prețurile de bază. Reducerile de brand, categorie sau produs se gestionează separat în „Reduceri”.</p>
                       <div className="adm-form-grid three">
                         <label><span>Preț, lei</span><input type="number" min="0" step="1" value={form.price} onChange={(event) => set('price', event.target.value)} required/></label>
                         <label><span>Preț vechi</span><input type="number" min="0" step="1" value={form.oldPrice} onChange={(event) => set('oldPrice', event.target.value)}/></label>
@@ -604,7 +605,7 @@ export default function AdminProducts({ onUnauthorized }) {
                 <tr key={product.id} onClick={() => openProduct(product.id)}>
                   <td><div className="adm-product-cell"><div className="adm-product-thumb">{product.image ? <img src={product.image} alt=""/> : <ImageIcon size={18}/>}</div><div><b>{product.name}</b><span>{product.sku || product.key} · {product.brand}</span></div></div></td>
                   <td>{product.categoryName}</td>
-                  <td><strong>{money(product.price)}</strong>{product.oldPrice > product.price && <span>{money(product.oldPrice)}</span>}</td>
+                  <td><strong>{money(product.effectivePrice ?? product.price)}</strong>{(product.effectiveOldPrice ?? product.oldPrice) > (product.effectivePrice ?? product.price) && <span>{money(product.effectiveOldPrice ?? product.oldPrice)}{product.discountPercentage > 0 ? ` · −${product.discountPercentage}%` : ''}</span>}</td>
                   <td><strong>{product.onHand}</strong><span>Disponibil {product.available}</span></td>
                   <td>{product.reserved}</td>
                   <td><ProductState product={product}/></td>

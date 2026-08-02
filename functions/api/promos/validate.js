@@ -19,10 +19,12 @@ export async function onRequestPost(context) {
     const requestedItems = normalizePromoCartItems(body?.items);
     const keys = requestedItems.map((item) => item.productKey);
     const productResult = await db.prepare(`
-      SELECT id, catalog_key, category_id, price
-      FROM products
-      WHERE is_active = 1 AND deleted_at IS NULL
-        AND catalog_key IN (${placeholders(keys.length)})
+      SELECT product.id, product.catalog_key, product.category_id, product.brand,
+             prices.effective_price AS price
+      FROM products product
+      JOIN product_catalog_prices prices ON prices.product_id = product.id
+      WHERE product.is_active = 1 AND product.deleted_at IS NULL
+        AND product.catalog_key IN (${placeholders(keys.length)})
     `).bind(...keys).all();
     const priced = pricePromoCart(requestedItems, productResult.results || []);
     const promotion = await validatePromotion(db, {

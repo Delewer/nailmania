@@ -18,10 +18,12 @@ export async function onRequestGet(context) {
       const product = key ? await db.prepare(`
         SELECT
           p.id, p.catalog_key, p.sku, p.slug, p.brand, p.name_ro, p.description_ro,
-          p.price, p.old_price, p.updated_at, p.category_id,
+          prices.effective_price AS price, prices.effective_old_price AS old_price,
+          p.updated_at, p.category_id,
           c.name_ro AS category_name,
           MAX(0, COALESCE(i.on_hand, 0) - COALESCE(i.reserved, 0)) AS available_stock
         FROM products p
+        JOIN product_catalog_prices prices ON prices.product_id = p.id
         JOIN categories c ON c.id = p.category_id AND c.is_active = 1
         LEFT JOIN inventory i ON i.product_id = p.id AND i.warehouse_id = 1
         WHERE p.is_active = 1 AND p.deleted_at IS NULL

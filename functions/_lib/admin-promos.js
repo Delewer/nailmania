@@ -37,16 +37,23 @@ const optionalDate = (input, key, fallback) => {
   return parsed.toISOString();
 };
 
-const idList = (input, key, fallback, { numeric = false } = {}) => {
+const idList = (input, key, fallback, { numeric = false, maxLength = 100, caseInsensitive = false } = {}) => {
   const source = value(input, key, fallback || []);
   if (!Array.isArray(source) || source.length > 100) {
     throw new AdminPromoError('INVALID_PROMO_SCOPE', `${key} must be an array with at most 100 values`, 400, { field: key });
   }
   const normalized = source.map((entry) => numeric ? Number(entry) : String(entry || '').trim());
-  if (normalized.some((entry) => numeric ? !Number.isInteger(entry) || entry <= 0 : !entry || entry.length > 100)) {
+  if (normalized.some((entry) => numeric ? !Number.isInteger(entry) || entry <= 0 : !entry || entry.length > maxLength)) {
     throw new AdminPromoError('INVALID_PROMO_SCOPE', `${key} contains an invalid value`, 400, { field: key });
   }
-  return [...new Set(normalized)];
+  if (!caseInsensitive) return [...new Set(normalized)];
+  const seen = new Set();
+  return normalized.filter((entry) => {
+    const folded = entry.toLowerCase();
+    if (seen.has(folded)) return false;
+    seen.add(folded);
+    return true;
+  });
 };
 
 export function normalizeAdminPromo(input, current = null) {
@@ -80,6 +87,7 @@ export function normalizeAdminPromo(input, current = null) {
   if (typeof activeInput !== 'boolean') throw new AdminPromoError('INVALID_PROMO_ACTIVE', 'isActive must be a boolean');
   const categoryIds = idList(input, 'categoryIds', current?.categoryIds);
   const productIds = idList(input, 'productIds', current?.productIds, { numeric: true });
+  const brands = idList(input, 'brands', current?.brands, { maxLength: 180, caseInsensitive: true });
   return {
     code,
     discountType,
@@ -93,6 +101,7 @@ export function normalizeAdminPromo(input, current = null) {
     isActive: activeInput,
     categoryIds,
     productIds,
+    brands,
   };
 }
 
@@ -121,6 +130,7 @@ export const adminPromo = (row) => ({
   returnAmount: number(row.return_amount),
   categoryScopeCount: number(row.category_scope_count),
   productScopeCount: number(row.product_scope_count),
+  brandScopeCount: number(row.brand_scope_count),
 });
 
 export const ADMIN_PROMO_SELECT = `
@@ -141,14 +151,16 @@ export const ADMIN_PROMO_SELECT = `
     (SELECT COUNT(*) FROM promo_code_categories scope
      WHERE scope.promo_code_id = pc.id) AS category_scope_count,
     (SELECT COUNT(*) FROM promo_code_products scope
-     WHERE scope.promo_code_id = pc.id) AS product_scope_count
+     WHERE scope.promo_code_id = pc.id) AS product_scope_count,
+    (SELECT COUNT(*) FROM promo_code_brands scope
+     WHERE scope.promo_code_id = pc.id) AS brand_scope_count
   FROM promo_codes pc
 `;
 
 export async function getAdminPromo(db, id) {
   const row = await db.prepare(`${ADMIN_PROMO_SELECT} WHERE pc.id = ? LIMIT 1`).bind(id).first();
   if (!row) return null;
-  const [categoryResult, productResult, orderResult] = await Promise.all([
+  const [categoryResult, productResult, brandResult, orderResult] = await Promise.all([
     db.prepare(`
       SELECT c.id, c.slug, c.name_ro, c.name_ru
       FROM promo_code_categories scope
@@ -160,6 +172,10 @@ export async function getAdminPromo(db, id) {
       FROM promo_code_products scope
       JOIN products p ON p.id = scope.product_id
       WHERE scope.promo_code_id = ? ORDER BY p.name_ro, p.id
+    `).bind(id).all(),
+    db.prepare(`
+      SELECT brand FROM promo_code_brands
+      WHERE promo_code_id = ? ORDER BY brand COLLATE NOCASE
     `).bind(id).all(),
     db.prepare(`
       SELECT pr.order_id, pr.user_id, pr.discount_amount, pr.eligible_subtotal,
@@ -191,6 +207,7 @@ export async function getAdminPromo(db, id) {
   }));
   promo.categoryIds = promo.categories.map((category) => category.id);
   promo.productIds = promo.products.map((product) => product.id);
+  promo.brands = (brandResult.results || []).map((entry) => entry.brand);
   promo.orders = (orderResult.results || []).map((order) => ({
     id: order.order_id,
     no: order.order_no,
@@ -223,6 +240,7 @@ export const promoSnapshot = (promo) => ({
   isActive: promo.isActive,
   categoryIds: [...(promo.categoryIds || [])],
   productIds: [...(promo.productIds || [])],
+  brands: [...(promo.brands || [])],
 });
 
 export async function assertPromoScopes(db, draft) {
@@ -240,4 +258,14 @@ export async function assertPromoScopes(db, draft) {
     const missing = draft.productIds.filter((id) => !found.has(id));
     if (missing.length) throw new AdminPromoError('PROMO_PRODUCT_NOT_FOUND', 'One or more scoped products do not exist', 409, { productIds: missing });
   }
+  if (draft.brands.length) {
+    const result = await db.prepare(`
+      SELECT brand FROM products WHERE trim(brand) <> '' GROUP BY brand COLLATE NOCASE
+    `).all();
+    const canonical = new Map((result.results || []).map((row) => [String(row.brand).toLowerCase(), row.brand]));
+    const missing = draft.brands.filter((brand) => !canonical.has(brand.toLowerCase()));
+    if (missing.length) throw new AdminPromoError('PROMO_BRAND_NOT_FOUND', 'One or more scoped brands do not exist', 409, { brands: missing });
+    draft.brands = draft.brands.map((brand) => canonical.get(brand.toLowerCase()));
+  }
+  return draft;
 }

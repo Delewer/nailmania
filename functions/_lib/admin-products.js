@@ -139,11 +139,14 @@ export const ADMIN_PRODUCT_SELECT = `
   SELECT p.*, c.name_ro AS category_name_ro, c.name_ru AS category_name_ru,
          COALESCE(i.on_hand, 0) AS on_hand, COALESCE(i.reserved, 0) AS reserved,
          i.admin_revision AS inventory_revision,
+         prices.effective_price, prices.effective_old_price,
+         prices.discount_percentage, prices.effective_is_promo,
          (SELECT pi.public_url FROM product_images pi
           WHERE pi.product_id = p.id ORDER BY pi.sort_order, pi.id LIMIT 1) AS primary_image,
          (SELECT COUNT(*) FROM product_images pi WHERE pi.product_id = p.id) AS image_count
   FROM products p
   JOIN categories c ON c.id = p.category_id
+  JOIN product_catalog_prices prices ON prices.product_id = p.id
   LEFT JOIN inventory i ON i.product_id = p.id AND i.warehouse_id = 1
 `;
 
@@ -160,10 +163,14 @@ export function adminProductSummary(row) {
     name: row.name_ro,
     price: number(row.price),
     oldPrice: number(row.old_price),
+    effectivePrice: number(row.effective_price),
+    effectiveOldPrice: number(row.effective_old_price),
+    discountPercentage: number(row.discount_percentage),
     isActive: Boolean(row.is_active) && !row.deleted_at,
     isDeleted: Boolean(row.deleted_at),
     isNew: Boolean(row.is_new),
     isPromo: Boolean(row.is_promo),
+    effectiveIsPromo: Boolean(row.effective_is_promo),
     onHand,
     reserved,
     available: Math.max(0, onHand - reserved),

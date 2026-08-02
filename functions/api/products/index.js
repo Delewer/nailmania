@@ -26,8 +26,8 @@ export async function onRequestGet(context) {
     };
     const sortOrders = {
       default: 'p.id ASC', catalog: 'p.id ASC',
-      price_asc: 'p.price ASC, p.id ASC',
-      price_desc: 'p.price DESC, p.id ASC',
+      price_asc: 'prices.effective_price ASC, p.id ASC',
+      price_desc: 'prices.effective_price DESC, p.id ASC',
       name_asc: 'p.name_ro COLLATE NOCASE ASC, p.id ASC',
       name_desc: 'p.name_ro COLLATE NOCASE DESC, p.id ASC',
       newest: 'p.updated_at DESC, p.id DESC',

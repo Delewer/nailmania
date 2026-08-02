@@ -19,11 +19,12 @@ import {
   buildClientProductEvent,
   trackProductEvent,
 } from '../src/product-analytics.js';
+import { fullSchema } from './helpers/full-schema.mjs';
 
 const UUID = '123e4567-e89b-42d3-a456-426614174000';
 
 function setup() {
-  const db = new SqliteD1(readFileSync(new URL('../migrations/0001_initial.sql', import.meta.url), 'utf8'));
+  const db = new SqliteD1(fullSchema);
   db.sqlite.exec(`
     INSERT INTO categories (id, slug, name_ro) VALUES ('gellac', 'gellac', 'Gel lac');
     INSERT INTO products (id, catalog_key, sku, slug, category_id, brand, name_ro, price)

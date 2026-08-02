@@ -1,12 +1,12 @@
 # Nail Mania — актуальный статус завершения проекта
 
-Дата проверки: 28 июля 2026 года.
+Дата проверки: 1 августа 2026 года.
 
 ## Итог
 
-Локальная реализация проекта по исходному плану завершена и проходит технические проверки. Production ещё не переключён: `https://nailmania.md/api/products?limit=1` всё ещё обслуживается старым статическим приложением. Последний preview развёрнут из SHA `2e165736af024a4a3033cd0d384ae6a14f9cfc5f`, защищён Cloudflare Access и использует preview D1 со всеми 13 migrations, 17 категориями, 1874 товарами, 1874 строками inventory, 6098 единицами и 2503 строками изображений. PR #2 с R2/image-policy изменениями успешно прошёл CI и влит в `main` merge-коммитом `513b3d286313eab20b59c081acf9afdb82cc2d44`; production-only image rehost завершён без ошибок, но новый catalog ещё не развёрнут и формально не принят на preview. Production D1 по-прежнему имеет только migrations 0001–0004; 0005–0013 ожидают отдельный guarded rollout.
+Локальная реализация проекта по исходному плану завершена и проходит технические проверки. Новый preview-кандидат включает все 14 migrations, 17 категорий, 1874 товара, 1874 строки inventory, 5956 единиц и 2503 строки изображений в catalog artifact. В нём добавлены управляемые скидки каталога по товару, целой категории или целому бренду, а промокоды получили такой же brand scope. Preview защищён Cloudflare Access и публикуется вручную из ветки `d1-preview-bootstrap`; точный deployed SHA фиксируется Cloudflare и release evidence. Production ещё не переключён: `https://nailmania.md/api/products?limit=1` всё ещё обслуживается старым статическим приложением, а production D1 по-прежнему имеет только migrations 0001–0004; 0005–0014 ожидают отдельный guarded rollout после принятия Preview.
 
-Табличный и image-host блокеры сняты: свежая Google Sheet прошла обязательный source gate, catalog воспроизводимо пересобран и проверен на local D1. Для production используется bucket `nailmania-photos` и активный `https://images.nailmania.md`; production Pages binding и `R2_PUBLIC_BASE_URL` подготовлены для следующего deployment. Все 2504 image URL в текущем catalog используют canonical host, legacy и внешних ссылок осталось 0. Автоматические production deployments отключены, preview branch deployments выставлены в `None`, Deploy Hooks удалены. Git/GitHub владелец ведёт самостоятельно.
+Табличный и image-host блокеры сняты: свежая Google Sheet прошла обязательный source gate, catalog воспроизводимо пересобран и проверен на local D1. Для production используется bucket `nailmania-photos` и активный `https://images.nailmania.md`; production Pages binding и `R2_PUBLIC_BASE_URL` подготовлены для следующего deployment. Все 2504 image URL в текущем catalog используют canonical host, legacy и внешних ссылок осталось 0. Автоматические production deployments отключены, preview branch deployments выставлены в `None`, Deploy Hooks удалены. Для текущего Preview владелец отдельно разрешил commit/push ветки; `main` и Production остаются вне этого разрешения.
 
 Главный бизнес-инвариант реализован на клиенте и сервере:
 
@@ -47,7 +47,7 @@
 ### Аккаунты и админка
 
 - Регистрация, вход, выход, opaque HttpOnly sessions, PBKDF2 password hashing, reset по одноразовой ссылке, адреса, история заказов и повтор заказа.
-- Разделы admin: заказы, товары, категории, складской журнал, возвраты, промокоды, статистика и audit log. Роль `manager` обслуживает заказы/каталог/склад/возвраты, но не имеет доступа к промокодам, статистике, audit log и readiness; эти разделы доступны только `admin`. В ответах заказов для `manager` скрыты точные promo code/id, остаётся только нужная для возвратов сумма скидки.
+- Разделы admin: заказы, товары, категории, складской журнал, возвраты, скидки каталога, промокоды, статистика и audit log. Роль `manager` может создавать, менять, мягко удалять/восстанавливать товары, менять остатки и управлять скидками каталога; она не имеет доступа к промокодам, статистике, audit log и readiness — эти разделы доступны только `admin`. В ответах заказов для `manager` скрыты точные promo code/id, остаётся только нужная для возвратов сумма скидки.
 - Cloudflare Access JWT проверяется до активной D1-роли `manager/admin`; локальный bearer token работает только при `ENVIRONMENT=local`.
 - Изображения проверяются по реальным JPEG/PNG/WebP/AVIF bytes и пишутся в R2.
 - Все административные mutation требуют same-origin и оставляют audit trail; важные редактирования защищены optimistic revision.
@@ -55,11 +55,19 @@
 
 ### Промокоды
 
-- Percent/fixed, даты, min/max суммы, total/per-user limits, category/product scopes и включение/выключение.
+- Percent/fixed, даты, min/max суммы, total/per-user limits, category/product/brand scopes и включение/выключение.
+- В админке можно выбрать отдельные товары, целые категории и целые бренды; выбранные области объединяются. Пустая область по-прежнему означает промокод на всю корзину.
 - Лимиты сериализуются D1 triggers; отмена и expiry освобождают redemption.
 - Исторический `code_snapshot` не меняется после переименования промокода.
 - Частичный/полный возврат реверсирует точную сохранённую allocation скидки.
 - Checkout RO/RU умеет применить/снять код и показывает серверные суммы/ошибки.
+
+### Скидки каталога
+
+- `manager` и `admin` могут создать процентную скидочную кампанию, задать даты и выбрать отдельные товары, целые категории и/или целые бренды; выбранные области объединяются.
+- Перед активацией интерфейс показывает число затронутых товаров и контрольные цены. Пересекающиеся кампании не складываются: применяется наибольший процент.
+- Кампания вычисляется динамически и не переписывает `products.price`, `source_type` или `admin_revision`, поэтому последующий импорт Google Sheet продолжает безопасно обновлять импортные товары; новые товары выбранного бренда/категории автоматически попадают под кампанию.
+- Каталог, SEO, промокоды, server quote, порог бесплатной доставки, order snapshot и D1 checkout guard используют одну и ту же effective price.
 
 ### Статистика и аналитика
 
@@ -79,7 +87,7 @@
 - Telegram выполняется после commit и не отменяет успешный заказ.
 - Pending notification имеет lease 5 минут. После аварийного завершения он получает `NOTIFICATION_ATTEMPT_EXPIRED`, а deterministic recovery создаётся ровно один раз; ручной resend доступен после lease.
 - Readiness endpoint возвращает только boolean checks для D1, Access, secrets, R2, email, Telegram и Analytics; deployment считается неготовым, если в Pages runtime попали лишние S3 management credentials вместо одного R2 binding либо production image base всё ещё использует `*.r2.dev`.
-- D1 release wrappers требуют чистый Git SHA, точное имя базы и для preview/production свежий backup с проверенными SQL/Time Travel checksums. Имена и содержимое всех 13 migrations защищены checksum manifest; remote catalog import после записи сверяет точные postconditions и сохраняет evidence. Прямые remote catalog/admin helpers отключены.
+- D1 release wrappers требуют чистый Git SHA, точное имя базы и для preview/production свежий backup с проверенными SQL/Time Travel checksums. Имена и содержимое всех 14 migrations защищены checksum manifest; remote catalog import после записи сверяет точные postconditions и сохраняет evidence. Прямые remote catalog/admin helpers отключены.
 - R2 helpers требуют точную среду и bucket из `wrangler.toml`, повторное подтверждение bucket, чистый SHA, production `main` и явный HTTPS public base. Catalog rehost разрешён только для exact production bucket/host; DNS и literal IP проверяются против private/loopback/link-local/unspecified/multicast ranges на каждом redirect, выбранный публичный IP закрепляется на запрос, ответ ограничен 20 MiB и проверяется по реальным JPEG/PNG/WebP/GIF/AVIF bytes. Частичная загрузка и параллельное изменение tracked catalog/map завершаются ошибкой без их stale-перезаписи.
 - Перед первой migration промокодов remote preflight останавливает релиз при любых legacy `promo_redemptions`.
 - Pages release gate проверяет branch/HEAD/чистый worktree, точный digest `dist`, build manifest, environment-specific bundle и D1 migration/catalog evidence той же среды и commit; production требует принятую preview-аттестацию того же commit. Scheduled Worker собирается и разворачивается отдельным guard с digest исходника, bundle, entrypoint и конфигурации, а deploy требует соответствующий D1 migration evidence. Обезличенные acceptance/load/browser JSON-отчёты проверяются на sensitive data и атомарно пишутся только в `tmp/reports`; catalog и release evidence остаются в своих выделенных игнорируемых каталогах под `tmp`.
@@ -89,65 +97,65 @@
 
 ## Доказательства локальной проверки
 
-Успешно на 28 июля 2026 года для текущего worktree:
+Успешно на 1 августа 2026 года для текущего worktree:
 
-- `npm test`: 214/214, включая order concurrency, free-delivery threshold, catalog integrity, image policy/SSRF guards и release guards;
+- `npm test`: 224/224, включая dynamic/scheduled catalog discounts, product/category/brand promo scopes, order concurrency, free-delivery threshold, catalog integrity, image policy/SSRF guards и release guards;
 - production Vite 8/SEO build и Pages Functions compile через Wrangler 4.114;
 - Scheduled Worker preview и production dry-run;
-- release config: 13 migrations, изолированные preview/production D1, R2 и Analytics Engine;
-- все 13 migrations применены с нуля к чистой local D1;
-- в чистую local D1 импортирован текущий validated catalog: 17 категорий, 1874 товара, 1874 строки inventory, 6098 единиц и 2503 image rows, без unexpected import categories, invalid inventory и orphan active products;
+- release config: 14 migrations, изолированные preview/production D1, R2 и Analytics Engine;
+- все 14 migrations применены с нуля к чистой local D1;
+- в чистую local D1 импортирован текущий validated catalog: 17 категорий, 1874 товара, 1874 строки inventory, 5956 единиц и 2503 image rows, без unexpected import categories, invalid inventory и orphan active products;
 - `npm run audit:security` проходит fail-closed policy: единственное принятое upstream npm advisory относится к неиспользуемым нестабильным React Server Components, а проект работает через declarative `BrowserRouter` и тестом запрещает RSC API;
 - load check: 120/120 запросов, 0 ошибок, p50 90 мс, p95 209 мс, p99 276 мс, max 283 мс; обезличенный отчёт — `tmp/reports/local-load-final-20260728.json`;
 - реальный loopback HTTP acceptance: каталог, product, sitemap, admin session, временный 50% promo, server quote, заказ ровно на 2200 лей, `deliveryFee=0`, резерв, notification journal, internal comment revision, отмена, восстановление availability, release redemption, statistics/readiness; обезличенный отчёт — `tmp/reports/local-acceptance-final-20260728.json`;
 - acceptance завершил заказ в `cancelled` и деактивировал временный промокод; audit/journal намеренно сохранены как доказательство;
-- после acceptance повторная проверка D1 подтвердила 13 migrations, 17 категорий, 1874 товара и 1874 строки inventory.
+- после schema verification повторная проверка D1 подтвердила 14 migrations, 17 категорий, 1874 товара и 1874 строки inventory.
 
 Standalone Chrome browser smoke выполнен на loopback для последнего предшествующего R2 SHA: 12/12 страниц (главная, товар, checkout, настоящий 404, customer login и admin login при 1440 и 390 px), 0 horizontal overflow, 0 page/JS errors и 0 неожиданных failed responses. Все четыре аналитических `POST` заблокированы до сети, `serverWriteRequestsSent=0`; корзина создавалась только в изолированном `localStorage`. Обезличенный отчёт — `tmp/reports/browser-smoke-20260728.json`, PNG — `tmp/browser-smoke/run-2026-07-28T13-20-33-882Z-10116`. Это не заменяет обязательный ручной mobile/desktop/provider/Access smoke на новом preview SHA.
 
 ## Каталог: текущий source gate пройден
 
-Свежая опубликованная Google Sheet проверена 28 июля 2026 года в 18:41 по Кишинёву строгой загрузкой с cache-buster:
+Свежая опубликованная Google Sheet проверена 1 августа 2026 года в 07:48 по Кишинёву строгой загрузкой с cache-buster:
 
 - 1874 строки и 1874 уникальных SKU;
-- 6098 единиц;
+- 5956 единиц;
 - 0 ошибок и 39 предупреждений;
 - snapshot: `tmp/catalog-source.csv`;
 - report: `tmp/catalog-validation.json`;
-- snapshot size: 892402 bytes;
-- source SHA-256: `7169f17d9f51cdd76346a0f382422c5798945ae2102c405b33b066df7ecd1333`.
+- snapshot size: 892401 bytes;
+- source SHA-256: `013070b71448f38f2882b356c5c249a3fb6c889ea96c61f1e5b8fdd8ca2aafb6`.
 
 Предупреждения не блокируют сборку: 33 товара без описания и 6 товаров без фото (`T3271`, `T3268`, `T3269`, `T3270`, `T3272`, `T3273`).
 
 Из точных validated bytes собраны и взаимно сверены:
 
-- catalog SHA-256: `9f21a8cec6cf33430457be2fab9342b51bef55d22d28c86a1c0cfda301979f25`;
+- catalog SHA-256: `5464433d62093c8772d756ed514d82dd4d1e8dbc1d4298d8312cce5e167944d0`;
 - categories SHA-256: `db6c1a95f35639c2dc70cc29b38bbea08b7b9bef1413a701e1b03d1c1a3b049c`;
 - external URL map SHA-256: `050298666342ff5962fd2e2fe69ff36be760e36542fc9a2a93f38c50a18192a3`;
-- import SQL SHA-256: `c2c1908daa17415a48f05176b3b7857aa11807e437e2034c0913b8a77e8851a9`;
+- import SQL SHA-256: `c4b5fbd241710cf90dd1679928386f493740d3fcab5b837147e419765cc7c129`;
 - `tmp/catalog-build-integrity.json` и `tmp/d1/catalog-import-validation.json`: `valid: true`, `errorCount: 0`.
 
 Независимая QA подтвердила отсутствие duplicate SKU/key/id, пустых обязательных полей, invalid price/stock/URL и category mismatch. Для необязательной ручной бизнес-проверки отмечены необычный, но валидный SKU `T333331` и две пары одинаково названных позиций с разными SKU/изображениями: `T1925`/`T1932` и `T0988`/`T1028`.
 
-Все 13 migrations и текущий catalog artifact применены с нуля к изолированной local D1: 17 активных import-категорий, 1874 активных import-товара, 1874 строки inventory, 6098 единиц и 2503 дедуплицированные строки изображений; неожиданных активных import-категорий, invalid inventory и orphan active products нет.
+Все 14 migrations и текущий catalog artifact применены с нуля к изолированной local D1: 17 активных import-категорий, 1874 активных import-товара, 1874 строки inventory, 5956 единиц и 2503 дедуплицированные строки изображений; неожиданных активных import-категорий, invalid inventory и orphan active products нет.
 
-В catalog artifact 2504 вхождения URL и 2110 уникальных URL: все 2504 используют `https://images.nailmania.md`, legacy `*.r2.dev` и внешних hosts осталось 0. Все 1993 уникальных legacy-пути существуют в `nailmania-photos`; path/query при смене origin сохранены точно. Production-only rehost обработал 119/119 source URL без ошибок и записал 117 уникальных content-addressed destination URL в tracked map. Все 117 destination проверены через публичный custom domain: 0 ошибок, 8620874 байта поддерживаемых изображений. Повторная сборка из validated snapshot дала тот же catalog hash. Preview D1 всё ещё содержит предыдущие URL и должна быть повторно импортирована из нового commit. Production D1 локальной проверкой не изменялась.
+В catalog artifact 2504 вхождения URL и 2110 уникальных URL: все 2504 используют `https://images.nailmania.md`, legacy `*.r2.dev` и внешних hosts осталось 0. Все 1993 уникальных legacy-пути существуют в `nailmania-photos`; path/query при смене origin сохранены точно. Production-only rehost обработал 119/119 source URL без ошибок и записал 117 уникальных content-addressed destination URL в tracked map. Все 117 destination проверены через публичный custom domain: 0 ошибок, 8620874 байта поддерживаемых изображений. Повторная сборка из validated snapshot дала тот же catalog hash. Guarded Preview import подтвердил точное множество 1874 SKU, 17 категорий, 0 missing products и 0 invalid inventory/images; один подтверждённый admin override `T0997` сохранён штатно. Production D1 не изменялась.
 
 ## Что остаётся сделать вне кода
 
 Уже закрыто: owner выбрал `nailmania-photos`; до rehost bucket содержал 3276 объектов (около 519 MB). Custom domain `images.nailmania.md` активен, ownership и SSL имеют статус `active`, minimum TLS — 1.2. Все catalog URL и все 117 rehost destination возвращают корректные изображения через этот domain. Production Pages binding `PRODUCT_IMAGES` и `R2_PUBLIC_BASE_URL` уже указывают на bucket/domain и вступят в силу только при следующем production deployment. Старый `r2.dev` пока оставлен включённым до повторного preview import и проверки. PR #2 влит в `main`, external rehost завершён, автоматические production/preview branch deployments отключены, Deploy Hooks отсутствуют.
 
 1. Предоставить утверждённые юридические тексты и данные владельца для условий покупки, конфиденциальности и возвратов. Фиктивная ссылка `href="#"` удалена, но выдумывать legal content нельзя.
-2. Довести runtime-конфигурацию без значений в Git. Preview Access/AUD настроены; в preview D1 активны роли `admin` и отдельный продавец с ролью `manager`, которая не видит промокоды, статистику, audit log и readiness. Нужно формально проверить вход обоих администраторов и продавца, а перед production утвердить staff matrix и production Access. Помимо уже установленного R2 binding/base должны быть подтверждены readiness-параметры `CF_ACCESS_*`, `AUTH_FINGERPRINT_SALT`, `RATE_LIMIT_SECRET`, Turnstile, Telegram, email/reset и Analytics. Четыре S3/R2 management credentials приложению больше не нужны и должны быть удалены из Pages secrets.
-3. После commit с финальным URL map/catalog: создать свежий preview backup, подтвердить отсутствие pending migrations, импортировать финальный catalog через guarded wrapper, собрать и развернуть Scheduled Worker и Pages из одного SHA, затем выполнить Access/mobile/desktop/provider acceptance для обоих администраторов и продавца.
+2. Довести runtime-конфигурацию без значений в Git. Preview Access/AUD настроены; в preview D1 активны роли `admin` и отдельный продавец с ролью `manager`, которая не видит промокоды, статистику, audit log и readiness. Нужно формально проверить вход обоих администраторов и продавца, включая новый раздел скидок, а перед production утвердить staff matrix и production Access. Помимо уже установленного R2 binding/base должны быть подтверждены readiness-параметры `CF_ACCESS_*`, `AUTH_FINGERPRINT_SALT`, `RATE_LIMIT_SECRET`, Turnstile, Telegram, email/reset и Analytics. Четыре S3/R2 management credentials приложению больше не нужны и должны быть удалены из Pages secrets.
+3. Для preview-кандидата: создать свежий preview backup, применить migration 0014 до нового Pages bundle, импортировать финальный catalog через guarded wrapper, собрать и развернуть Scheduled Worker и Pages из одного SHA, затем выполнить Access/mobile/desktop/provider acceptance для обоих администраторов и продавца.
 4. Рекомендуется Workers Paid; иначе preview load обязан подтвердить запас CPU/D1 на выбранном плане.
-5. Только после принятого preview SHA: свежий production backup/bookmark, guarded migrations 0005–0013, catalog import/release build, production Worker/Pages deploy и smoke.
+5. Только после принятого preview SHA: свежий production backup/bookmark, guarded migrations 0005–0014, catalog import/release build, production Worker/Pages deploy и smoke.
 
-Production Pages и production D1 в ходе этой подготовки не разворачивались и не изменялись. Были изменены R2 objects и безопасные Cloudflare-настройки до deployment: R2 custom domain, production Pages R2 binding/base и управление автоматическими deployments/hooks. Preview D1/Pages и staff roles были подготовлены ранее на SHA `2e165736…`; следующий preview обязан использовать commit с финальным URL map/catalog.
+Production Pages и production D1 в ходе этой подготовки не разворачивались и не изменялись. Были изменены R2 objects и безопасные Cloudflare-настройки до deployment: R2 custom domain, production Pages R2 binding/base и управление автоматическими deployments/hooks. Новый Preview обязан использовать один точный commit для migration/catalog/build/Pages evidence.
 
 ## Git/GitHub — зона ответственности владельца
 
-Решение владельца от 18 июля 2026 года: дальнейшие действия с Git и GitHub он выполняет самостоятельно; повторного решения от него для локальной работы не требуется.
+Владелец отдельно разрешил создать commit и выполнить push ветки `d1-preview-bootstrap` для Preview. Любые действия с `main` и Production требуют отдельного решения.
 
 Git нужен: он даёт историю, точный release SHA, code review и безопасный откат. GitHub не обязан быть публичным.
 

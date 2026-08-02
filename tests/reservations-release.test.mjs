@@ -42,7 +42,7 @@ const d1MigrationManifest = (environment, commit = COMMIT, completedAt = new Dat
   migrationIntegrity: {
     manifestSha256: '3'.repeat(64),
     files: 13,
-    latest: '0013_order_commercial_snapshot_guard.sql',
+    latest: '0014_catalog_discounts_and_promo_brands.sql',
   },
   catalog: null,
   administrator: null,

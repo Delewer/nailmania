@@ -110,6 +110,7 @@ export async function onRequestPost(context) {
     )];
     statements.push(...scopeInsert(db, 'promo_code_categories', 'category_id', id, draft.categoryIds, now));
     statements.push(...scopeInsert(db, 'promo_code_products', 'product_id', id, draft.productIds, now));
+    statements.push(...scopeInsert(db, 'promo_code_brands', 'brand', id, draft.brands, now));
     statements.push(db.prepare(`
       INSERT INTO admin_audit_log (
         id, actor_user_id, action, entity_type, entity_id, before_json, after_json, request_ip, created_at

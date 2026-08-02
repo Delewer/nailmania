@@ -1,6 +1,5 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import {
   AdminProductError,
   normalizeAdminProduct,
@@ -16,15 +15,9 @@ import { onRequestPost as uploadImage } from '../functions/api/admin/uploads.js'
 import { onRequestDelete as discardImage } from '../functions/api/admin/uploads/[key].js';
 import { transitionOrder } from '../functions/_lib/order-lifecycle.js';
 import { SqliteD1 } from './helpers/sqlite-d1.mjs';
+import { fullSchema } from './helpers/full-schema.mjs';
 
-const schema = [
-  readFileSync(new URL('../migrations/0001_initial.sql', import.meta.url), 'utf8'),
-  readFileSync(new URL('../migrations/0002_order_transitions.sql', import.meta.url), 'utf8'),
-  readFileSync(new URL('../migrations/0003_admin_products.sql', import.meta.url), 'utf8'),
-  readFileSync(new URL('../migrations/0006_returns_and_admin_journals.sql', import.meta.url), 'utf8'),
-  readFileSync(new URL('../migrations/0007_catalog_cache.sql', import.meta.url), 'utf8'),
-  readFileSync(new URL('../migrations/0009_promotions.sql', import.meta.url), 'utf8'),
-].join('\n');
+const schema = fullSchema;
 
 function setup() {
   const db = new SqliteD1(schema);

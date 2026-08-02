@@ -127,9 +127,11 @@ async function dailyAnonymousIndex(env, anonymousId, now) {
 async function productDimensions(db, productKey) {
   if (!productKey) return { key: '', category: '', brand: '', price: 0 };
   const row = await db.prepare(`
-    SELECT catalog_key, category_id, brand, price
-    FROM products
-    WHERE catalog_key = ? AND is_active = 1 AND deleted_at IS NULL
+    SELECT product.catalog_key, product.category_id, product.brand,
+           prices.effective_price AS price
+    FROM products product
+    JOIN product_catalog_prices prices ON prices.product_id = product.id
+    WHERE product.catalog_key = ? AND product.is_active = 1 AND product.deleted_at IS NULL
   `).bind(productKey).first();
   if (!row) throw new ProductEventError('EVENT_PRODUCT_NOT_FOUND', 'Product is unavailable', 422);
   return {

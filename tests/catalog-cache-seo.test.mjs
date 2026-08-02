@@ -1,17 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { SqliteD1 } from './helpers/sqlite-d1.mjs';
 import { cachedCatalogResponse, catalogRevisionBump } from '../functions/_lib/catalog-cache.js';
 import { onRequestGet as productPage } from '../functions/product/[key].js';
 import { onRequestGet as categoryPage } from '../functions/category/[key].js';
 import { onRequestGet as brandPage } from '../functions/brand/[name].js';
 import { onRequestGet as sitemap } from '../functions/sitemap.xml.js';
+import { fullSchema } from './helpers/full-schema.mjs';
 
-const schema = [
-  readFileSync(new URL('../migrations/0001_initial.sql', import.meta.url), 'utf8'),
-  readFileSync(new URL('../migrations/0007_catalog_cache.sql', import.meta.url), 'utf8'),
-].join('\n');
+const schema = fullSchema;
 
 const spaShell = `<!doctype html><html lang="ro"><head><!-- SEO:START --><title>Static fallback</title><!-- SEO:END --></head><body><div id="root"></div><script type="module" src="/assets/app.js"></script></body></html>`;
 

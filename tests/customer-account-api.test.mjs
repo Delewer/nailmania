@@ -38,6 +38,7 @@ const schema = [1, 2, 3, 4, 5, 6]
   .concat(readFileSync(new URL('../migrations/0011_notifications_and_order_operations.sql', import.meta.url), 'utf8'))
   .concat(readFileSync(new URL('../migrations/0012_order_idempotency.sql', import.meta.url), 'utf8'))
   .concat(readFileSync(new URL('../migrations/0013_order_commercial_snapshot_guard.sql', import.meta.url), 'utf8'))
+  .concat(readFileSync(new URL('../migrations/0014_catalog_discounts_and_promo_brands.sql', import.meta.url), 'utf8'))
   .join('\n');
 
 const baseUrl = 'http://shop.test';

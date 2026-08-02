@@ -45,6 +45,7 @@ const migrationNames = [
   '0011_notifications_and_order_operations.sql',
   '0012_order_idempotency.sql',
   '0013_order_commercial_snapshot_guard.sql',
+  '0014_catalog_discounts_and_promo_brands.sql',
 ];
 const schema = migrationNames.map((name) => readFileSync(new URL(`../migrations/${name}`, import.meta.url), 'utf8')).join('\n');
 
@@ -74,25 +75,28 @@ function setup() {
 function insertMaximumScopes(db, count = 100) {
   const categoryIds = [];
   const productIds = [];
+  const brands = [];
   for (let index = 1; index <= count; index += 1) {
     const categoryId = `scope-cat-${String(index).padStart(3, '0')}`;
     const productId = 1000 + index;
     categoryIds.push(categoryId);
     productIds.push(productId);
+    const brand = `Scope Brand ${String(index).padStart(3, '0')}`;
+    brands.push(brand);
     db.sqlite.prepare(`
       INSERT INTO categories (id, slug, name_ro, name_ru)
       VALUES (?, ?, ?, ?)
     `).run(categoryId, categoryId, `Scope ${index}`, `Scope ${index}`);
     db.sqlite.prepare(`
       INSERT INTO products (
-        id, catalog_key, sku, slug, category_id, name_ro, price, admin_revision
-      ) VALUES (?, ?, ?, ?, ?, ?, 100, ?)
+        id, catalog_key, sku, slug, category_id, brand, name_ro, price, admin_revision
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 100, ?)
     `).run(
       productId, `SCOPE-${index}`, `SCOPE-${index}`, `scope-${index}`,
-      categoryId, `Scope product ${index}`, `scope:${index}`,
+      categoryId, brand, `Scope product ${index}`, `scope:${index}`,
     );
   }
-  return { categoryIds, productIds };
+  return { categoryIds, productIds, brands };
 }
 
 function insertPromo(db, overrides = {}) {
@@ -269,6 +273,49 @@ test('public validation enforces category scope, dates, minimums and guest polic
     }),
     (error) => error.code === 'PROMO_NOT_STARTED',
   );
+});
+
+test('brand promo scope is dynamic, case-insensitive and enforced by the order trigger', async (t) => {
+  const db = setup();
+  t.after(() => db.close());
+  const promo = insertPromo(db, { code: 'BRAND20', discountValue: 20 });
+  db.sqlite.prepare('INSERT INTO promo_code_brands (promo_code_id, brand) VALUES (?, ?)').run(promo.id, 'brand b');
+
+  const validation = await validatePromoEndpoint(promoValidationContext(db, {
+    code: 'BRAND20',
+    items: [{ productKey: 'PROMO-A', quantity: 1 }, { productKey: 'PROMO-B', quantity: 1 }],
+  }));
+  assert.equal(validation.status, 200);
+  const validated = (await validation.json()).promo;
+  assert.equal(validated.eligibleSubtotal, 199);
+  assert.equal(validated.discountAmount, 40);
+
+  const orderResponse = await createOrder(orderContext(db, orderBody({
+    promoCode: 'BRAND20',
+    items: [{ productKey: 'PROMO-A', quantity: 1 }, { productKey: 'PROMO-B', quantity: 1 }],
+  })));
+  assert.equal(orderResponse.status, 201);
+  const order = (await orderResponse.json()).order;
+  assert.equal(order.promoDiscount, 40);
+  const lines = db.sqlite.prepare(`
+    SELECT product_id, promo_discount_allocation FROM order_items
+    WHERE order_id = ? ORDER BY product_id
+  `).all(order.id);
+  assert.deepEqual(lines.map((line) => ({ ...line })), [
+    { product_id: 1, promo_discount_allocation: 0 },
+    { product_id: 2, promo_discount_allocation: 40 },
+  ]);
+
+  db.sqlite.prepare(`
+    INSERT INTO products (id, catalog_key, sku, slug, category_id, brand, name_ro, price)
+    VALUES (4, 'PROMO-B-NEW', 'PROMO-B-NEW', 'promo-b-new', 'cat-a', 'Brand B', 'Produs nou', 50)
+  `).run();
+  const dynamic = await validatePromotion(db, {
+    code: 'BRAND20',
+    items: [{ productId: 4, categoryId: 'cat-a', brand: 'Brand B', lineTotal: 50 }],
+    merchandiseSubtotal: 50,
+  });
+  assert.equal(dynamic.discountAmount, 10);
 });
 
 test('the final redemption trigger serializes the last total use and rolls back the losing order', async (t) => {
@@ -477,13 +524,14 @@ test('admin promo CRUD preserves scopes, revision guards, metrics and linked ord
     body: {
       code: 'ADMIN20', discountType: 'percent', discountValue: 20, maxDiscount: 50,
       minOrderAmount: 100, startsAt: null, endsAt: null, totalUseLimit: 10,
-      perUserLimit: null, isActive: true, categoryIds: ['cat-a'], productIds: [2],
+      perUserLimit: null, isActive: true, categoryIds: ['cat-a'], productIds: [2], brands: ['brand a'],
     },
   }));
   assert.equal(createResponse.status, 201);
   let promo = (await createResponse.json()).promo;
   assert.deepEqual(promo.categoryIds, ['cat-a']);
   assert.deepEqual(promo.productIds, [2]);
+  assert.deepEqual(promo.brands, ['Brand A']);
 
   const orderResponse = await createOrder(orderContext(db, orderBody({
     promoCode: 'ADMIN20',
@@ -497,6 +545,7 @@ test('admin promo CRUD preserves scopes, revision guards, metrics and linked ord
   assert.equal(list.items[0].discountSum, 50);
   assert.equal(list.items[0].categoryScopeCount, 1);
   assert.equal(list.items[0].productScopeCount, 1);
+  assert.equal(list.items[0].brandScopeCount, 1);
 
   const detailResponse = await getPromo(adminContext(db, `/api/admin/promos/${promo.id}`, { params: { id: promo.id } }));
   promo = (await detailResponse.json()).promo;
@@ -506,13 +555,14 @@ test('admin promo CRUD preserves scopes, revision guards, metrics and linked ord
   const staleRevision = promo.revision;
   const updateResponse = await updatePromo(adminContext(db, `/api/admin/promos/${promo.id}`, {
     method: 'PATCH', params: { id: promo.id },
-    body: { revision: promo.revision, code: 'ADMIN25', discountValue: 25, categoryIds: [], productIds: [] },
+    body: { revision: promo.revision, code: 'ADMIN25', discountValue: 25, categoryIds: [], productIds: [], brands: [] },
   }));
   assert.equal(updateResponse.status, 200);
   promo = (await updateResponse.json()).promo;
   assert.equal(promo.code, 'ADMIN25');
   assert.deepEqual(promo.categoryIds, []);
   assert.deepEqual(promo.productIds, []);
+  assert.deepEqual(promo.brands, []);
   const historicalOrder = await getAdminOrder(db, promo.orders[0].id);
   assert.equal(historicalOrder.promoCode, 'ADMIN20');
   const historicalListResponse = await listAdminOrders(adminContext(db, '/api/admin/orders?limit=30'));
@@ -543,13 +593,14 @@ test('maximum promo scopes are chunked below the D1 binding limit on create and 
     method: 'POST',
     body: {
       code: 'MAXSCOPE', discountType: 'percent', discountValue: 10,
-      isActive: true, categoryIds: scopes.categoryIds, productIds: scopes.productIds,
+      isActive: true, categoryIds: scopes.categoryIds, productIds: scopes.productIds, brands: scopes.brands,
     },
   }));
   assert.equal(createResponse.status, 201);
   const created = (await createResponse.json()).promo;
   assert.equal(created.categoryIds.length, 100);
   assert.equal(created.productIds.length, 100);
+  assert.equal(created.brands.length, 100);
   assert.ok(createDb.maxObservedBindings <= 100);
 
   const updateDb = new BudgetGuardD1(db);
@@ -559,11 +610,13 @@ test('maximum promo scopes are chunked below the D1 binding limit on create and 
       revision: created.revision,
       categoryIds: [...scopes.categoryIds].reverse(),
       productIds: [...scopes.productIds].reverse(),
+      brands: [...scopes.brands].reverse(),
     },
   }));
   assert.equal(updateResponse.status, 200);
   const updated = (await updateResponse.json()).promo;
   assert.equal(updated.categoryIds.length, 100);
   assert.equal(updated.productIds.length, 100);
+  assert.equal(updated.brands.length, 100);
   assert.ok(updateDb.maxObservedBindings <= 100);
 });

@@ -67,9 +67,14 @@ export async function onRequestPatch(context) {
       DELETE FROM promo_code_products
       WHERE promo_code_id = ?
         AND EXISTS (SELECT 1 FROM promo_codes WHERE id = ? AND admin_revision = ?)
+    `).bind(id, ...guard), db.prepare(`
+      DELETE FROM promo_code_brands
+      WHERE promo_code_id = ?
+        AND EXISTS (SELECT 1 FROM promo_codes WHERE id = ? AND admin_revision = ?)
     `).bind(id, ...guard)];
     statements.push(...scopeInsert(db, 'promo_code_categories', 'category_id', id, draft.categoryIds, now, guard));
     statements.push(...scopeInsert(db, 'promo_code_products', 'product_id', id, draft.productIds, now, guard));
+    statements.push(...scopeInsert(db, 'promo_code_brands', 'brand', id, draft.brands, now, guard));
     statements.push(db.prepare(`
       INSERT INTO admin_audit_log (
         id, actor_user_id, action, entity_type, entity_id, before_json, after_json, request_ip, created_at

@@ -25,8 +25,13 @@ SELECT
   (SELECT COUNT(*) FROM products p LEFT JOIN categories c ON c.id = p.category_id WHERE c.id IS NULL) AS orphan_products,
   (SELECT COUNT(*) FROM sqlite_schema WHERE type = 'table' AND name IN (
     'promo_code_categories', 'promo_code_products', 'notification_attempts',
-    'notification_attempt_statuses', 'order_idempotency'
+    'notification_attempt_statuses', 'order_idempotency', 'promo_code_brands',
+    'catalog_discounts', 'catalog_discount_products', 'catalog_discount_categories',
+    'catalog_discount_brands'
   )) AS critical_tables,
+  (SELECT COUNT(*) FROM sqlite_schema WHERE type = 'view' AND name IN (
+    'promo_order_calculations', 'product_catalog_prices'
+  )) AS critical_views,
   (SELECT COUNT(*) FROM pragma_table_info('order_items') WHERE name IN (
     'promo_discount_allocation', 'category_id_snapshot', 'category_name_ro_snapshot',
     'category_name_ru_snapshot', 'cost_price_snapshot'
@@ -55,7 +60,8 @@ const findRow = (value) => {
     }
   } else if (value && typeof value === 'object') {
     if (['migrations', 'migration_names', 'categories', 'products', 'inventory_rows', 'invalid_inventory',
-      'orphan_products', 'critical_tables', 'critical_order_item_columns', 'critical_order_columns']
+      'orphan_products', 'critical_tables', 'critical_views',
+      'critical_order_item_columns', 'critical_order_columns']
       .every((key) => Object.hasOwn(value, key))) return value;
     for (const item of Object.values(value)) {
       const found = findRow(item);
@@ -78,7 +84,8 @@ if (!schemaOnly && Number(row.products) < 1) failures.push('catalog has no produ
 if (!schemaOnly && Number(row.inventory_rows) < 1) failures.push('catalog has no inventory rows');
 if (Number(row.invalid_inventory) !== 0) failures.push(`found ${row.invalid_inventory} invalid inventory rows`);
 if (Number(row.orphan_products) !== 0) failures.push(`found ${row.orphan_products} products without categories`);
-if (Number(row.critical_tables) !== 5) failures.push(`expected 5 critical release tables, got ${row.critical_tables}`);
+if (Number(row.critical_tables) !== 10) failures.push(`expected 10 critical release tables, got ${row.critical_tables}`);
+if (Number(row.critical_views) !== 2) failures.push(`expected 2 critical release views, got ${row.critical_views}`);
 if (Number(row.critical_order_item_columns) !== 5) {
   failures.push(`expected 5 critical order_items columns, got ${row.critical_order_item_columns}`);
 }
