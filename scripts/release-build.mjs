@@ -1,9 +1,9 @@
-import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { assertCanonicalCatalogImagesForRelease } from './catalog-image-policy.mjs';
 import { releaseBundleDigest } from './release-bundle.mjs';
+import { assertTurnstileBuildSiteKey } from './turnstile-build-guard.mjs';
 
 const root = process.cwd();
 const args = process.argv.slice(2);
@@ -36,12 +36,10 @@ for (const envFile of ['.env', '.env.local', '.env.production', '.env.production
   }
 }
 
-const siteKey = String(process.env.VITE_TURNSTILE_SITE_KEY || '').trim();
-if (!/^0x[A-Za-z0-9_-]{10,100}$/.test(siteKey)) {
-  throw new Error(
-    'Release build requires a production-format VITE_TURNSTILE_SITE_KEY; empty and Cloudflare test keys are refused',
-  );
-}
+const { siteKey, siteKeySha256 } = assertTurnstileBuildSiteKey(
+  environment,
+  process.env.VITE_TURNSTILE_SITE_KEY,
+);
 
 const buildEnvironment = { ...process.env, NODE_ENV: 'production' };
 const run = (command, commandArgs, { capture = false } = {}) => {
@@ -97,7 +95,7 @@ writeFileSync(manifestPath, `${JSON.stringify({
   completedAt,
   files: files.length,
   bundleSha256,
-  turnstileSiteKeySha256: createHash('sha256').update(siteKey).digest('hex'),
+  turnstileSiteKeySha256: siteKeySha256,
   vitePublicInputContract: 1,
   vitePublicInputNames: VITE_PUBLIC_INPUT_NAMES,
 }, null, 2)}\n`);

@@ -14,6 +14,7 @@ const D1_RELEASE = path.join(ROOT, 'scripts', 'd1-release.mjs');
 const MIGRATION_INTEGRITY = path.join(ROOT, 'scripts', 'migration-integrity.mjs');
 const RELEASE_BUILD = path.join(ROOT, 'scripts', 'release-build.mjs');
 const RELEASE_BUNDLE = path.join(ROOT, 'scripts', 'release-bundle.mjs');
+const TURNSTILE_BUILD_GUARD = path.join(ROOT, 'scripts', 'turnstile-build-guard.mjs');
 const CATALOG_IMAGE_POLICY = path.join(ROOT, 'scripts', 'catalog-image-policy.mjs');
 const CATALOG_IMAGES = path.join(ROOT, 'shared', 'catalog-images.js');
 
@@ -636,11 +637,20 @@ if (process.argv.includes('--json')) {
 
 test('release Pages build fails closed without a production-format Turnstile key and attests injected bytes', (t) => {
   const directory = mkdtempSync(path.join(tmpdir(), 'nailmania-release-build-'));
+  const siteKey = `0x4${'A'.repeat(21)}B`;
+  const siteKeySha256 = createHash('sha256').update(siteKey).digest('hex');
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   mkdirSync(path.join(directory, 'scripts'), { recursive: true });
   mkdirSync(path.join(directory, 'node_modules', 'vite', 'bin'), { recursive: true });
   copyFileSync(RELEASE_BUILD, path.join(directory, 'scripts', 'release-build.mjs'));
   copyFileSync(RELEASE_BUNDLE, path.join(directory, 'scripts', 'release-bundle.mjs'));
+  writeFileSync(
+    path.join(directory, 'scripts', 'turnstile-build-guard.mjs'),
+    readFileSync(TURNSTILE_BUILD_GUARD, 'utf8').replace(
+      '0f44a961818ff168edaaeef99497e5a18e2014f855d89bbb368715fc9ed664b1',
+      siteKeySha256,
+    ),
+  );
   copyFileSync(CATALOG_IMAGE_POLICY, path.join(directory, 'scripts', 'catalog-image-policy.mjs'));
   writeCanonicalImagePolicyFixture(directory);
   writeFileSync(path.join(directory, 'scripts', 'build-seo.mjs'), `
@@ -682,7 +692,6 @@ fs.writeFileSync('dist/assets/app.js', 'window.siteKey=' + JSON.stringify(proces
   assert.notEqual(refusedTestKey.status, 0);
   assert.match(refusedTestKey.stderr, /Cloudflare test keys are refused/);
 
-  const siteKey = `0x4${'A'.repeat(21)}B`;
   const refusedProcessInput = spawnSync(process.execPath, command, {
     cwd: directory,
     encoding: 'utf8',

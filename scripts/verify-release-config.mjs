@@ -256,12 +256,36 @@ check(/if-no-files-found:\s*error\b/.test(readinessWorkflow), 'Release readiness
 check(/include-hidden-files:\s*true\b/.test(readinessWorkflow), 'Release readiness artifact must retain hidden dist files');
 
 const releaseBuildScript = read('scripts/release-build.mjs');
+const turnstileBuildGuard = read('scripts/turnstile-build-guard.mjs');
+const viteConfig = read('vite.config.js');
 check(/VITE_TURNSTILE_SITE_KEY/.test(releaseBuildScript), 'Release build must require the Turnstile site key');
+check(
+  /assertTurnstileBuildSiteKey\s*\(/.test(releaseBuildScript),
+  'Release build must pin the Turnstile site key to its target environment',
+);
 check(/Release build requires a clean Git worktree/.test(releaseBuildScript), 'Release build must enforce a clean worktree');
 check(/was not embedded in the release bundle/.test(releaseBuildScript), 'Release build must verify the Turnstile key in dist');
 check(/refuses unreviewed public Vite inputs/.test(releaseBuildScript), 'Release build must reject unreviewed VITE_* inputs');
 check(/vitePublicInputContract/.test(releaseBuildScript), 'Release build manifest must attest its Vite public-input contract');
 check(/releaseBundleDigest\s*\(/.test(releaseBuildScript), 'Release build must use the shared Pages bundle digest');
+check(
+  /assertCloudflarePagesTurnstileBuild\s*\(process\.env\)/.test(viteConfig),
+  'Vite must fail closed through the Turnstile guard during Cloudflare Pages builds',
+);
+check(
+  /CF_PAGES/.test(turnstileBuildGuard) && /CF_PAGES_BRANCH/.test(turnstileBuildGuard),
+  'Turnstile build guard must identify the Cloudflare Pages branch',
+);
+check(
+  /'d1-preview-bootstrap':\s*'preview'/.test(turnstileBuildGuard)
+    && /main:\s*'production'/.test(turnstileBuildGuard),
+  'Turnstile build guard must map only the reviewed preview and production branches',
+);
+check(
+  /TURNSTILE_SITE_KEY_SHA256/.test(turnstileBuildGuard)
+    && /does not match the pinned/.test(turnstileBuildGuard),
+  'Turnstile build guard must enforce environment-specific site-key fingerprints',
+);
 
 const pagesReleaseScript = read('scripts/pages-release.mjs');
 const pagesReleaseGuard = read('scripts/pages-release-guard.mjs');
