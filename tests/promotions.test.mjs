@@ -46,6 +46,7 @@ const migrationNames = [
   '0012_order_idempotency.sql',
   '0013_order_commercial_snapshot_guard.sql',
   '0014_catalog_discounts_and_promo_brands.sql',
+  '0015_cancelled_order_reopening.sql',
 ];
 const schema = migrationNames.map((name) => readFileSync(new URL(`../migrations/${name}`, import.meta.url), 'utf8')).join('\n');
 
@@ -377,6 +378,106 @@ test('cancellation and reservation expiry release a use so a limited promo can b
   assert.ok(db.sqlite.prepare('SELECT released_at FROM promo_redemptions WHERE order_id = ?').get(second.id).released_at);
   const thirdResponse = await createOrder(orderContext(db, orderBody({ promoCode: 'REUSABLE' })));
   assert.equal(thirdResponse.status, 201);
+});
+
+test('reopening a cancelled order restores its promo redemption and advertised transition', async (t) => {
+  const db = setup();
+  t.after(() => db.close());
+  insertPromo(db, { code: 'REOPEN10', discountType: 'fixed', discountValue: 10, totalUseLimit: 1 });
+  const response = await createOrder(orderContext(db, orderBody({ promoCode: 'REOPEN10' })));
+  assert.equal(response.status, 201);
+  const order = (await response.json()).order;
+
+  await transitionOrder(db, {
+    orderId: order.id,
+    toStatus: 'cancelled',
+    comment: 'Cancelled by customer',
+    now: '2026-07-17T10:00:00.000Z',
+  });
+  const cancelled = await getAdminOrder(db, order.id);
+  assert.deepEqual(cancelled.allowedTransitions, ['confirmed']);
+  assert.ok(db.sqlite.prepare('SELECT released_at FROM promo_redemptions WHERE order_id = ?').get(order.id).released_at);
+  assert.equal(db.sqlite.prepare('SELECT reserved FROM inventory WHERE product_id = 1').get().reserved, 0);
+  assert.throws(
+    () => db.sqlite.prepare(`
+      UPDATE promo_redemptions SET released_at = NULL, release_reason = NULL WHERE order_id = ?
+    `).run(order.id),
+    /invalid promo reactivation/i,
+  );
+
+  const reopened = await transitionOrder(db, {
+    orderId: order.id,
+    toStatus: 'confirmed',
+    actorUserId: 'manager-1',
+    comment: 'Order restored',
+    now: '2026-07-17T11:00:00.000Z',
+  });
+
+  assert.equal(reopened.action, 'reserve');
+  assert.deepEqual(
+    { ...db.sqlite.prepare('SELECT status, confirmed_at, cancelled_at FROM orders WHERE id = ?').get(order.id) },
+    { status: 'confirmed', confirmed_at: '2026-07-17T11:00:00.000Z', cancelled_at: null },
+  );
+  assert.deepEqual(
+    { ...db.sqlite.prepare('SELECT released_at, release_reason FROM promo_redemptions WHERE order_id = ?').get(order.id) },
+    { released_at: null, release_reason: null },
+  );
+  assert.throws(
+    () => db.sqlite.prepare('UPDATE promo_redemptions SET discount_amount = discount_amount + 1 WHERE order_id = ?').run(order.id),
+    /promo redemption records are immutable/i,
+  );
+  assert.equal(db.sqlite.prepare('SELECT reserved FROM inventory WHERE product_id = 1').get().reserved, 1);
+});
+
+test('reopening fails atomically when another order consumed the promo total-use slot', async (t) => {
+  const db = setup();
+  t.after(() => db.close());
+  insertPromo(db, { code: 'REOPENTOTAL', discountType: 'fixed', discountValue: 10, totalUseLimit: 1 });
+  const firstResponse = await createOrder(orderContext(db, orderBody({ promoCode: 'REOPENTOTAL' })));
+  const first = (await firstResponse.json()).order;
+  await transitionOrder(db, { orderId: first.id, toStatus: 'cancelled', comment: 'First cancelled' });
+  const secondResponse = await createOrder(orderContext(db, orderBody({ promoCode: 'REOPENTOTAL' })));
+  assert.equal(secondResponse.status, 201);
+  const reservedBefore = db.sqlite.prepare('SELECT reserved FROM inventory WHERE product_id = 1').get().reserved;
+
+  await assert.rejects(
+    transitionOrder(db, { orderId: first.id, toStatus: 'confirmed' }),
+    (error) => error.code === 'ORDER_REOPEN_PROMO_CONFLICT' && error.status === 409,
+  );
+
+  assert.equal(db.sqlite.prepare('SELECT status FROM orders WHERE id = ?').get(first.id).status, 'cancelled');
+  assert.ok(db.sqlite.prepare('SELECT released_at FROM promo_redemptions WHERE order_id = ?').get(first.id).released_at);
+  assert.equal(db.sqlite.prepare('SELECT reserved FROM inventory WHERE product_id = 1').get().reserved, reservedBefore);
+  assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS count FROM promo_redemptions WHERE released_at IS NULL').get().count, 1);
+});
+
+test('reopening fails atomically when the same customer consumed the promo per-user slot', async (t) => {
+  const db = setup();
+  t.after(() => db.close());
+  insertPromo(db, { code: 'REOPENUSER', discountType: 'fixed', discountValue: 10, perUserLimit: 1 });
+  const cookie = await customerCookie(db);
+  const firstResponse = await createOrder(orderContext(db, orderBody({ promoCode: 'REOPENUSER' }), { cookie }));
+  const first = (await firstResponse.json()).order;
+  await transitionOrder(db, { orderId: first.id, toStatus: 'cancelled', comment: 'First cancelled' });
+  const secondResponse = await createOrder(orderContext(db, orderBody({ promoCode: 'REOPENUSER' }), { cookie }));
+  assert.equal(secondResponse.status, 201);
+  const reservedBefore = db.sqlite.prepare('SELECT reserved FROM inventory WHERE product_id = 1').get().reserved;
+
+  await assert.rejects(
+    transitionOrder(db, { orderId: first.id, toStatus: 'confirmed' }),
+    (error) => error.code === 'ORDER_REOPEN_PROMO_CONFLICT' && error.status === 409,
+  );
+
+  assert.equal(db.sqlite.prepare('SELECT status FROM orders WHERE id = ?').get(first.id).status, 'cancelled');
+  assert.ok(db.sqlite.prepare('SELECT released_at FROM promo_redemptions WHERE order_id = ?').get(first.id).released_at);
+  assert.equal(db.sqlite.prepare('SELECT reserved FROM inventory WHERE product_id = 1').get().reserved, reservedBefore);
+  assert.equal(
+    db.sqlite.prepare(`
+      SELECT COUNT(*) AS count FROM promo_redemptions
+      WHERE user_id = 'customer-1' AND released_at IS NULL
+    `).get().count,
+    1,
+  );
 });
 
 test('delivery threshold is evaluated before promo and returns reverse the exact stored allocation', async (t) => {

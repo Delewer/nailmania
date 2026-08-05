@@ -7,7 +7,7 @@ export const ORDER_TRANSITIONS = Object.freeze({
   ready: Object.freeze(['shipped', 'completed', 'cancelled']),
   shipped: Object.freeze(['completed']),
   completed: Object.freeze(['returned']),
-  cancelled: Object.freeze([]),
+  cancelled: Object.freeze(['confirmed']),
   returned: Object.freeze([]),
 });
 
@@ -34,6 +34,9 @@ export function transitionPlan(fromStatus, toStatus) {
       409,
       { fromStatus, toStatus, allowed },
     );
+  }
+  if (fromStatus === 'cancelled' && toStatus === 'confirmed') {
+    return { action: 'reserve', idempotent: false };
   }
   if (toStatus === 'cancelled') return { action: 'release', idempotent: false };
   if (toStatus === 'completed') return { action: 'sale', idempotent: false };
@@ -81,13 +84,55 @@ function releaseStatements(db, orderId, toStatus, token, now, actorUserId, reaso
       JOIN orders o ON o.id = oi.order_id
       WHERE oi.order_id = ? AND o.status = ? AND o.transition_token = ?
       ON CONFLICT(id) DO NOTHING
-    `).bind(orderId, orderId, actorUserId, reason, now, orderId, toStatus, token),
+    `).bind(token, orderId, actorUserId, reason, now, orderId, toStatus, token),
     db.prepare(`
       UPDATE promo_redemptions
       SET released_at = ?, release_reason = ?
       WHERE order_id = ? AND released_at IS NULL
         AND ${transitionGuard}
     `).bind(now, reason, orderId, orderId, toStatus, token),
+    catalogRevisionBump(db, transitionGuard, [orderId, toStatus, token]),
+  ];
+}
+
+function reserveStatements(db, orderId, toStatus, token, now, actorUserId, reason) {
+  return [
+    db.prepare(`
+      UPDATE inventory
+      SET reserved = reserved + (
+            SELECT oi.quantity FROM order_items oi
+            WHERE oi.order_id = ? AND oi.product_id = inventory.product_id
+          ),
+          updated_at = ?,
+          admin_revision = ?
+      WHERE warehouse_id = 1
+        AND EXISTS (
+          SELECT 1 FROM order_items oi
+          WHERE oi.order_id = ? AND oi.product_id = inventory.product_id
+        )
+        AND ${transitionGuard}
+    `).bind(orderId, now, inventoryRevision(token, 'reserve'), orderId, orderId, toStatus, token),
+    db.prepare(`
+      INSERT INTO inventory_movements (
+        id, product_id, warehouse_id, movement_type, delta_on_hand, delta_reserved,
+        balance_on_hand, balance_reserved, order_id, actor_user_id, reason, created_at
+      )
+      SELECT
+        'reserve:' || ? || ':' || i.product_id,
+        i.product_id, 1, 'reservation', 0, oi.quantity,
+        i.on_hand, i.reserved, ?, ?, ?, ?
+      FROM order_items oi
+      JOIN inventory i ON i.product_id = oi.product_id AND i.warehouse_id = 1
+      JOIN orders o ON o.id = oi.order_id
+      WHERE oi.order_id = ? AND o.status = ? AND o.transition_token = ?
+      ON CONFLICT(id) DO NOTHING
+    `).bind(token, orderId, actorUserId, reason, now, orderId, toStatus, token),
+    db.prepare(`
+      UPDATE promo_redemptions
+      SET released_at = NULL, release_reason = NULL
+      WHERE order_id = ? AND released_at IS NOT NULL
+        AND ${transitionGuard}
+    `).bind(orderId, orderId, toStatus, token),
     catalogRevisionBump(db, transitionGuard, [orderId, toStatus, token]),
   ];
 }
@@ -227,6 +272,7 @@ function returnStatements(db, orderId, toStatus, token, now, actorUserId, reason
 }
 
 const lifecycleStatements = (db, action, args) => {
+  if (action === 'reserve') return reserveStatements(db, ...args);
   if (action === 'release') return releaseStatements(db, ...args);
   if (action === 'sale') return saleStatements(db, ...args);
   if (action === 'return') return returnStatements(db, ...args);
@@ -257,21 +303,51 @@ export async function transitionOrder(db, options) {
 
   const token = crypto.randomUUID();
   const reason = comment || ({
+    reserve: 'Cancelled order reopened and stock reserved',
     release: 'Order reservation released',
     sale: 'Order completed and stock sold',
     return: 'Full order return',
   }[plan.action] || `Order status changed to ${toStatus}`);
+  const reopenGuard = plan.action === 'reserve' ? `
+    AND NOT EXISTS (
+      SELECT 1
+      FROM order_items oi
+      LEFT JOIN inventory i
+        ON i.product_id = oi.product_id AND i.warehouse_id = 1
+      WHERE oi.order_id = orders.id
+        AND (i.product_id IS NULL OR i.on_hand - i.reserved < oi.quantity)
+    )
+    AND (
+      promo_code_id IS NULL
+      OR EXISTS (
+        SELECT 1 FROM promo_redemptions pr
+        WHERE pr.order_id = orders.id
+          AND (
+            (pr.released_at IS NULL AND pr.release_reason IS NULL)
+            OR (pr.released_at IS NOT NULL AND pr.release_reason IS NOT NULL)
+          )
+      )
+    )
+  ` : '';
   const statusStatement = database.prepare(`
     UPDATE orders
     SET status = ?,
         reservation_expires_at = NULL,
-        confirmed_at = CASE WHEN ? = 'confirmed' THEN COALESCE(confirmed_at, ?) ELSE confirmed_at END,
+        confirmed_at = CASE WHEN ? = 'confirmed' THEN ? ELSE confirmed_at END,
         completed_at = CASE WHEN ? = 'completed' THEN COALESCE(completed_at, ?) ELSE completed_at END,
-        cancelled_at = CASE WHEN ? = 'cancelled' THEN COALESCE(cancelled_at, ?) ELSE cancelled_at END,
+        cancelled_at = CASE
+          WHEN ? = 'cancelled' THEN COALESCE(cancelled_at, ?)
+          WHEN ? = 'reserve' THEN NULL
+          ELSE cancelled_at
+        END,
         transition_token = ?,
         updated_at = ?
     WHERE id = ? AND status = ?
-  `).bind(toStatus, toStatus, now, toStatus, now, toStatus, now, token, now, orderId, order.status);
+    ${reopenGuard}
+  `).bind(
+    toStatus, toStatus, now, toStatus, now, toStatus, now, plan.action,
+    token, now, orderId, order.status,
+  );
 
   const statements = [statusStatement];
   statements.push(...lifecycleStatements(database, plan.action, [orderId, toStatus, token, now, actorUserId, reason]));
@@ -295,6 +371,14 @@ export async function transitionOrder(db, options) {
   try {
     results = await database.batch(statements);
   } catch (error) {
+    if (/promo (?:total|user) limit reached|promo login required|invalid promo reactivation/i.test(String(error?.message || error))) {
+      throw new OrderLifecycleError(
+        'ORDER_REOPEN_PROMO_CONFLICT',
+        'The promo code usage for this cancelled order can no longer be restored',
+        409,
+        { orderId, fromStatus: order.status, toStatus },
+      );
+    }
     if (/CHECK constraint failed|SQLITE_CONSTRAINT_CHECK/i.test(String(error?.message || error))) {
       throw new OrderLifecycleError(
         'INVENTORY_STATE_CONFLICT',
@@ -310,6 +394,47 @@ export async function transitionOrder(db, options) {
     const current = await database.prepare('SELECT status FROM orders WHERE id = ?').bind(orderId).first();
     if (current?.status === toStatus) {
       return { changed: false, orderId, orderNo: order.order_no, fromStatus: current.status, toStatus, action: plan.action };
+    }
+    if (plan.action === 'reserve' && current?.status === order.status) {
+      const blockers = await database.prepare(`
+        SELECT
+          EXISTS (
+            SELECT 1
+            FROM order_items oi
+            LEFT JOIN inventory i
+              ON i.product_id = oi.product_id AND i.warehouse_id = 1
+            WHERE oi.order_id = ?
+              AND (i.product_id IS NULL OR i.on_hand - i.reserved < oi.quantity)
+          ) AS inventory_unavailable,
+          EXISTS (
+            SELECT 1 FROM orders o
+            WHERE o.id = ? AND o.promo_code_id IS NOT NULL
+              AND NOT EXISTS (
+                SELECT 1 FROM promo_redemptions pr
+                WHERE pr.order_id = o.id
+                  AND (
+                    (pr.released_at IS NULL AND pr.release_reason IS NULL)
+                    OR (pr.released_at IS NOT NULL AND pr.release_reason IS NOT NULL)
+                  )
+              )
+          ) AS promo_unavailable
+      `).bind(orderId, orderId).first();
+      if (Number(blockers?.inventory_unavailable || 0)) {
+        throw new OrderLifecycleError(
+          'ORDER_REOPEN_INVENTORY_UNAVAILABLE',
+          'The cancelled order cannot be reopened because one or more products are no longer available',
+          409,
+          { orderId, fromStatus: order.status, toStatus },
+        );
+      }
+      if (Number(blockers?.promo_unavailable || 0)) {
+        throw new OrderLifecycleError(
+          'ORDER_REOPEN_PROMO_CONFLICT',
+          'The promo code usage for this cancelled order can no longer be restored',
+          409,
+          { orderId, fromStatus: order.status, toStatus },
+        );
+      }
     }
     throw new OrderLifecycleError('ORDER_STATUS_CONFLICT', 'Order status changed concurrently', 409, {
       orderId,

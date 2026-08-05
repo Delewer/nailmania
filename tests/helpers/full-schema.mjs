@@ -15,6 +15,7 @@ export const migrationNames = [
   '0012_order_idempotency.sql',
   '0013_order_commercial_snapshot_guard.sql',
   '0014_catalog_discounts_and_promo_brands.sql',
+  '0015_cancelled_order_reopening.sql',
 ];
 
 export const fullSchema = migrationNames.map((name) => readFileSync(

@@ -16,6 +16,7 @@ const schema = [
   readFileSync(new URL('../migrations/0006_returns_and_admin_journals.sql', import.meta.url), 'utf8'),
   readFileSync(new URL('../migrations/0007_catalog_cache.sql', import.meta.url), 'utf8'),
   readFileSync(new URL('../migrations/0009_promotions.sql', import.meta.url), 'utf8'),
+  readFileSync(new URL('../migrations/0015_cancelled_order_reopening.sql', import.meta.url), 'utf8'),
 ].join('\n');
 
 function setup() {
@@ -25,6 +26,22 @@ function setup() {
     VALUES ('test', 'test', 'Test', 'Test')
   `).run();
   return db;
+}
+
+class BeforeFirstBatchD1 {
+  constructor(db, beforeBatch) {
+    this.db = db;
+    this.beforeBatch = beforeBatch;
+  }
+
+  prepare(sql) { return this.db.prepare(sql); }
+  withSession() { return this; }
+  async batch(statements) {
+    const beforeBatch = this.beforeBatch;
+    this.beforeBatch = null;
+    if (beforeBatch) await beforeBatch();
+    return this.db.batch(statements);
+  }
 }
 
 function insertReservedOrder(db, options = {}) {
@@ -68,6 +85,7 @@ function insertReservedOrder(db, options = {}) {
 
 test('maps allowed status transitions to inventory actions', () => {
   assert.deepEqual(transitionPlan('pending', 'confirmed'), { action: 'none', idempotent: false });
+  assert.deepEqual(transitionPlan('cancelled', 'confirmed'), { action: 'reserve', idempotent: false });
   assert.deepEqual(transitionPlan('ready', 'completed'), { action: 'sale', idempotent: false });
   assert.deepEqual(transitionPlan('completed', 'returned'), { action: 'return', idempotent: false });
   assert.throws(
@@ -103,7 +121,7 @@ test('cancellation releases a reservation exactly once', async (t) => {
     { ...db.sqlite.prepare(`
       SELECT movement_type, delta_on_hand, delta_reserved, balance_on_hand, balance_reserved
       FROM inventory_movements WHERE id = ?
-    `).get(`release:${order.id}:${order.productId}`) },
+    `).get(`release:${first.transitionToken}:${order.productId}`) },
     { movement_type: 'reservation_release', delta_on_hand: 0, delta_reserved: -2, balance_on_hand: 5, balance_reserved: 0 },
   );
   assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM inventory_movements WHERE movement_type = 'reservation_release'").get().count, 1);
@@ -112,6 +130,157 @@ test('cancellation releases a reservation exactly once', async (t) => {
     db.sqlite.prepare('SELECT admin_revision FROM inventory WHERE product_id = ?').get(order.productId).admin_revision,
     `order:${first.transitionToken}:release`,
   );
+});
+
+test('a cancelled order reopens as confirmed and repeated cycles preserve exact stock journals', async (t) => {
+  const db = setup();
+  t.after(() => db.close());
+  const order = insertReservedOrder(db);
+
+  const firstCancellation = await transitionOrder(db, {
+    orderId: order.id,
+    toStatus: 'cancelled',
+    comment: 'Cancelled once',
+    now: '2026-07-16T10:00:00.000Z',
+  });
+  const firstReopen = await transitionOrder(db, {
+    orderId: order.id,
+    toStatus: 'confirmed',
+    comment: 'Reopened once',
+    now: '2026-07-16T11:00:00.000Z',
+  });
+  const secondCancellation = await transitionOrder(db, {
+    orderId: order.id,
+    toStatus: 'cancelled',
+    comment: 'Cancelled twice',
+    now: '2026-07-16T12:00:00.000Z',
+  });
+  const secondReopen = await transitionOrder(db, {
+    orderId: order.id,
+    toStatus: 'confirmed',
+    comment: 'Reopened twice',
+    now: '2026-07-16T13:00:00.000Z',
+  });
+
+  assert.equal(firstReopen.action, 'reserve');
+  assert.equal(secondReopen.action, 'reserve');
+  assert.deepEqual(
+    { ...db.sqlite.prepare(`
+      SELECT status, reservation_expires_at, confirmed_at, cancelled_at
+      FROM orders WHERE id = ?
+    `).get(order.id) },
+    {
+      status: 'confirmed',
+      reservation_expires_at: null,
+      confirmed_at: '2026-07-16T13:00:00.000Z',
+      cancelled_at: null,
+    },
+  );
+  assert.deepEqual(
+    { ...db.sqlite.prepare('SELECT on_hand, reserved FROM inventory WHERE product_id = ?').get(order.productId) },
+    { on_hand: 5, reserved: 2 },
+  );
+  assert.deepEqual(
+    db.sqlite.prepare(`
+      SELECT id, movement_type, delta_reserved
+      FROM inventory_movements
+      WHERE order_id = ? AND movement_type IN ('reservation', 'reservation_release')
+      ORDER BY id
+    `).all(order.id).map((row) => ({ ...row })),
+    [
+      { id: `release:${firstCancellation.transitionToken}:${order.productId}`, movement_type: 'reservation_release', delta_reserved: -2 },
+      { id: `release:${secondCancellation.transitionToken}:${order.productId}`, movement_type: 'reservation_release', delta_reserved: -2 },
+      { id: `reserve:${firstReopen.transitionToken}:${order.productId}`, movement_type: 'reservation', delta_reserved: 2 },
+      { id: `reserve:${order.id}:${order.productId}`, movement_type: 'reservation', delta_reserved: 2 },
+      { id: `reserve:${secondReopen.transitionToken}:${order.productId}`, movement_type: 'reservation', delta_reserved: 2 },
+    ].sort((left, right) => left.id.localeCompare(right.id)),
+  );
+  assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS count FROM order_status_history WHERE order_id = ?').get(order.id).count, 4);
+  assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS count FROM admin_audit_log WHERE entity_id = ?').get(order.id).count, 4);
+  assert.equal(
+    db.sqlite.prepare('SELECT admin_revision FROM inventory WHERE product_id = ?').get(order.productId).admin_revision,
+    `order:${secondReopen.transitionToken}:reserve`,
+  );
+});
+
+test('reopening a cancelled order fails atomically when stock is no longer available', async (t) => {
+  const db = setup();
+  t.after(() => db.close());
+  const order = insertReservedOrder(db, { onHand: 2 });
+
+  await transitionOrder(db, {
+    orderId: order.id,
+    toStatus: 'cancelled',
+    now: '2026-07-16T10:00:00.000Z',
+  });
+  db.sqlite.prepare('UPDATE inventory SET reserved = on_hand WHERE product_id = ?').run(order.productId);
+  const revisionBefore = db.sqlite.prepare('SELECT revision FROM catalog_cache_state WHERE id = 1').get().revision;
+
+  await assert.rejects(
+    transitionOrder(db, {
+      orderId: order.id,
+      toStatus: 'confirmed',
+      now: '2026-07-16T11:00:00.000Z',
+    }),
+    (error) => error instanceof OrderLifecycleError
+      && error.code === 'ORDER_REOPEN_INVENTORY_UNAVAILABLE'
+      && error.status === 409,
+  );
+
+  assert.deepEqual(
+    { ...db.sqlite.prepare('SELECT status, confirmed_at, cancelled_at FROM orders WHERE id = ?').get(order.id) },
+    { status: 'cancelled', confirmed_at: null, cancelled_at: '2026-07-16T10:00:00.000Z' },
+  );
+  assert.equal(db.sqlite.prepare('SELECT reserved FROM inventory WHERE product_id = ?').get(order.productId).reserved, 2);
+  assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS count FROM order_status_history WHERE order_id = ?').get(order.id).count, 1);
+  assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS count FROM admin_audit_log WHERE entity_id = ?').get(order.id).count, 1);
+  assert.equal(db.sqlite.prepare('SELECT revision FROM catalog_cache_state WHERE id = 1').get().revision, revisionBefore);
+});
+
+test('reopening a cancelled order fails safely when an inventory row is missing', async (t) => {
+  const db = setup();
+  t.after(() => db.close());
+  const order = insertReservedOrder(db);
+  await transitionOrder(db, { orderId: order.id, toStatus: 'cancelled' });
+  db.sqlite.prepare('DELETE FROM inventory WHERE product_id = ?').run(order.productId);
+
+  await assert.rejects(
+    transitionOrder(db, { orderId: order.id, toStatus: 'confirmed' }),
+    (error) => error instanceof OrderLifecycleError && error.code === 'ORDER_REOPEN_INVENTORY_UNAVAILABLE',
+  );
+  assert.equal(db.sqlite.prepare('SELECT status FROM orders WHERE id = ?').get(order.id).status, 'cancelled');
+  assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS count FROM order_status_history WHERE order_id = ?').get(order.id).count, 1);
+});
+
+test('concurrent duplicate reopen reserves stock only once', async (t) => {
+  const db = setup();
+  t.after(() => db.close());
+  const order = insertReservedOrder(db);
+  await transitionOrder(db, { orderId: order.id, toStatus: 'cancelled' });
+
+  let winningTransition;
+  const racingDb = new BeforeFirstBatchD1(db, async () => {
+    winningTransition = await transitionOrder(db, {
+      orderId: order.id,
+      toStatus: 'confirmed',
+      now: '2026-07-16T11:00:00.000Z',
+    });
+  });
+  const losingTransition = await transitionOrder(racingDb, {
+    orderId: order.id,
+    toStatus: 'confirmed',
+    now: '2026-07-16T11:00:01.000Z',
+  });
+
+  assert.equal(winningTransition.changed, true);
+  assert.equal(losingTransition.changed, false);
+  assert.equal(db.sqlite.prepare('SELECT reserved FROM inventory WHERE product_id = ?').get(order.productId).reserved, 2);
+  assert.equal(
+    db.sqlite.prepare("SELECT COUNT(*) AS count FROM inventory_movements WHERE movement_type = 'reservation'").get().count,
+    2,
+  );
+  assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS count FROM order_status_history WHERE order_id = ?').get(order.id).count, 2);
+  assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS count FROM admin_audit_log WHERE entity_id = ?').get(order.id).count, 2);
 });
 
 test('confirmation keeps stock reserved and disables automatic expiry', async (t) => {
