@@ -24,6 +24,7 @@ const schema = [
   '0008_rate_limits.sql',
   '0009_promotions.sql',
   '0010_statistics_and_analytics.sql',
+  '0016_product_event_daily_rollups.sql',
 ].map(migration).join('\n');
 
 const FROM = '2026-07-10T00:00:00.000Z';
@@ -285,7 +286,22 @@ test('statistics, event metrics and exports are admin-only', async (t) => {
     endpointContext(url, 'admin@example.test'),
   );
   assert.equal(adminEvents.status, 200);
-  assert.equal((await adminEvents.json()).configured, false);
+  const eventPayload = await adminEvents.json();
+  assert.equal(eventPayload.configured, true);
+  assert.equal(eventPayload.source, 'd1');
+  assert.deepEqual(eventPayload.metrics, {
+    views: 0,
+    addToCart: 0,
+    searches: 0,
+    checkoutStarted: 0,
+    ordersCreated: 3,
+    addedUnits: 0,
+    orderValue: 500,
+    searchResults: 0,
+    addToCartRate: 0,
+    checkoutConversionRate: 0,
+    orderConversionRate: 0,
+  });
 
   const adminExport = await statisticsExportEndpoint(
     endpointContext(`${url}&report=sales`, 'admin@example.test'),

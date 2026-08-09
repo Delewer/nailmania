@@ -324,7 +324,15 @@ function OrderDrawer({
                 <div className="adm-transition-row">
                   <select id="next-status" value={nextStatus} onChange={(event) => setNextStatus(event.target.value)}>
                     <option value="">Selectează</option>
-                    {order.allowedTransitions.map((status) => <option value={status} key={status}>{statusMeta(status).label}</option>)}
+                    {Object.entries(STATUS).map(([status, meta]) => (
+                      <option
+                        value={status}
+                        key={status}
+                        disabled={status === order.status || !order.allowedTransitions.includes(status)}
+                      >
+                        {meta.label}{status === order.status ? ' (curent)' : ''}
+                      </option>
+                    ))}
                   </select>
                   <button className="adm-primary" type="button" onClick={applyStatus} disabled={!nextStatus || saving}>
                     {saving ? <LoaderCircle className="adm-spin" size={17}/> : <CheckCircle2 size={17}/>}
@@ -689,8 +697,8 @@ export default function AdminOrders() {
               <button className="adm-icon-btn" type="button" onClick={() => loadOrders(pagination.offset)} title="Actualizează"><RefreshCw className={loading ? 'adm-spin' : ''} size={19}/></button>
             </header>
 
-            <section className="adm-summary" aria-label="Sumar comenzi">
-              {['pending', 'confirmed', 'processing', 'ready', 'completed', 'cancelled'].map((key) => (
+            <section className="adm-summary adm-order-summary" aria-label="Sumar comenzi">
+              {Object.keys(STATUS).map((key) => (
                 <button type="button" key={key} aria-pressed={status === key} className={status === key ? 'active' : ''} onClick={() => setStatus(status === key ? '' : key)}>
                   <span>{statusMeta(key).label}</span><b>{counts[key] || 0}</b>
                 </button>

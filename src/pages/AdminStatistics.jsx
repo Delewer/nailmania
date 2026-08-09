@@ -193,6 +193,9 @@ export default function AdminStatistics({ onUnauthorized }) {
     cancelledValue: 0,
   };
   const eventMetrics = events?.configured ? events.metrics : null;
+  const eventSource = events?.source === 'd1'
+    ? 'D1 · agregare zilnică exactă'
+    : 'Analytics Engine · ponderat după sampling';
   const pagination = report?.productPagination || { total: 0, limit: PAGE_SIZE, offset: 0 };
   const page = Math.floor(pagination.offset / PAGE_SIZE) + 1;
   const pages = Math.max(1, Math.ceil(pagination.total / PAGE_SIZE));
@@ -234,7 +237,7 @@ export default function AdminStatistics({ onUnauthorized }) {
         </section>
 
         <section className="adm-stat-event-panel">
-          <header><div><BarChart3 size={19}/><div><b>Evenimente magazin</b><span>Analytics Engine · ponderat după sampling</span></div></div></header>
+          <header><div><BarChart3 size={19}/><div><b>Evenimente magazin</b><span>{eventSource}</span></div></div></header>
           {eventMetrics ? <div className="adm-stat-event-grid">
             <div><Eye size={17}/><span>Vizualizări</span><b>{quantity(eventMetrics.views)}</b></div>
             <div><ShoppingCart size={17}/><span>Adăugări</span><b>{quantity(eventMetrics.addToCart)}</b></div>
@@ -244,7 +247,7 @@ export default function AdminStatistics({ onUnauthorized }) {
             <div><Banknote size={17}/><span>Valoare comenzi</span><b>{money(eventMetrics.orderValue)}</b></div>
             <div><span>Checkout → comandă</span><b>{eventMetrics.checkoutConversionRate}%</b></div>
             <div><span>Vizualizare → comandă</span><b>{eventMetrics.orderConversionRate}%</b></div>
-          </div> : <div className="adm-stat-events-empty">{eventsError || 'Citirea Analytics Engine nu este configurată; rapoartele D1 rămân disponibile.'}</div>}
+          </div> : <div className="adm-stat-events-empty">{eventsError || 'Evenimentele magazinului nu sunt încă disponibile.'}</div>}
         </section>
 
         <section className="adm-orders-panel adm-stat-report-panel">

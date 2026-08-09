@@ -45,7 +45,62 @@ const percent = (numerator, denominator) => denominator
   ? Math.round((numerator / denominator) * 10_000) / 100
   : 0;
 
+const metricsFromRows = (data) => {
+  const rows = Object.fromEntries(data.map((row) => [String(row.event || ''), {
+    events: number(row.events),
+    quantityOrItems: number(row.quantity_or_items),
+    value: number(row.value_lei),
+    resultCount: number(row.result_count),
+  }]));
+  const views = rows.product_view?.events || 0;
+  const addToCart = rows.add_to_cart?.events || 0;
+  const checkoutStarted = rows.checkout_started?.events || 0;
+  const ordersCreated = rows.order_created?.events || 0;
+  return {
+    views,
+    addToCart,
+    searches: rows.search?.events || 0,
+    checkoutStarted,
+    ordersCreated,
+    addedUnits: rows.add_to_cart?.quantityOrItems || 0,
+    orderValue: rows.order_created?.value || 0,
+    searchResults: rows.search?.resultCount || 0,
+    addToCartRate: percent(addToCart, views),
+    checkoutConversionRate: percent(ordersCreated, checkoutStarted),
+    orderConversionRate: percent(ordersCreated, views),
+  };
+};
+
+export async function readD1AnalyticsMetrics(db, range) {
+  const eventRows = await db.prepare(`
+    SELECT event_type AS event,
+           SUM(event_count) AS events,
+           SUM(quantity_or_items) AS quantity_or_items,
+           SUM(value_lei) AS value_lei,
+           SUM(result_count) AS result_count
+    FROM product_event_daily
+    WHERE event_day >= ? AND event_day < ?
+    GROUP BY event_type
+    ORDER BY event_type
+  `).bind(range.from.slice(0, 10), range.to.slice(0, 10)).all();
+  const orderRow = await db.prepare(`
+    SELECT 'order_created' AS event,
+           COUNT(*) AS events,
+           0 AS quantity_or_items,
+           COALESCE(SUM(total_amount), 0) AS value_lei,
+           0 AS result_count
+    FROM orders
+    WHERE created_at >= ? AND created_at < ?
+  `).bind(range.from, range.to).first();
+  return {
+    configured: true,
+    source: 'd1',
+    metrics: metricsFromRows([...(eventRows.results || []), orderRow]),
+  };
+}
+
 export async function readAnalyticsMetrics(env, range, options = {}) {
+  if (env?.DB?.prepare) return readD1AnalyticsMetrics(env.DB, range);
   const config = analyticsReaderConfig(env);
   if (!config.configured) return { configured: false, metrics: null };
   const fetcher = options.fetch || fetch;
@@ -77,30 +132,9 @@ export async function readAnalyticsMetrics(env, range, options = {}) {
   if (!Array.isArray(payload?.data)) {
     throw new AnalyticsReadError('ANALYTICS_READER_INVALID_RESPONSE', 'Analytics event metrics returned an invalid response');
   }
-  const rows = Object.fromEntries(payload.data.map((row) => [String(row.event || ''), {
-    events: number(row.events),
-    quantityOrItems: number(row.quantity_or_items),
-    value: number(row.value_lei),
-    resultCount: number(row.result_count),
-  }]));
-  const views = rows.product_view?.events || 0;
-  const addToCart = rows.add_to_cart?.events || 0;
-  const checkoutStarted = rows.checkout_started?.events || 0;
-  const ordersCreated = rows.order_created?.events || 0;
   return {
     configured: true,
-    metrics: {
-      views,
-      addToCart,
-      searches: rows.search?.events || 0,
-      checkoutStarted,
-      ordersCreated,
-      addedUnits: rows.add_to_cart?.quantityOrItems || 0,
-      orderValue: rows.order_created?.value || 0,
-      searchResults: rows.search?.resultCount || 0,
-      addToCartRate: percent(addToCart, views),
-      checkoutConversionRate: percent(ordersCreated, checkoutStarted),
-      orderConversionRate: percent(ordersCreated, views),
-    },
+    source: 'analytics-engine',
+    metrics: metricsFromRows(payload.data),
   };
 }

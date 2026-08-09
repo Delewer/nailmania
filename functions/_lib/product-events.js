@@ -142,30 +142,70 @@ async function productDimensions(db, productKey) {
   };
 }
 
-export async function prepareProductDataPoint({ db, env, input, now = new Date() }) {
+async function prepareProductEvent({ db, input }) {
   const event = normalizeProductEvent(input);
   const product = await productDimensions(db, event.productKey);
-  const index = await dailyAnonymousIndex(env, event.anonymousId, now);
   const quantityOrItems = event.event === 'add_to_cart' ? event.quantity : event.itemCount;
   const value = event.event === 'add_to_cart' ? product.price * event.quantity : event.value;
+  return { event, product, quantityOrItems, value };
+}
+
+const analyticsPoint = ({ event, product, quantityOrItems, value }, index) => ({
+  blobs: [event.event, product.key, product.category, product.brand, event.language, event.source],
+  doubles: [1, quantityOrItems, value, event.resultCount, event.queryLength],
+  indexes: [index],
+});
+
+export async function prepareProductDataPoint({ db, env, input, now = new Date() }) {
+  const prepared = await prepareProductEvent({ db, input });
+  const index = await dailyAnonymousIndex(env, prepared.event.anonymousId, now);
   return {
-    event,
-    point: {
-      blobs: [event.event, product.key, product.category, product.brand, event.language, event.source],
-      doubles: [1, quantityOrItems, value, event.resultCount, event.queryLength],
-      indexes: [index],
-    },
+    event: prepared.event,
+    point: analyticsPoint(prepared, index),
   };
 }
 
+async function recordDailyProductEvent(db, prepared, now) {
+  if (prepared.event.event === 'order_created') return false;
+  await db.prepare(`
+    INSERT INTO product_event_daily (
+      event_day, event_type, event_count, quantity_or_items,
+      value_lei, result_count, updated_at
+    ) VALUES (?, ?, 1, ?, ?, ?, ?)
+    ON CONFLICT(event_day, event_type) DO UPDATE SET
+      event_count = product_event_daily.event_count + excluded.event_count,
+      quantity_or_items = product_event_daily.quantity_or_items + excluded.quantity_or_items,
+      value_lei = product_event_daily.value_lei + excluded.value_lei,
+      result_count = product_event_daily.result_count + excluded.result_count,
+      updated_at = excluded.updated_at
+  `).bind(
+    now.toISOString().slice(0, 10),
+    prepared.event.event,
+    prepared.quantityOrItems,
+    prepared.value,
+    prepared.event.resultCount,
+    now.toISOString(),
+  ).run();
+  return true;
+}
+
 export async function recordProductEvent({ db, env, input, now = new Date() }) {
-  const configured = Boolean(env?.PRODUCT_ANALYTICS?.writeDataPoint);
-  if (!configured) {
-    // Local development intentionally has no remote Analytics Engine binding.
-    normalizeProductEvent(input);
-    return { configured: false, recorded: false };
+  const prepared = await prepareProductEvent({ db, input });
+  const d1Recorded = await recordDailyProductEvent(db, prepared, now);
+  let analyticsEngineRecorded = false;
+  if (env?.PRODUCT_ANALYTICS?.writeDataPoint) {
+    try {
+      const index = await dailyAnonymousIndex(env, prepared.event.anonymousId, now);
+      env.PRODUCT_ANALYTICS.writeDataPoint(analyticsPoint(prepared, index));
+      analyticsEngineRecorded = true;
+    } catch (error) {
+      if (!d1Recorded) throw error;
+    }
   }
-  const { event, point } = await prepareProductDataPoint({ db, env, input, now });
-  env.PRODUCT_ANALYTICS.writeDataPoint(point);
-  return { configured: true, recorded: true, event: event.event };
+  const recorded = d1Recorded || analyticsEngineRecorded;
+  return {
+    configured: recorded,
+    recorded,
+    ...(recorded ? { event: prepared.event.event } : {}),
+  };
 }

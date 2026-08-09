@@ -41,8 +41,8 @@ const d1MigrationManifest = (environment, commit = COMMIT, completedAt = new Dat
   },
   migrationIntegrity: {
     manifestSha256: '3'.repeat(64),
-    files: 15,
-    latest: '0015_cancelled_order_reopening.sql',
+    files: 16,
+    latest: '0016_product_event_daily_rollups.sql',
   },
   catalog: null,
   administrator: null,

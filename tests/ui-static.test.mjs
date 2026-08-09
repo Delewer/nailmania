@@ -128,6 +128,8 @@ test('admin mobile navigation and editors retain accessible names and focus hand
   assert.match(orders, /statisticsMode \? \(isAdmin \? <AdminStatistics/);
   assert.match(orders, /canViewPromoCodes && order\.promoCode/);
   assert.match(orders, /canViewPromoCodes=\{isAdmin\}/);
+  assert.match(orders, /Object\.keys\(STATUS\)\.map/);
+  assert.match(orders, /!order\.allowedTransitions\.includes\(status\)/);
   assert.match(products, /handleTabListKeyDown/);
   assert.match(products, /aria-label=\{`Denumirea specificației/);
   assert.match(products, /aria-label="Adresa imaginii"/);

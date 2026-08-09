@@ -152,7 +152,15 @@ test('public event endpoint is same-origin, size-bounded and cannot forge order_
 
   const local = await postEvent(db, valid, { environment: 'local', origin: null });
   assert.equal(local.status, 202);
-  assert.deepEqual(await local.json(), { ok: true, configured: false, recorded: false });
+  assert.deepEqual(await local.json(), {
+    ok: true, configured: true, recorded: true, event: 'product_view',
+  });
+  assert.deepEqual({ ...db.sqlite.prepare(`
+    SELECT event_type, event_count, quantity_or_items, value_lei
+    FROM product_event_daily
+  `).get() }, {
+    event_type: 'product_view', event_count: 1, quantity_or_items: 0, value_lei: 0,
+  });
 
   const missingOrigin = await postEvent(db, valid, { origin: null });
   assert.equal(missingOrigin.status, 403);
@@ -215,6 +223,7 @@ test('Analytics SQL reader is optional, template-only and weights sampled rows',
   assert.doesNotMatch(request.options.body, /reader-secret/);
   assert.deepEqual(result, {
     configured: true,
+    source: 'analytics-engine',
     metrics: {
       views: 200,
       addToCart: 40,

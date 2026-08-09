@@ -56,8 +56,8 @@ const d1Manifest = (environment, operation, overrides = {}) => ({
   },
   migrationIntegrity: {
     manifestSha256: MIGRATION_SET_SHA,
-    files: 15,
-    latest: '0015_cancelled_order_reopening.sql',
+    files: 16,
+    latest: '0016_product_event_daily_rollups.sql',
   },
   catalog: operation === 'catalog' ? {
     snapshotSha256: '3'.repeat(64),
@@ -166,7 +166,7 @@ test('Pages deploy guard rejects stale, tampered, mismatched and dirty release s
         migrationIntegrity: {
           manifestSha256: '',
           files: 0,
-          latest: '0015_cancelled_order_reopening.sql',
+          latest: '0016_product_event_daily_rollups.sql',
         },
       }),
     })),
