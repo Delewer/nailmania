@@ -236,12 +236,6 @@ check(/VITE_TURNSTILE_SITE_KEY:\s*\$\{\{\s*inputs\.preview_turnstile_site_key\s*
 check(/release:build:preview\s+--\s+--expected-commit\s+\$\{\{\s*github\.sha\s*\}\}/.test(readinessWorkflow), 'Release readiness must build through the clean-SHA preview wrapper');
 check(!/\bnpx\s+vite\s+build\b/.test(readinessWorkflow), 'Release readiness must not bypass the guarded Pages build');
 const readinessArtifactPaths = [
-  'tmp/catalog-source.csv',
-  'tmp/catalog-validation.json',
-  'tmp/catalog-build-integrity.json',
-  'tmp/d1/catalog-import-validation.json',
-  'tmp/d1/catalog-import-report.json',
-  'tmp/d1/catalog-import.sql',
   'tmp/releases/preview-pages-build-*.json',
   'dist/',
 ];
@@ -254,6 +248,8 @@ for (const artifactPath of readinessArtifactPaths) {
 }
 check(/if-no-files-found:\s*error\b/.test(readinessWorkflow), 'Release readiness artifact must fail when a required file is missing');
 check(/include-hidden-files:\s*true\b/.test(readinessWorkflow), 'Release readiness artifact must retain hidden dist files');
+check(!/validate-catalog-sheet|build-catalog|import-catalog-d1|catalog-source\.csv/.test(readinessWorkflow), 'Release readiness must not replace the D1-owned catalog from Google Sheets');
+check(/verify-local-d1\.mjs[^\n]*--schema-only/.test(readinessWorkflow), 'Release readiness must smoke-test migrations without seeding the D1-owned catalog');
 
 const releaseBuildScript = read('scripts/release-build.mjs');
 const turnstileBuildGuard = read('scripts/turnstile-build-guard.mjs');

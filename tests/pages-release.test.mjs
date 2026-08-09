@@ -20,7 +20,6 @@ const OTHER_COMMIT = 'b'.repeat(40);
 const BUNDLE = 'c'.repeat(64);
 const MANIFEST_SHA = 'd'.repeat(64);
 const D1_MIGRATION_MANIFEST_SHA = '6'.repeat(64);
-const D1_CATALOG_MANIFEST_SHA = '7'.repeat(64);
 const MIGRATION_SET_SHA = '8'.repeat(64);
 
 const buildManifest = (environment, overrides = {}) => ({
@@ -76,7 +75,7 @@ const d1Manifest = (environment, operation, overrides = {}) => ({
 });
 
 const previewEvidence = (overrides = {}) => ({
-  schemaVersion: 2,
+  schemaVersion: 3,
   kind: 'pages-preview-acceptance',
   project: 'nailmania',
   branch: 'd1-preview-bootstrap',
@@ -84,7 +83,6 @@ const previewEvidence = (overrides = {}) => ({
   bundleSha256: BUNDLE,
   buildManifestSha256: MANIFEST_SHA,
   d1MigrationManifestSha256: D1_MIGRATION_MANIFEST_SHA,
-  d1CatalogManifestSha256: D1_CATALOG_MANIFEST_SHA,
   previewUrl: PREVIEW_ORIGIN,
   acceptedAt: new Date(NOW - 30_000).toISOString(),
   confirmed: true,
@@ -105,18 +103,12 @@ const deployInput = (environment, overrides = {}) => {
     gitState: gitState(branch),
     d1MigrationManifest: d1Manifest(environment, 'migrate'),
     d1MigrationManifestSha256: D1_MIGRATION_MANIFEST_SHA,
-    d1CatalogManifest: d1Manifest(environment, 'catalog'),
-    d1CatalogManifestSha256: D1_CATALOG_MANIFEST_SHA,
     previewAcceptance: environment === 'production' ? previewEvidence() : undefined,
     previewManifest: environment === 'production' ? buildManifest('preview') : undefined,
     previewManifestSha256: environment === 'production' ? MANIFEST_SHA : undefined,
     previewD1MigrationManifest: environment === 'production' ? d1Manifest('preview', 'migrate') : undefined,
     previewD1MigrationManifestSha256: environment === 'production'
       ? D1_MIGRATION_MANIFEST_SHA
-      : undefined,
-    previewD1CatalogManifest: environment === 'production' ? d1Manifest('preview', 'catalog') : undefined,
-    previewD1CatalogManifestSha256: environment === 'production'
-      ? D1_CATALOG_MANIFEST_SHA
       : undefined,
     nowMs: NOW,
     ...overrides,
@@ -164,21 +156,21 @@ test('Pages deploy guard rejects stale, tampered, mismatched and dirty release s
   );
   assert.throws(
     () => guardThenDeploy(deployInput('preview', {
-      d1CatalogManifest: d1Manifest('preview', 'catalog', { commit: OTHER_COMMIT }),
+      d1MigrationManifest: d1Manifest('preview', 'migrate', { commit: OTHER_COMMIT }),
     })),
-    /D1 catalog release manifest commit does not match/,
+    /D1 migrate release manifest commit does not match/,
   );
   assert.throws(
     () => guardThenDeploy(deployInput('preview', {
-      d1CatalogManifest: d1Manifest('preview', 'catalog', {
+      d1MigrationManifest: d1Manifest('preview', 'migrate', {
         migrationIntegrity: {
-          manifestSha256: 'f'.repeat(64),
-          files: 15,
+          manifestSha256: '',
+          files: 0,
           latest: '0015_cancelled_order_reopening.sql',
         },
       }),
     })),
-    /different migration sets/,
+    /missing migration integrity evidence/,
   );
   assert.equal(spawnCalls, 0);
 });
@@ -217,7 +209,7 @@ test('production deploy requires an untampered accepted preview manifest from th
   );
   assert.throws(
     () => validatePagesDeployGuard(deployInput('production', {
-      previewAcceptance: previewEvidence({ d1CatalogManifestSha256: 'f'.repeat(64) }),
+      previewAcceptance: previewEvidence({ d1MigrationManifestSha256: 'f'.repeat(64) }),
     })),
     /D1 evidence does not match/,
   );
@@ -279,8 +271,6 @@ test('preview acceptance rejects loopback and records only sanitized release evi
     gitState: gitState('d1-preview-bootstrap'),
     d1MigrationManifest: d1Manifest('preview', 'migrate'),
     d1MigrationManifestSha256: D1_MIGRATION_MANIFEST_SHA,
-    d1CatalogManifest: d1Manifest('preview', 'catalog'),
-    d1CatalogManifestSha256: D1_CATALOG_MANIFEST_SHA,
     previewUrl: `${PREVIEW_ORIGIN}/`,
     confirmUrl: PREVIEW_ORIGIN,
     confirmAcceptance: expectedPreviewAcceptanceConfirmation(COMMIT),
@@ -294,7 +284,6 @@ test('preview acceptance rejects loopback and records only sanitized release evi
     'bundleSha256',
     'commit',
     'confirmed',
-    'd1CatalogManifestSha256',
     'd1MigrationManifestSha256',
     'kind',
     'previewUrl',

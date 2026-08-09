@@ -5,20 +5,20 @@
 ## Защитные правила
 
 - Release выполняется только из чистого Git worktree и одного точного commit SHA.
-- Никакой Apps Script/Cloudflare Deploy Hook не может публиковать production в обход этого runbook. Перед release удалить `DEPLOY_HOOK_URL`, отключить старый hook и убедиться, что после изменения Sheet не появился новый deployment.
+- Никакой Apps Script/Cloudflare Deploy Hook не может публиковать production в обход этого runbook. Перед release удалить `DEPLOY_HOOK_URL` и отключить старые hooks.
 - Preview и production используют разные D1, R2 и Scheduled Worker.
 - Перед любым preview/production D1 mutation обязателен свежий export и Time Travel bookmark этой же базы и release SHA. Guard проверяет SQL и bookmark по SHA-256, размер, target и возраст не более четырёх часов.
 - SQL backup содержит персональные данные клиентов. Он хранится в игнорируемом `tmp/backups`, затем переносится в зашифрованное приватное хранилище; его нельзя commit/upload в Actions artifact.
 - Migrations только добавляются новыми файлами `NNNN_description.sql`. Уже применённые migrations не редактируются. `migrations/manifest.sha256` фиксирует canonical SHA-256 каждого SQL-файла; при добавлении migration в manifest добавляется новая строка, а существующие строки не меняются. `release:verify-config` останавливает release при любом расхождении имени, порядка или checksum.
 - Каждая migration должна быть обратно совместима с уже опубликованным bundle на время rolling rollout; удаление старых колонок/таблиц выносится в более поздний release.
-- Сначала schema, затем catalog import, Worker, Pages, smoke test. Production запускается только после успешного повторения той же последовательности в preview.
+- Сначала schema, затем Worker, Pages и smoke test. Production запускается только после успешного повторения той же последовательности в preview. Каталог в D1 релизом не импортируется.
 - Migration `0014_catalog_discounts_and_promo_brands.sql` обратно совместима со старым bundle, но новый bundle требует созданные ею view/table. Поэтому в каждом окружении сначала применить 0014, и только затем публиковать Pages с динамическими скидками; обратный порядок создаст временные ошибки каталога и checkout.
 - После создания catalog campaign или promo brand scope откат Pages на код до 0014 небезопасен: старый bundle рассчитает базовую цену/проигнорирует brand scope, а новые D1 triggers отклонят несовпадающий checkout. Для аварийного rollback сначала деактивировать все catalog campaigns и очистить brand scopes штатным административным изменением либо выполнить roll-forward исправление.
-- Если строгая проверка Google Sheet нашла пустой/повторный SKU, release останавливается. Fallback на старый CSV запрещён.
+- Товарные данные из Google Sheets/CSV не входят в release artifact и не должны изменять D1 во время rollout.
 - Перед первой миграцией промокодов `release:d1:migrate:*` выполняет read-only remote gate: если `0009_promotions.sql` ещё не применена, существующая `promo_redemptions` обязана быть пустой. Ненулевой результат останавливает migration до отдельного backfill.
-- Генераторы catalog/admin SQL не имеют remote режима. Удалённые migrations, catalog import и выдача роли администратора выполняются только `release:d1:*`; каждый mutation в обеих средах требует точную release-ветку и полный `--expected-commit`, а manifest фиксирует commit, backup, migration-set checksum и checksums применённых артефактов без email/секретов.
+- Генераторы catalog/admin SQL не имеют remote режима. Удалённые migrations и выдача роли администратора выполняются только `release:d1:*`; каждый mutation в обеих средах требует точную release-ветку и полный `--expected-commit`, а manifest фиксирует commit, backup, migration-set checksum и checksums применённых артефактов без email/секретов. `release:d1:catalog:*` остаётся отдельной ручной maintenance-операцией и не входит в rollout приложения.
 - Обычный `npm run build` остаётся локальной/CI-компиляцией и может работать без Turnstile. В Cloudflare Pages (`CF_PAGES=1`) та же команда останавливается до компиляции без ключа, с ключом другого окружения или на ветке кроме точных `main`/`d1-preview-bootstrap`; ожидаемые preview/production SHA-256 fingerprints закреплены в коде. Deploy разрешён только из `release:build:preview|production`: wrapper также требует соответствующий окружению утверждённый `VITE_TURNSTILE_SITE_KEY` production-формата (публичные Cloudflare test keys не принимаются), clean worktree, точный SHA и проверяет наличие ключа в собранном `dist`. Это единственный разрешённый public `VITE_*` input; `VITE_CATALOG_ENDPOINT`, `VITE_CATEGORIES_ENDPOINT` и любые другие `VITE_*` из process environment или Vite `.env*` немедленно останавливают release, поэтому API остаётся same-origin. Manifest сохраняет SHA-256 fingerprint ключа и версию этого input-контракта. Site key публичный, но его значение не хранится в Git; `TURNSTILE_SECRET_KEY` всегда остаётся Cloudflare Secret.
-- Pages публикуется только через `release:pages:preview|production`. Guard заново считает SHA-256 каждого байта Git-ignored `dist`, принимает manifest не старше 24 часов, требует clean worktree, полный HEAD, точные project/branch confirmations и D1 migrate/catalog manifests той же среды и commit, и лишь затем вызывает локальный Wrangler. Production дополнительно требует свежий `preview-acceptance-*.json`, неизменённый preview build manifest и исходные preview D1 manifests. Acceptance принимается только для точного origin `https://d1-preview-bootstrap.nailmania.pages.dev`. Preview и production bundle проверяются каждый своим manifest: их байты могут отличаться из-за разных публичных Turnstile site key, но исходный Git SHA обязан совпадать.
+- Pages публикуется только через `release:pages:preview|production`. Guard заново считает SHA-256 каждого байта Git-ignored `dist`, принимает manifest не старше 24 часов, требует clean worktree, полный HEAD, точные project/branch confirmations и D1 migrate manifest той же среды и commit, и лишь затем вызывает локальный Wrangler. Production дополнительно требует свежий `preview-acceptance-*.json`, неизменённый preview build manifest и исходный preview D1 migrate manifest. Acceptance принимается только для точного origin `https://d1-preview-bootstrap.nailmania.pages.dev`. Preview и production bundle проверяются каждый своим manifest: их байты могут отличаться из-за разных публичных Turnstile site key, но исходный Git SHA обязан совпадать.
 - Scheduled Worker собирается и публикуется только через `release:reservations:*`. Build wrapper выполняет Wrangler `--dry-run` в Git-ignored `tmp/releases`, фиксирует source, полный bundle и entrypoint SHA-256, commit, Worker, D1 и config digest. Deploy wrapper дополнительно требует свежий D1 migrate manifest той же среды/commit, повторно проверяет исходник, конфигурацию и сохранённые байты, branch/HEAD/target и точное текстовое подтверждение, после чего передаёт проверенный `reservations.js` Wrangler с `--no-bundle`; cron нельзя активировать против неаттестованной schema.
 - Для production рекомендуется Workers Paid. Если выбран другой план, preview load/acceptance обязан доказать запас по CPU для PBKDF2 и по D1 queries на максимальном заказе/возврате; расхождение с актуальными Cloudflare limits останавливает rollout.
 
@@ -40,9 +40,9 @@ Analytics Engine is also isolated: `nailmania_product_events_preview` and `nailm
 - unit/integration tests;
 - Vite/SEO и Pages Functions bundles;
 - preview/production Scheduled Worker через `wrangler deploy --dry-run`;
-- все migrations на новой временной local D1. Строгий catalog SQL/import проверяется отдельным release-readiness gate, чтобы известная ошибка бизнес-данных не блокировала обычные code pull requests.
+- все migrations на новой временной local D1 в schema-only режиме; рабочий каталог остаётся в D1 и не перезаписывается релизом.
 
-`.github/workflows/publish.yml` — ручной release-readiness gate без секретов и без deploy. При запуске он требует публичный preview Turnstile site key как input, дополнительно загружает один canonical snapshot Google Sheet, строго проверяет его checksum/SKU, собирает каталог только из этих байтов и требует, чтобы generated catalog files уже были review/commit. Pages bundle строится guarded wrapper и проверяется на фактическое встраивание site key. Только после всех успешных gates на семь дней сохраняется единый artifact `release-readiness-<SHA>`: canonical CSV, все validation/build/import reports, generated SQL, Pages build manifest и точный `dist` для preview deploy, включая скрытые файлы. Частичный artifact при failed workflow не создаётся.
+`.github/workflows/publish.yml` — ручной release-readiness gate без секретов и без deploy. При запуске он требует публичный preview Turnstile site key как input, проверяет конфигурацию, тесты и migrations без импорта товарных данных. Pages bundle строится guarded wrapper и проверяется на фактическое встраивание site key. После успешных gates на семь дней сохраняется единый artifact `release-readiness-<SHA>`: Pages build manifest и точный `dist` для preview deploy, включая скрытые файлы. Частичный artifact при failed workflow не создаётся.
 
 Старый FTP/Pages publish job удалён. Обязательные branch rules для `main`: pull request, успешный `CI verification`, запрет force-push/delete и хотя бы одно approval. Репозиторий рекомендуется сделать private; Git всё равно остаётся необходимым для идентификации и отката release SHA.
 
@@ -54,9 +54,6 @@ Analytics Engine is also isolated: `nailmania_product_events_preview` and `nailm
 npm ci
 node scripts/verify-release-config.mjs
 npm test
-node scripts/validate-catalog-sheet.mjs
-node scripts/build-catalog.mjs --validated-snapshot tmp/catalog-source.csv --validation-report tmp/catalog-validation.json
-node scripts/import-catalog-d1.mjs
 npx vite build
 node scripts/build-seo.mjs
 npx wrangler pages functions build functions --project-directory . --build-output-directory dist --outdir tmp/pages-functions --compatibility-date 2026-07-16
@@ -76,13 +73,13 @@ node scripts/browser-smoke.mjs --base-url http://127.0.0.1:8788 --report-file tm
 
 `smoke:browser` находит установленный Chrome/Edge (либо использует `BROWSER_PATH`), проверяет главную, карточку товара, checkout, 404, вход покупателя и локальный вход администратора при ширине 1440 и 390 px. Он помещает ровно один доступный товар только в `localStorage`, блокирует все HTTP-методы кроме `GET`/`HEAD` до отправки в сеть и никогда не отправляет заказ или форму. PNG сохраняются в игнорируемом `tmp/browser-smoke`, а обезличенный JSON — в `tmp/reports`.
 
-Generated `src/catalog.json` и `src/categories.json` должны быть review/commit до rollout. Затем повторить preflight из чистого checkout точного commit.
+Google Sheets не является release source. Товары, остатки и категории управляются в D1 через админку; release не должен запускать `catalog:validate-source`, `catalog:build:validated` или `release:d1:catalog:*`. Если tracked fallback/SEO catalog меняется отдельной задачей, он проходит обычный review/commit до rollout.
 
 ### R2 maintenance до release
 
 `upload-r2.mjs` и `migrate-drive-r2.mjs` отказываются работать без точного preview/production bucket из `wrangler.toml`, его повторного подтверждения, чистого worktree и полного HEAD SHA. `rehost-images.mjs` строже: он разрешён только для production, только на branch `main`, только для exact bucket и canonical host из `catalog.config.json`; попытка указать preview завершается до сетевых запросов и R2 mutation. Эти команды не запускаются из `build`/CI; отсутствие credentials и частичная ошибка завершают команду ненулевым кодом. Public URL передаётся явно. Production URL обязан быть custom domain: `*.r2.dev` release guard не принимает из-за rate limiting.
 
-Если перед release нужно перенести изображения, выполнить операцию как отдельное изменение до canonical catalog validation, затем review/commit получившиеся tracked файлы и повторить все gates. `src/catalog.json` является одним и тем же release artifact для preview и production: `rehost-images`/`migrate-drive-r2` запускаются только один раз для заранее выбранного canonical immutable image host, а не по разу для каждого окружения. Preview обязан проверить именно те URL, которые затем получит production. Production canonical host — `https://images.nailmania.md` на bucket `nailmania-photos`; известный legacy `r2.dev` origin переписывается на него без копирования объектов, с сохранением полного пути. Внешние URL после успешного rehost фиксируются в tracked URL map, чтобы следующая сборка из Google Sheet была воспроизводимой. До операции сверить фактический bucket, custom domain, object count и доступность объектов. Пример формы команды:
+Если перед release нужно перенести изображения, выполнить операцию как отдельное изменение, затем review/commit получившиеся tracked файлы и повторить все gates. `rehost-images`/`migrate-drive-r2` запускаются только один раз для заранее выбранного canonical immutable image host, а не по разу для каждого окружения. Preview обязан проверить именно те URL, которые затем получит production. Production canonical host — `https://images.nailmania.md` на bucket `nailmania-photos`; известный legacy `r2.dev` origin переписывается на него без копирования объектов, с сохранением полного пути. До операции сверить фактический bucket, custom domain, object count и доступность объектов. Пример формы команды:
 
 ```powershell
 $commit = git rev-parse HEAD
@@ -90,7 +87,7 @@ $env:R2_BUCKET = "nailmania-photos"
 npm run rehost -- -- --environment production --confirm-bucket nailmania-photos --expected-commit $commit --public-base-url https://images.nailmania.md
 ```
 
-Preview bucket для `rehost-images` не использовать: canonical catalog обязан ссылаться на один production image host, который затем проверяет preview storefront. После R2 maintenance нельзя продолжать rollout с прежним SHA, snapshot или backup. Preview/production release-build и guarded D1 catalog import отказываются принимать artifact, пока в нём остаётся хотя бы один внешний image host.
+Preview bucket для `rehost-images` не использовать: canonical image URLs обязаны ссылаться на один production image host, который затем проверяет preview storefront. После R2 maintenance нельзя продолжать rollout с прежним SHA или backup.
 
 ## Preview rollout
 
@@ -101,7 +98,7 @@ Preview bucket для `rehost-images` не использовать: canonical c
    if ((git branch --show-current) -ne "d1-preview-bootstrap") { throw "Preview release requires d1-preview-bootstrap" }
    if (git status --porcelain) { throw "Preview release requires a clean worktree" }
    ```
-2. Запустить `Release readiness (no deploy)` для этого ref, передать утверждённый публичный site key preview widget в input `preview_turnstile_site_key` и дождаться зелёного результата. Скачать artifact `release-readiness-<SHA>` именно из этого успешного run и распаковать в корень чистого checkout, сохранив его структуру `tmp/...` и `dist/...` (через GitHub UI либо `gh run download <run-id> --name "release-readiness-$commit" --dir .`). Сверить SHA run/artifact с `$commit`; не заменять snapshot повторной загрузкой изменяемого Sheet. Artifact хранится семь дней, поэтому до истечения срока его нужно сохранить рядом с release evidence в утверждённом приватном хранилище.
+2. Запустить `Release readiness (no deploy)` для этого ref, передать утверждённый публичный site key preview widget в input `preview_turnstile_site_key` и дождаться зелёного результата. Скачать artifact `release-readiness-<SHA>` именно из этого успешного run и распаковать в корень чистого checkout, сохранив его структуру `tmp/...` и `dist/...` (через GitHub UI либо `gh run download <run-id> --name "release-readiness-$commit" --dir .`). Сверить SHA run/artifact с `$commit`. Artifact хранится семь дней, поэтому до истечения срока его нужно сохранить рядом с release evidence в утверждённом приватном хранилище.
 3. Снять preview backup и bookmark, затем записать путь созданного SQL:
 
    ```powershell
@@ -117,16 +114,7 @@ Preview bucket для `rehost-images` не использовать: canonical c
    $previewMigrationManifest = (Get-ChildItem tmp/releases/preview-migrate-*.json | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
    ```
 
-5. Импортировать именно snapshot и validation report из скачанного release artifact:
-
-   ```powershell
-   npm run release:d1:catalog:preview -- --confirm nailmania-preview --expected-commit $commit --backup $backup --snapshot tmp/catalog-source.csv --validation-report tmp/catalog-validation.json
-   $previewCatalogManifest = (Get-ChildItem tmp/releases/preview-catalog-*.json | Where-Object { $_.Name -notlike "*postconditions*" } | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
-   ```
-
-   Postconditions сопоставляют точное множество SKU snapshot с D1, а не только общие totals. Для import-owned карточек проверяются active state, категория и число изображений по каждому SKU. Admin-owned collision сохраняется как явное переопределение только при наличии `admin_revision` и product audit; для активного переопределения всё равно обязательны активная категория, корректный warehouse-1 inventory и валидные URL изображений. Inactive admin override разрешён как сохранённое административное отключение и отдельно аттестуется в evidence. Лишний активный import SKU, отсутствующий snapshot SKU или admin-extra, пытающийся замаскировать пропуск, останавливают rollout.
-
-   Если staff-строки ещё не подготовлены в отдельной preview D1, выдать роль каждому заранее одобренному Access email с двойным подтверждением значения. Для продавца использовать `manager` (без промокодов, статистики, audit и readiness; точные promo code/id удаляются и из ответов заказов, но сумма скидки сохраняется), для владельца — `admin`:
+5. Если staff-строки ещё не подготовлены в отдельной preview D1, выдать роль каждому заранее одобренному Access email с двойным подтверждением значения. Для продавца использовать `manager` (без промокодов, статистики, audit и readiness; точные promo code/id удаляются и из ответов заказов, но сумма скидки сохраняется), для владельца — `admin`:
 
    ```powershell
    $staffEmail = "approved-staff@example.com"
@@ -148,8 +136,8 @@ Preview bucket для `rehost-images` не использовать: canonical c
    ```powershell
    $previewManifest = (Get-ChildItem tmp/releases/preview-pages-build-*.json | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
    $deployConfirmation = "DEPLOY PAGES nailmania d1-preview-bootstrap $commit"
-   npm run release:pages:preview -- --manifest $previewManifest --d1-migration-manifest $previewMigrationManifest --d1-catalog-manifest $previewCatalogManifest --expected-commit $commit --confirm-project nailmania --confirm-branch d1-preview-bootstrap --confirm-deploy $deployConfirmation --dry-run
-   npm run release:pages:preview -- --manifest $previewManifest --d1-migration-manifest $previewMigrationManifest --d1-catalog-manifest $previewCatalogManifest --expected-commit $commit --confirm-project nailmania --confirm-branch d1-preview-bootstrap --confirm-deploy $deployConfirmation
+   npm run release:pages:preview -- --manifest $previewManifest --d1-migration-manifest $previewMigrationManifest --expected-commit $commit --confirm-project nailmania --confirm-branch d1-preview-bootstrap --confirm-deploy $deployConfirmation --dry-run
+   npm run release:pages:preview -- --manifest $previewManifest --d1-migration-manifest $previewMigrationManifest --expected-commit $commit --confirm-project nailmania --confirm-branch d1-preview-bootstrap --confirm-deploy $deployConfirmation
    ```
 
 8. В Cloudflare проверить, что deployment использует preview D1/R2/Analytics Engine и не имеет production secrets. Выполнить acceptance: каталог/карточка/поиск, Access-вход обоих администраторов, сохранение товара/фото, тестовый заказ, повтор того же idempotency key, обработка изменившейся quote, бесплатная доставка от 2200 лей, промокод, резерв, отмена/освобождение, доставка одного заказа обоим Telegram-получателям с визуально проверенной первой строкой `🧪 ТЕСТОВЫЙ ЗАКАЗ — НЕ ОБРАБАТЫВАТЬ`, одно email-подтверждение покупателю с верными позициями и итогом, password-reset письмо через отдельный preview Resend key, readiness/статистика и статус cron. Удалить тестовые данные только штатными API/админскими действиями, сохранив audit trail. После полного прохождения записать sanitized evidence; loopback/private URL и HTTP команда не принимает:
@@ -157,8 +145,8 @@ Preview bucket для `rehost-images` не использовать: canonical c
    ```powershell
    $previewUrl = "https://d1-preview-bootstrap.nailmania.pages.dev"
    $acceptConfirmation = "ACCEPT PREVIEW nailmania d1-preview-bootstrap $commit"
-   npm run release:pages:record-preview -- --manifest $previewManifest --d1-migration-manifest $previewMigrationManifest --d1-catalog-manifest $previewCatalogManifest --expected-commit $commit --preview-url $previewUrl --confirm-url $previewUrl --confirm-acceptance $acceptConfirmation --dry-run
-   npm run release:pages:record-preview -- --manifest $previewManifest --d1-migration-manifest $previewMigrationManifest --d1-catalog-manifest $previewCatalogManifest --expected-commit $commit --preview-url $previewUrl --confirm-url $previewUrl --confirm-acceptance $acceptConfirmation
+   npm run release:pages:record-preview -- --manifest $previewManifest --d1-migration-manifest $previewMigrationManifest --expected-commit $commit --preview-url $previewUrl --confirm-url $previewUrl --confirm-acceptance $acceptConfirmation --dry-run
+   npm run release:pages:record-preview -- --manifest $previewManifest --d1-migration-manifest $previewMigrationManifest --expected-commit $commit --preview-url $previewUrl --confirm-url $previewUrl --confirm-acceptance $acceptConfirmation
    $previewAcceptance = (Get-ChildItem tmp/releases/preview-acceptance-*.json | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
    ```
 
@@ -188,8 +176,6 @@ Preview bucket для `rehost-images` не использовать: canonical c
    npm run release:d1:status:production
    npm run release:d1:migrate:production -- --confirm nailmania-production --expected-commit $commit --backup $backup
    $productionMigrationManifest = (Get-ChildItem tmp/releases/production-migrate-*.json | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
-   npm run release:d1:catalog:production -- --confirm nailmania-production --expected-commit $commit --backup $backup --snapshot tmp/catalog-source.csv --validation-report tmp/catalog-validation.json
-   $productionCatalogManifest = (Get-ChildItem tmp/releases/production-catalog-*.json | Where-Object { $_.Name -notlike "*postconditions*" } | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
    ```
 
    Отдельно выдать роли только утверждённым production Access email (повторить для остальных сотрудников и выбрать `manager` либо `admin`):
@@ -212,11 +198,10 @@ Preview bucket для `rehost-images` не использовать: canonical c
    $productionManifest = (Get-ChildItem tmp/releases/production-pages-build-*.json | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
    $previewManifest = (Get-ChildItem tmp/releases/preview-pages-build-*.json | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
    $previewMigrationManifest = (Get-ChildItem tmp/releases/preview-migrate-*.json | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
-   $previewCatalogManifest = (Get-ChildItem tmp/releases/preview-catalog-*.json | Where-Object { $_.Name -notlike "*postconditions*" } | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
    $previewAcceptance = (Get-ChildItem tmp/releases/preview-acceptance-*.json | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
    $deployConfirmation = "DEPLOY PAGES nailmania main $commit"
-   npm run release:pages:production -- --manifest $productionManifest --d1-migration-manifest $productionMigrationManifest --d1-catalog-manifest $productionCatalogManifest --preview-manifest $previewManifest --preview-d1-migration-manifest $previewMigrationManifest --preview-d1-catalog-manifest $previewCatalogManifest --preview-acceptance $previewAcceptance --expected-commit $commit --confirm-project nailmania --confirm-branch main --confirm-deploy $deployConfirmation --dry-run
-   npm run release:pages:production -- --manifest $productionManifest --d1-migration-manifest $productionMigrationManifest --d1-catalog-manifest $productionCatalogManifest --preview-manifest $previewManifest --preview-d1-migration-manifest $previewMigrationManifest --preview-d1-catalog-manifest $previewCatalogManifest --preview-acceptance $previewAcceptance --expected-commit $commit --confirm-project nailmania --confirm-branch main --confirm-deploy $deployConfirmation
+   npm run release:pages:production -- --manifest $productionManifest --d1-migration-manifest $productionMigrationManifest --preview-manifest $previewManifest --preview-d1-migration-manifest $previewMigrationManifest --preview-acceptance $previewAcceptance --expected-commit $commit --confirm-project nailmania --confirm-branch main --confirm-deploy $deployConfirmation --dry-run
+   npm run release:pages:production -- --manifest $productionManifest --d1-migration-manifest $productionMigrationManifest --preview-manifest $previewManifest --preview-d1-migration-manifest $previewMigrationManifest --preview-acceptance $previewAcceptance --expected-commit $commit --confirm-project nailmania --confirm-branch main --confirm-deploy $deployConfirmation
    ```
 
 5. Проверить bindings/secrets deployment и выполнить короткий production smoke: публичный GET каталога, один контролируемый заказ, резерв, отмена, Access обоих администраторов, загрузка/удаление тестового R2-изображения, Worker logs. При успехе закрыть окно и сохранить release manifest из `tmp/releases` рядом с зашифрованным backup.

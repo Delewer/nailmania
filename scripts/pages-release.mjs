@@ -12,7 +12,6 @@ const VALUE_FLAGS = new Set([
   '--environment',
   '--manifest',
   '--d1-migration-manifest',
-  '--d1-catalog-manifest',
   '--expected-commit',
   '--confirm-project',
   '--confirm-branch',
@@ -20,7 +19,6 @@ const VALUE_FLAGS = new Set([
   '--preview-acceptance',
   '--preview-manifest',
   '--preview-d1-migration-manifest',
-  '--preview-d1-catalog-manifest',
 ]);
 
 export function parsePagesReleaseArgs(args) {
@@ -44,7 +42,6 @@ export function parsePagesReleaseArgs(args) {
     environment: values['--environment'],
     manifestPath: values['--manifest'],
     d1MigrationManifestPath: values['--d1-migration-manifest'],
-    d1CatalogManifestPath: values['--d1-catalog-manifest'],
     expectedCommit: values['--expected-commit'],
     confirmProject: values['--confirm-project'],
     confirmBranch: values['--confirm-branch'],
@@ -52,7 +49,6 @@ export function parsePagesReleaseArgs(args) {
     previewAcceptancePath: values['--preview-acceptance'],
     previewManifestPath: values['--preview-manifest'],
     previewD1MigrationManifestPath: values['--preview-d1-migration-manifest'],
-    previewD1CatalogManifestPath: values['--preview-d1-catalog-manifest'],
     dryRun,
   };
 }
@@ -92,8 +88,8 @@ export function main(args = process.argv.slice(2), root = process.cwd()) {
     throw new Error('Pages release requires --environment preview|production');
   }
   if (!options.manifestPath) throw new Error('Pages release requires --manifest under tmp/releases');
-  if (!options.d1MigrationManifestPath || !options.d1CatalogManifestPath) {
-    throw new Error('Pages release requires --d1-migration-manifest and --d1-catalog-manifest under tmp/releases');
+  if (!options.d1MigrationManifestPath) {
+    throw new Error('Pages release requires --d1-migration-manifest under tmp/releases');
   }
   if (options.environment === 'production' && !options.previewAcceptancePath) {
     throw new Error('Production Pages release requires --preview-acceptance under tmp/releases');
@@ -101,17 +97,13 @@ export function main(args = process.argv.slice(2), root = process.cwd()) {
   if (options.environment === 'production' && !options.previewManifestPath) {
     throw new Error('Production Pages release requires --preview-manifest under tmp/releases');
   }
-  if (options.environment === 'production'
-      && (!options.previewD1MigrationManifestPath || !options.previewD1CatalogManifestPath)) {
-    throw new Error(
-      'Production Pages release requires --preview-d1-migration-manifest and --preview-d1-catalog-manifest',
-    );
+  if (options.environment === 'production' && !options.previewD1MigrationManifestPath) {
+    throw new Error('Production Pages release requires --preview-d1-migration-manifest');
   }
   if (options.environment === 'preview' && (
     options.previewAcceptancePath
     || options.previewManifestPath
     || options.previewD1MigrationManifestPath
-    || options.previewD1CatalogManifestPath
   )) {
     throw new Error('Preview acceptance/build/D1 evidence flags are only valid for production');
   }
@@ -121,11 +113,9 @@ export function main(args = process.argv.slice(2), root = process.cwd()) {
     environment: options.environment,
     manifestPath: options.manifestPath,
     d1MigrationManifestPath: options.d1MigrationManifestPath,
-    d1CatalogManifestPath: options.d1CatalogManifestPath,
     previewAcceptancePath: options.previewAcceptancePath,
     previewManifestPath: options.previewManifestPath,
     previewD1MigrationManifestPath: options.previewD1MigrationManifestPath,
-    previewD1CatalogManifestPath: options.previewD1CatalogManifestPath,
   });
   const plan = validatePagesDeployGuard({ ...options, ...context });
   const invocation = buildPagesDeployInvocation({ root, plan });
