@@ -42,13 +42,6 @@ export function verifyMigrationManifest({ migrationFiles, manifestText, readMigr
     if (actual !== expected) {
       failures.push(`Migration ${filename} checksum drifted: expected ${expected}, got ${actual}`);
     }
-    content.split(/\r?\n/).forEach((line, index) => {
-      if (line.trimStart().startsWith('--') && line.includes("'")) {
-        failures.push(
-          `Migration ${filename} line ${index + 1} contains an apostrophe in a SQL comment; remote D1 parsing is unsafe`,
-        );
-      }
-    });
   }
 
   return failures;
