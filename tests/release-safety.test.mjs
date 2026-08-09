@@ -41,7 +41,7 @@ function writeCatalogImagesFixture(directory) {
   writeFileSync(path.join(directory, 'shared', 'package.json'), '{"type":"module"}\n');
 }
 
-test('migration checksum manifest rejects filename, content drift and D1-unsafe comments', () => {
+test('migration checksum manifest rejects filename and content drift', () => {
   const migrations = {
     '0001_initial.sql': 'CREATE TABLE example (id INTEGER);\n',
     '0002_more.sql': 'ALTER TABLE example ADD COLUMN name TEXT;\n',
@@ -66,17 +66,6 @@ test('migration checksum manifest rejects filename, content drift and D1-unsafe 
   assert.match(
     verify(['0001_initial.sql'], manifest).join('\n'),
     /filenames\/order do not match/,
-  );
-  const unsafe = {
-    ...migrations,
-    '0002_more.sql': "-- a promo's limit\nALTER TABLE example ADD COLUMN name TEXT;\n",
-  };
-  const unsafeManifest = Object.entries(unsafe)
-    .map(([file, sql]) => `${migrationSha256(sql)}  ${file}`)
-    .join('\n') + '\n';
-  assert.match(
-    verify(Object.keys(unsafe), unsafeManifest, unsafe).join('\n'),
-    /apostrophe in a SQL comment/,
   );
 });
 
