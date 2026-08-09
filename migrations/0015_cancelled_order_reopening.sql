@@ -2,7 +2,7 @@ PRAGMA foreign_keys = ON;
 
 -- A cancelled order releases its promo redemption. Reopening that order is
 -- allowed to reactivate the same immutable commercial snapshot, but only
--- while the promo's current usage limits still have room.
+-- while the current promo usage limits still have room.
 
 CREATE TRIGGER promo_redemptions_reactivate_context
 BEFORE UPDATE OF released_at, release_reason ON promo_redemptions

@@ -37,10 +37,18 @@ export function verifyMigrationManifest({ migrationFiles, manifestText, readMigr
   for (const filename of expectedFiles) {
     const expected = entries.get(filename);
     if (!expected) continue;
-    const actual = migrationSha256(readMigration(filename));
+    const content = String(readMigration(filename));
+    const actual = migrationSha256(content);
     if (actual !== expected) {
       failures.push(`Migration ${filename} checksum drifted: expected ${expected}, got ${actual}`);
     }
+    content.split(/\r?\n/).forEach((line, index) => {
+      if (line.trimStart().startsWith('--') && line.includes("'")) {
+        failures.push(
+          `Migration ${filename} line ${index + 1} contains an apostrophe in a SQL comment; remote D1 parsing is unsafe`,
+        );
+      }
+    });
   }
 
   return failures;
