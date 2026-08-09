@@ -4,7 +4,7 @@
 
 All reporting endpoints require canonical UTC instants (`YYYY-MM-DDTHH:mm:ss.sssZ`) and use the half-open interval `[from, to)`. Offsets such as `+03:00`, date-only values and reversed bounds are rejected instead of being silently converted.
 
-A sale is recognized at `orders.completed_at` only while the current status is `completed` or `returned`. Pending, confirmed, processing, ready, shipped and cancelled orders never contribute a sale. A refund is recognized independently at immutable `order_returns.created_at`; therefore a refund made today for an older sale decreases today's revenue.
+The operational `orderFlow` uses `orders.created_at` and reports orders received in the selected period, their current status, ordered value, active value and cancelled value. A sale is recognized separately at `orders.completed_at` only while the current status is `completed` or `returned`. Pending, confirmed, processing, ready, shipped and cancelled orders never contribute a sale. A refund is recognized independently at immutable `order_returns.created_at`; therefore a refund made today for an older sale decreases today's revenue.
 
 Money remains in whole Moldovan lei, matching the order schema. The dashboard formulas are:
 
@@ -20,6 +20,9 @@ Money remains in whole Moldovan lei, matching the order schema. The dashboard fo
 - `COGS = Σ(cost_price_snapshot × sold units) - Σ(cost_price_snapshot × returned units)`;
 - `grossProfit = merchandise net revenue - COGS`. It is `null` if any contributing sale/refund quantity has no purchase-cost snapshot;
 - `currentInventoryCost = Σ(products.cost_price × inventory.on_hand)`. Units with no current purchase price are reported separately and never treated as zero-cost stock.
+- `inventory.costCoveragePercent` is the share of current on-hand units that have a purchase cost. The UI shows `—` when no on-hand unit has a known cost.
+
+The daily report keeps received orders and ordered value separate from completed sales, refunds and net revenue. A confirmed order therefore appears in the operational columns immediately, but does not inflate revenue before completion.
 
 Migration `0010_statistics_and_analytics.sql` adds immutable category ID/name and purchase-cost snapshots to `order_items`. Existing lines receive only a best-effort backfill from the catalogue state at migration time. Every new order stores the catalogue values at checkout; later product/category edits cannot change historical report dimensions.
 
@@ -61,6 +64,8 @@ Exactly one index is written: a 64-byte hex HMAC of a random anonymous browser U
 `POST /api/events` is JSON-only, limited to 4096 bytes, same-origin, rate-limited and accepts only the four browser events. `order_created` is in the dataset schema but is forbidden on the public endpoint; the order service emits it with server-calculated item count/value only after its D1 batch commits. Analytics failure never rolls back a valid order.
 
 The reader calls only Cloudflare's official SQL endpoint with a fixed query template and a validated dataset/date range. Counts and sums are weighted by `_sample_interval`, as required for sampled Analytics Engine rows. References: [Analytics Engine SQL API](https://developers.cloudflare.com/analytics/analytics-engine/sql-api/), [sampling and limits](https://developers.cloudflare.com/analytics/analytics-engine/limits/), [Pages bindings](https://developers.cloudflare.com/pages/functions/bindings/).
+
+The event panel shows views, cart additions, searches, checkout starts, created orders, created-order value, checkout-to-order conversion and view-to-order conversion. These conversion rates are event ratios, not unique-user conversion; the anonymous daily HMAC is deliberately not exposed as customer identity.
 
 ## External configuration (no values in Git)
 

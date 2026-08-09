@@ -1,4 +1,8 @@
-import { passwordResetUrl, sendPasswordResetEmail } from './customer-email.js';
+import {
+  passwordResetUrl,
+  sendOrderConfirmationEmail,
+  sendPasswordResetEmail,
+} from './customer-email.js';
 import { sendTelegramOrder } from './telegram.js';
 
 const CHANNELS = new Set(['telegram', 'email']);
@@ -308,6 +312,7 @@ export async function deliverTelegramNotification({
   timeoutMs,
   now,
   pendingLeaseMs,
+  chatId,
 }) {
   const claimed = await claimRecoverableAttempt(db, {
     channel: 'telegram',
@@ -326,7 +331,7 @@ export async function deliverTelegramNotification({
   if (!claimed.created) return { created: false, delivered: claimed.attempt.status === 'sent', attempt: claimed.attempt };
 
   try {
-    const result = await sendTelegramOrder(env, order, { timeoutMs });
+    const result = await sendTelegramOrder(env, order, { timeoutMs, chatId });
     const attempt = await recordNotificationOutcome(db, claimed.attempt.id, {
       status: 'sent',
       providerStatus: result.providerStatus,
@@ -344,6 +349,56 @@ export async function deliverTelegramNotification({
     logNotificationEvent({
       level: 'error', event: 'notification.telegram.failed', requestId, attemptId: attempt.id,
       channel: 'telegram', eventType, orderNo: order.no,
+      code: failure.code, providerStatus: failure.providerStatus,
+    });
+    return { created: true, delivered: false, attempt };
+  }
+}
+
+export async function deliverOrderConfirmationNotification({
+  db,
+  env,
+  order,
+  requestKey,
+  requestId = '',
+  now,
+  pendingLeaseMs,
+}) {
+  const claimed = await claimRecoverableAttempt(db, {
+    channel: 'email',
+    eventType: 'order_created',
+    entityType: 'order',
+    entityId: order.id,
+    orderId: order.id,
+    requestKey,
+    requestId,
+  }, {
+    now,
+    pendingLeaseMs,
+  });
+  if (!claimed.created) return { created: false, delivered: claimed.attempt.status === 'sent', attempt: claimed.attempt };
+
+  try {
+    await sendOrderConfirmationEmail(env, {
+      email: order.customer.email,
+      locale: order.lang,
+      order,
+      idempotencyKey: `order-confirmation-${order.id}`,
+    });
+    const attempt = await recordNotificationOutcome(db, claimed.attempt.id, { status: 'sent' });
+    logNotificationEvent({
+      event: 'notification.email.sent', requestId, attemptId: attempt.id,
+      channel: 'email', eventType: 'order_created', orderNo: order.no,
+    });
+    return { created: true, delivered: true, attempt };
+  } catch (error) {
+    const failure = sanitizeFailure(error, 'email');
+    const attempt = await recordNotificationOutcome(db, claimed.attempt.id, {
+      status: 'failed', failureCode: failure.code, providerStatus: failure.providerStatus,
+    });
+    logNotificationEvent({
+      level: 'error', event: 'notification.email.failed', requestId, attemptId: attempt.id,
+      channel: 'email', eventType: 'order_created', orderNo: order.no,
       code: failure.code, providerStatus: failure.providerStatus,
     });
     return { created: true, delivered: false, attempt };

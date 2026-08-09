@@ -21,6 +21,11 @@ const productionR2PublicUrl = (value) => {
 
 const validCloudflareAccountId = (value) => /^[a-f0-9]{32}$/i.test(String(value || '').trim());
 const validAnalyticsDataset = (value) => /^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(String(value || '').trim());
+const distinctSecondaryTelegramChat = (env) => {
+  const primary = String(env?.TELEGRAM_CHAT_ID || '').trim();
+  const secondary = String(env?.TELEGRAM_SECONDARY_CHAT_ID || '').trim();
+  return Boolean(primary && secondary && primary !== secondary);
+};
 const r2ManagementCredentialsAbsent = (env) => [
   'R2_ACCESS_KEY_ID',
   'R2_SECRET_ACCESS_KEY',
@@ -49,6 +54,7 @@ export async function productionReadiness(env, db) {
     turnstileSecret: present(env?.TURNSTILE_SECRET_KEY),
     telegramBotToken: present(env?.TELEGRAM_BOT_TOKEN),
     telegramChatId: present(env?.TELEGRAM_CHAT_ID),
+    telegramSecondaryChatId: distinctSecondaryTelegramChat(env),
     customerEmailDelivery: customerEmailDeliveryConfigured(env),
     customerPasswordResetUrl: httpsUrl(env?.CUSTOMER_PASSWORD_RESET_URL),
     productImagesBinding: present(env?.PRODUCT_IMAGES),

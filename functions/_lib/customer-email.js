@@ -17,10 +17,13 @@ export class CustomerEmailError extends Error {
   }
 }
 
-const customSender = (env) => {
+const customSender = (env, type) => {
   if (typeof env?.CUSTOMER_EMAIL_SEND === 'function') return env.CUSTOMER_EMAIL_SEND;
-  if (typeof env?.CUSTOMER_EMAIL_SERVICE?.sendPasswordReset === 'function') {
+  if (type === 'password-reset' && typeof env?.CUSTOMER_EMAIL_SERVICE?.sendPasswordReset === 'function') {
     return (message) => env.CUSTOMER_EMAIL_SERVICE.sendPasswordReset(message);
+  }
+  if (type === 'order-confirmation' && typeof env?.CUSTOMER_EMAIL_SERVICE?.sendOrderConfirmation === 'function') {
+    return (message) => env.CUSTOMER_EMAIL_SERVICE.sendOrderConfirmation(message);
   }
   return null;
 };
@@ -59,7 +62,7 @@ function resendConfig(env, url = endpointUrl(env)) {
 }
 
 export function customerEmailDeliveryConfigured(env) {
-  if (customSender(env) || serviceFetcher(env)) return true;
+  if (customSender(env, 'password-reset') || customSender(env, 'order-confirmation') || serviceFetcher(env)) return true;
   const url = endpointUrl(env);
   if (!url) return false;
   return isResendEndpoint(url) ? Boolean(resendConfig(env, url)) : true;
@@ -175,15 +178,71 @@ function passwordResetCopy(payload) {
   };
 }
 
-export async function sendPasswordResetEmail(env, message) {
-  const payload = {
-    type: 'password-reset',
-    to: message.email,
-    locale: message.locale === 'ru' ? 'ru' : 'ro',
-    resetUrl: message.resetUrl,
-    expiresAt: message.expiresAt,
+const money = (value) => {
+  const amount = Number(value);
+  return Number.isFinite(amount) ? amount.toLocaleString('ro-MD', { maximumFractionDigits: 2 }) : '0';
+};
+
+function orderConfirmationCopy(payload) {
+  const order = payload.order || {};
+  const locale = payload.locale === 'ru' ? 'ru' : 'ro';
+  const items = Array.isArray(order.items) ? order.items : [];
+  const itemText = items.map((item) => (
+    `${item.name} x ${item.quantity} - ${money(item.lineTotal)} lei`
+  ));
+  const itemRows = items.map((item) => `
+    <tr>
+      <td style="padding:8px 0;border-bottom:1px solid #e5e7eb">${escapeHtml(item.name)}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:center">${escapeHtml(item.quantity)}</td>
+      <td style="padding:8px 0;border-bottom:1px solid #e5e7eb;text-align:right;white-space:nowrap">${escapeHtml(money(item.lineTotal))} lei</td>
+    </tr>`).join('');
+  const discount = Number(order.discount || 0);
+  const deliveryFee = Number(order.deliveryFee || 0);
+  const safeOrderNo = escapeHtml(order.no);
+  const summaryRows = [
+    discount > 0 ? `<tr><td style="padding-top:8px">${locale === 'ru' ? 'Скидка' : 'Reducere'}</td><td style="padding-top:8px;text-align:right">-${escapeHtml(money(discount))} lei</td></tr>` : '',
+    deliveryFee > 0 ? `<tr><td>${locale === 'ru' ? 'Доставка' : 'Livrare'}</td><td style="text-align:right">${escapeHtml(money(deliveryFee))} lei</td></tr>` : '',
+    `<tr><td style="padding-top:8px;font-weight:700">${locale === 'ru' ? 'Итого' : 'Total'}</td><td style="padding-top:8px;text-align:right;font-weight:700">${escapeHtml(money(order.total))} lei</td></tr>`,
+  ].filter(Boolean).join('');
+
+  if (locale === 'ru') {
+    return {
+      subject: `Заказ ${order.no} принят`,
+      text: [
+        `Мы получили ваш заказ ${order.no}.`,
+        'Мы свяжемся с вами для подтверждения.',
+        '',
+        ...itemText,
+        '',
+        discount > 0 ? `Скидка: -${money(discount)} lei` : '',
+        deliveryFee > 0 ? `Доставка: ${money(deliveryFee)} lei` : '',
+        `Итого: ${money(order.total)} lei`,
+        `Способ доставки: ${order.deliveryLabel}`,
+        `Оплата: ${order.paymentLabel}`,
+      ].filter(Boolean).join('\n'),
+      html: `<div style="font-family:Arial,sans-serif;color:#171717;max-width:640px;margin:0 auto"><h1 style="font-size:22px">Заказ ${safeOrderNo} принят</h1><p>Мы получили ваш заказ и свяжемся с вами для подтверждения.</p><table style="width:100%;border-collapse:collapse"><thead><tr><th style="padding:8px 0;text-align:left">Товар</th><th style="padding:8px 12px;text-align:center">Кол-во</th><th style="padding:8px 0;text-align:right">Сумма</th></tr></thead><tbody>${itemRows}</tbody></table><table style="width:100%;margin-top:8px">${summaryRows}</table><p><b>Способ доставки:</b> ${escapeHtml(order.deliveryLabel)}</p><p><b>Оплата:</b> ${escapeHtml(order.paymentLabel)}</p></div>`,
+    };
+  }
+  return {
+    subject: `Comanda ${order.no} a fost primită`,
+    text: [
+      `Am primit comanda ${order.no}.`,
+      'Vă vom contacta pentru confirmare.',
+      '',
+      ...itemText,
+      '',
+      discount > 0 ? `Reducere: -${money(discount)} lei` : '',
+      deliveryFee > 0 ? `Livrare: ${money(deliveryFee)} lei` : '',
+      `Total: ${money(order.total)} lei`,
+      `Metoda de livrare: ${order.deliveryLabel}`,
+      `Plata: ${order.paymentLabel}`,
+    ].filter(Boolean).join('\n'),
+    html: `<div style="font-family:Arial,sans-serif;color:#171717;max-width:640px;margin:0 auto"><h1 style="font-size:22px">Comanda ${safeOrderNo} a fost primită</h1><p>Am primit comanda și vă vom contacta pentru confirmare.</p><table style="width:100%;border-collapse:collapse"><thead><tr><th style="padding:8px 0;text-align:left">Produs</th><th style="padding:8px 12px;text-align:center">Cant.</th><th style="padding:8px 0;text-align:right">Sumă</th></tr></thead><tbody>${itemRows}</tbody></table><table style="width:100%;margin-top:8px">${summaryRows}</table><p><b>Metoda de livrare:</b> ${escapeHtml(order.deliveryLabel)}</p><p><b>Plata:</b> ${escapeHtml(order.paymentLabel)}</p></div>`,
   };
-  const sender = customSender(env);
+}
+
+async function sendCustomerEmail(env, payload, copy, options = {}) {
+  const sender = customSender(env, payload.type);
   if (sender) {
     await checkedSender(sender, payload);
     return;
@@ -192,7 +251,7 @@ export async function sendPasswordResetEmail(env, message) {
   const service = serviceFetcher(env);
   if (service) {
     await checkedFetch((request, init) => service.fetch(request, init), new Request(
-      'https://customer-email.internal/password-reset',
+      `https://customer-email.internal/${payload.type}`,
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -211,9 +270,8 @@ export async function sendPasswordResetEmail(env, message) {
   const resend = resendConfig(env, url);
   if (isResendEndpoint(url)) {
     if (!resend) throw new CustomerEmailError();
-    const copy = passwordResetCopy(payload);
     headers.accept = 'application/json';
-    headers['user-agent'] = 'nailmania-password-reset/1.0';
+    headers['user-agent'] = `nailmania-${payload.type}/1.0`;
     body = {
       from: resend.from,
       to: [payload.to],
@@ -221,8 +279,8 @@ export async function sendPasswordResetEmail(env, message) {
       text: copy.text,
       html: copy.html,
     };
-    if (message.idempotencyKey) {
-      headers['idempotency-key'] = String(message.idempotencyKey).slice(0, 256);
+    if (options.idempotencyKey) {
+      headers['idempotency-key'] = String(options.idempotencyKey).slice(0, 256);
     }
   }
   const fetcher = env?.CUSTOMER_EMAIL_FETCH || fetch;
@@ -231,4 +289,29 @@ export async function sendPasswordResetEmail(env, message) {
     headers,
     body: JSON.stringify(body),
   }));
+}
+
+export async function sendPasswordResetEmail(env, message) {
+  const payload = {
+    type: 'password-reset',
+    to: message.email,
+    locale: message.locale === 'ru' ? 'ru' : 'ro',
+    resetUrl: message.resetUrl,
+    expiresAt: message.expiresAt,
+  };
+  await sendCustomerEmail(env, payload, passwordResetCopy(payload), {
+    idempotencyKey: message.idempotencyKey,
+  });
+}
+
+export async function sendOrderConfirmationEmail(env, message) {
+  const payload = {
+    type: 'order-confirmation',
+    to: message.email,
+    locale: message.locale === 'ru' ? 'ru' : 'ro',
+    order: message.order,
+  };
+  await sendCustomerEmail(env, payload, orderConfirmationCopy(payload), {
+    idempotencyKey: message.idempotencyKey,
+  });
 }

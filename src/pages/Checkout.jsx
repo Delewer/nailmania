@@ -11,6 +11,12 @@ import { trackProductEvent } from '../product-analytics.js'
 import { getOrCreateOrderAttemptKey, startNewOrderAttemptKey } from '../order-attempt.js'
 import { createOrderQuote, normalizeExpectedOrderQuote } from '../../shared/order-quote.js'
 import { cartLineLimit } from '../cart-quantity.js'
+import {
+  MOLDOVA_COUNTRY_CODE,
+  moldovaLocalPhone,
+  normalizeMoldovaPhone,
+  sanitizeMoldovaPhoneInput,
+} from '../../shared/moldova-phone.js'
 
 const DELIVERY = [
   { id:"courier", icon:"truck", titleKey:"courier", descKey:"courierDesc", needsAddress:true },
@@ -29,7 +35,6 @@ const ORDER_UNAVAILABLE_CODES = new Set([
 const PROMO_INVALID_CODES = new Set(["INVALID_PROMO_CODE", "PROMO_NOT_FOUND", "PROMO_INACTIVE", "PROMO_NOT_STARTED", "PROMO_EXPIRED"]);
 const PROMO_LIMIT_CODES = new Set(["PROMO_TOTAL_LIMIT_REACHED", "PROMO_USER_LIMIT_REACHED"]);
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const PHONE_PATTERN = /^\+?[\d\s().-]{6,30}$/;
 
 export default function Checkout(){
   const navigate = useNavigate();
@@ -63,7 +68,7 @@ export default function Checkout(){
     if(!user) return;
     const suggested = {
       name:user.name || "",
-      phone:defaultAddress?.phone || user.phone || "",
+      phone:moldovaLocalPhone(defaultAddress?.phone) || moldovaLocalPhone(user.phone),
       email:user.email || "",
       city:defaultAddress?.city || "",
       address:defaultAddress?.address || "",
@@ -152,6 +157,12 @@ export default function Checkout(){
     setForm(f=>({ ...f, [k]: e.target.value }));
     setErrors(current=> current[k] ? {...current,[k]:undefined} : current);
   };
+  const setPhone = (event)=>{
+    dirtyFields.current.add('phone');
+    autofilledFields.current.delete('phone');
+    setForm(current=>({...current,phone:sanitizeMoldovaPhoneInput(event.target.value)}));
+    setErrors(current=>current.phone ? {...current,phone:undefined} : current);
+  };
   const selectOption = (setter,key,value)=>{
     setter(value);
     setErrors(current=> current[key] ? {...current,[key]:undefined} : current);
@@ -199,7 +210,7 @@ export default function Checkout(){
     if(!payment)  er.payment  = t("reqPayment");
     if(!form.name.trim())  er.name  = t("reqField");
     if(!form.phone.trim()) er.phone = t("reqField");
-    else if(!PHONE_PATTERN.test(form.phone.trim())) er.phone = t("invalidCheckoutPhone");
+    else if(!normalizeMoldovaPhone(form.phone)) er.phone = t("invalidCheckoutPhone");
     if(form.email.trim() && !EMAIL_PATTERN.test(form.email.trim())) er.email = t("invalidCheckoutEmail");
     if(!turnstileToken) er.turnstile = t("orderVerifyHuman");
     if(needsAddress){
@@ -219,7 +230,7 @@ export default function Checkout(){
     setAttemptConflict(false);
     try{
       const order = await submitOrder({
-        customer: { ...form },
+        customer: { ...form, phone:normalizeMoldovaPhone(form.phone) },
         delivery, deliveryLabel: t(DELIVERY.find(d=>d.id===delivery)?.titleKey || ""),
         deliveryFee,
         total: orderTotal,
@@ -341,6 +352,31 @@ export default function Checkout(){
     );
   };
 
+  const phoneErrorId = 'checkout-phone-error';
+  const phoneField = (
+    <div className={'field'+(errors.phone?' err':'')}>
+      <label htmlFor="checkout-phone">{t('phone')} <span className="req" aria-hidden="true">*</span></label>
+      <div className="co-phone-input">
+        <span id="checkout-phone-prefix">{MOLDOVA_COUNTRY_CODE}</span>
+        <input
+          id="checkout-phone"
+          name="phone"
+          type="tel"
+          inputMode="numeric"
+          autoComplete="tel-national"
+          value={form.phone}
+          onChange={setPhone}
+          maxLength={16}
+          pattern="[1-9][0-9]{7}"
+          placeholder="60123456"
+          aria-invalid={Boolean(errors.phone)}
+          aria-describedby={`checkout-phone-prefix${errors.phone?` ${phoneErrorId}`:''}`}
+        />
+      </div>
+      {errors.phone && <span className="errmsg" id={phoneErrorId} role="alert">{errors.phone}</span>}
+    </div>
+  );
+
   return (
     <form className="wrap page" onSubmit={placeOrder} noValidate>
       <nav className="crumbs">
@@ -382,7 +418,7 @@ export default function Checkout(){
             <h3>{t("recipient")}</h3>
             <div className="co-fields">
               {field("fullName","name")}
-              {field("phone","phone","tel")}
+              {phoneField}
               <div className={"field full"+(errors.email?" err":"")}>
                 <label htmlFor="checkout-email">{t("emailLabel")}</label>
                 <input id="checkout-email" name="email" type="email" value={form.email} onChange={set("email")} autoComplete="email" aria-invalid={Boolean(errors.email)} aria-describedby={errors.email?"checkout-email-error":undefined}/>

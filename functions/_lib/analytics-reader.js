@@ -41,6 +41,9 @@ FORMAT JSON`;
 }
 
 const number = (value) => Number(value || 0);
+const percent = (numerator, denominator) => denominator
+  ? Math.round((numerator / denominator) * 10_000) / 100
+  : 0;
 
 export async function readAnalyticsMetrics(env, range, options = {}) {
   const config = analyticsReaderConfig(env);
@@ -82,6 +85,7 @@ export async function readAnalyticsMetrics(env, range, options = {}) {
   }]));
   const views = rows.product_view?.events || 0;
   const addToCart = rows.add_to_cart?.events || 0;
+  const checkoutStarted = rows.checkout_started?.events || 0;
   const ordersCreated = rows.order_created?.events || 0;
   return {
     configured: true,
@@ -89,13 +93,14 @@ export async function readAnalyticsMetrics(env, range, options = {}) {
       views,
       addToCart,
       searches: rows.search?.events || 0,
-      checkoutStarted: rows.checkout_started?.events || 0,
+      checkoutStarted,
       ordersCreated,
       addedUnits: rows.add_to_cart?.quantityOrItems || 0,
       orderValue: rows.order_created?.value || 0,
       searchResults: rows.search?.resultCount || 0,
-      addToCartRate: views ? Math.round((addToCart / views) * 10_000) / 100 : 0,
-      orderConversionRate: views ? Math.round((ordersCreated / views) * 10_000) / 100 : 0,
+      addToCartRate: percent(addToCart, views),
+      checkoutConversionRate: percent(ordersCreated, checkoutStarted),
+      orderConversionRate: percent(ordersCreated, views),
     },
   };
 }

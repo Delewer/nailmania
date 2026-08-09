@@ -63,17 +63,19 @@ const orderBody = (overrides = {}) => ({
   ...overrides,
 });
 
-function postOrder(db, body) {
-  const contracted = withOrderContract(db, body);
-  return onRequestPost({
+function postOrder(db, body, options = {}) {
+  const contracted = withOrderContract(db, body, { idempotencyKey: options.idempotencyKey });
+  const context = {
     request: new Request('https://example.test/api/orders', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(contracted),
     }),
-    env: { DB: db, ENVIRONMENT: 'local' },
-    waitUntil() {},
-  });
+    env: { DB: db, ENVIRONMENT: 'local', ...options.env },
+    data: { requestId: options.requestId || 'req-order-test' },
+  };
+  if (options.waitUntil) context.waitUntil = options.waitUntil;
+  return onRequestPost(context);
 }
 
 test('real POST /api/orders handler persists a server-priced order and reservation', async (t) => {
@@ -119,6 +121,54 @@ test('real POST /api/orders handler persists a server-priced order and reservati
     { movement_type: 'reservation', delta_reserved: 2, balance_on_hand: 3, balance_reserved: 2 },
   );
   assert.equal(db.sqlite.prepare('SELECT revision FROM catalog_cache_state WHERE id = 1').get().revision, 2);
+});
+
+test('committed order notifies both Telegram recipients and emails the customer exactly once', async (t) => {
+  const db = setup();
+  t.after(() => db.close());
+  const pending = [];
+  const telegramChats = [];
+  const emails = [];
+  const options = {
+    idempotencyKey: '8fc7908b-50a7-4fb0-b08c-d422633f9175',
+    waitUntil(promise) { pending.push(promise); },
+    env: {
+      TELEGRAM_BOT_TOKEN: 'test-token',
+      TELEGRAM_CHAT_ID: 'primary-chat',
+      TELEGRAM_SECONDARY_CHAT_ID: 'secondary-chat',
+      TELEGRAM_FETCH: async (_url, init) => {
+        telegramChats.push(JSON.parse(init.body).chat_id);
+        return Response.json({ ok: true });
+      },
+      CUSTOMER_EMAIL_SEND: async (message) => emails.push(message),
+    },
+  };
+
+  const first = await postOrder(db, orderBody(), options);
+  assert.equal(first.status, 201);
+  await Promise.all(pending.splice(0));
+  assert.deepEqual(telegramChats.sort(), ['primary-chat', 'secondary-chat']);
+  assert.equal(emails.length, 1);
+  assert.equal(emails[0].to, 'ana@example.com');
+  assert.equal(emails[0].order.total, 100);
+  assert.deepEqual(emails[0].order.items.map((item) => ({
+    name: item.name,
+    quantity: item.quantity,
+    lineTotal: item.lineTotal,
+  })), [{ name: 'Produs', quantity: 1, lineTotal: 100 }]);
+  assert.deepEqual(
+    db.sqlite.prepare(`
+      SELECT channel, COUNT(*) AS count FROM notification_attempts GROUP BY channel ORDER BY channel
+    `).all().map((row) => ({ ...row })),
+    [{ channel: 'email', count: 1 }, { channel: 'telegram', count: 2 }],
+  );
+
+  const replay = await postOrder(db, orderBody(), options);
+  assert.equal(replay.status, 201);
+  assert.equal(replay.headers.get('idempotency-replayed'), 'true');
+  await Promise.all(pending.splice(0));
+  assert.equal(telegramChats.length, 2);
+  assert.equal(emails.length, 1);
 });
 
 test('order item inserts stay within the D1 binding budget for eight distinct products', async (t) => {

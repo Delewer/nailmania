@@ -129,6 +129,21 @@ test('D1 reports use finalized sales and immutable refund ledger formulas', asyn
 
   assert.deepEqual(report.period, { from: FROM, to: TO, timezone: 'UTC', semantics: '[from,to)' });
   assert.deepEqual(report.summary, {
+    orderFlow: {
+      received: 3,
+      receivedValue: 500,
+      active: 1,
+      activeValue: 200,
+      pending: 1,
+      confirmed: 0,
+      processing: 0,
+      ready: 0,
+      shipped: 0,
+      completed: 0,
+      returned: 1,
+      cancelled: 1,
+      cancelledValue: 200,
+    },
     orders: 2,
     returnedOrders: 1,
     grossMerchandise: 360,
@@ -158,7 +173,9 @@ test('D1 reports use finalized sales and immutable refund ledger formulas', asyn
       reserved: 2,
       available: 9,
       currentCost: 300,
+      knownCostUnits: 7,
       unknownCostUnits: 4,
+      costCoveragePercent: 63.64,
     },
   });
 
@@ -186,11 +203,12 @@ test('D1 reports use finalized sales and immutable refund ledger formulas', asyn
   assert.equal(category.netRevenue, 10);
   assert.equal(report.brands.find((row) => row.id === 'Brand A').netUnits, 0);
   assert.deepEqual(report.daily, [
-    { day: '2026-07-10', orders: 1, saleRevenue: 250, refundAmount: 0, netRevenue: 250 },
-    { day: '2026-07-11', orders: 0, saleRevenue: 0, refundAmount: 90, netRevenue: -90 },
-    { day: '2026-07-12', orders: 1, saleRevenue: 100, refundAmount: 0, netRevenue: 100 },
-    { day: '2026-07-13', orders: 0, saleRevenue: 0, refundAmount: 100, netRevenue: -100 },
-    { day: '2026-07-15', orders: 0, saleRevenue: 0, refundAmount: 80, netRevenue: -80 },
+    { day: '2026-07-10', receivedOrders: 0, receivedValue: 0, orders: 1, saleRevenue: 250, refundAmount: 0, netRevenue: 250 },
+    { day: '2026-07-11', receivedOrders: 1, receivedValue: 100, orders: 0, saleRevenue: 0, refundAmount: 90, netRevenue: -90 },
+    { day: '2026-07-12', receivedOrders: 0, receivedValue: 0, orders: 1, saleRevenue: 100, refundAmount: 0, netRevenue: 100 },
+    { day: '2026-07-13', receivedOrders: 0, receivedValue: 0, orders: 0, saleRevenue: 0, refundAmount: 100, netRevenue: -100 },
+    { day: '2026-07-14', receivedOrders: 2, receivedValue: 400, orders: 0, saleRevenue: 0, refundAmount: 0, netRevenue: 0 },
+    { day: '2026-07-15', receivedOrders: 0, receivedValue: 0, orders: 0, saleRevenue: 0, refundAmount: 80, netRevenue: -80 },
   ]);
 });
 

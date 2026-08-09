@@ -4,6 +4,8 @@ import {
   ArrowLeft,
   ArrowRight,
   BarChart3,
+  Banknote,
+  CheckCircle2,
   Download,
   Eye,
   LoaderCircle,
@@ -63,7 +65,7 @@ function ProductsTable({ items }) {
           <td><b>{row.categoryName}</b><span>{row.brand}</span></td>
           <td>{quantity(row.soldUnits)}</td><td>{quantity(row.returnedUnits)}</td>
           <td><strong>{quantity(row.netUnits)}</strong></td>
-          <td><strong>{money(row.netRevenue)}</strong></td><td>{money(row.cogs)}</td>
+          <td><strong>{money(row.netRevenue)}</strong></td><td>{row.unknownCostUnits ? '—' : money(row.cogs)}</td>
           <td><Profit row={row}/></td>
           <td><b>{quantity(row.available)}</b><span>{row.onHand} fizic · {row.reserved} rezervat</span></td>
         </tr>)}</tbody>
@@ -81,7 +83,7 @@ function DimensionTable({ items, kind }) {
           <td><b>{row.name}</b><span>{row.id}</span></td>
           <td>{quantity(row.soldUnits)}</td><td>{quantity(row.returnedUnits)}</td>
           <td><strong>{quantity(row.netUnits)}</strong></td>
-          <td><strong>{money(row.netRevenue)}</strong></td><td>{money(row.cogs)}</td>
+          <td><strong>{money(row.netRevenue)}</strong></td><td>{row.unknownCostUnits ? '—' : money(row.cogs)}</td>
           <td><Profit row={row}/></td>
           <td>{money(row.currentInventoryCost)}<span>{row.inventoryUnknownCostUnits ? `${row.inventoryUnknownCostUnits} buc. fără cost` : 'cost complet'}</span></td>
         </tr>)}</tbody>
@@ -178,6 +180,18 @@ export default function AdminStatistics({ onUnauthorized }) {
   };
 
   const summary = report?.summary;
+  const orderFlow = summary?.orderFlow || {
+    received: 0,
+    receivedValue: 0,
+    active: 0,
+    pending: 0,
+    confirmed: 0,
+    processing: 0,
+    ready: 0,
+    shipped: 0,
+    cancelled: 0,
+    cancelledValue: 0,
+  };
   const eventMetrics = events?.configured ? events.metrics : null;
   const pagination = report?.productPagination || { total: 0, limit: PAGE_SIZE, offset: 0 };
   const page = Math.floor(pagination.offset / PAGE_SIZE) + 1;
@@ -206,14 +220,17 @@ export default function AdminStatistics({ onUnauthorized }) {
 
       {summary && <>
         <section className="adm-stat-cards" aria-label="Indicatori de vânzare">
-          <MetricCard label="Comenzi finalizate" value={quantity(summary.orders)} note={`${summary.returnedOrders} cu retur complet`}/>
+          <MetricCard label="Comenzi primite" value={quantity(orderFlow.received)} note={`${money(orderFlow.receivedValue)} valoare comandată`} tone="primary"/>
+          <MetricCard label="Comenzi active" value={quantity(orderFlow.active)} note={`${orderFlow.pending} în așteptare · ${orderFlow.confirmed} confirmate · ${orderFlow.processing + orderFlow.ready + orderFlow.shipped} în proces`}/>
+          <MetricCard label="Vânzări finalizate" value={quantity(summary.orders)} note={`${summary.returnedOrders} cu retur complet`}/>
+          <MetricCard label="Comenzi anulate" value={quantity(orderFlow.cancelled)} note={money(orderFlow.cancelledValue)} tone="negative"/>
           <MetricCard label="Venit net" value={money(summary.netRevenue)} note="vânzări minus rambursări" tone="primary"/>
           <MetricCard label="Vânzări încasate" value={money(summary.saleRevenue)} note={`${money(summary.deliveryRevenue)} livrare`}/>
           <MetricCard label="Rambursări" value={money(summary.refundAmount)} note={`${summary.returnCount} operațiuni · ${summary.returnedUnits} buc.`} tone="negative"/>
           <MetricCard label="Reduceri catalog" value={money(summary.catalogDiscount)} note={`promo ${money(summary.promoDiscount)}`}/>
           <MetricCard label="Bon mediu net" value={money(summary.averageCheck)} note="net / comenzi finalizate"/>
           <MetricCard label="Profit brut" value={money(summary.grossProfit)} note={summary.grossProfit == null ? `${summary.unknownCostUnits} buc. fără cost` : `COGS ${money(summary.cogs)}`}/>
-          <MetricCard label="Valoare stoc" value={money(summary.inventory.currentCost)} note={`${summary.inventory.unknownCostUnits} buc. fără cost`}/>
+          <MetricCard label="Valoare stoc calculată" value={summary.inventory.knownCostUnits ? money(summary.inventory.currentCost) : '—'} note={`${summary.inventory.costCoveragePercent}% acoperire cost · ${summary.inventory.unknownCostUnits} buc. fără cost`}/>
         </section>
 
         <section className="adm-stat-event-panel">
@@ -223,8 +240,10 @@ export default function AdminStatistics({ onUnauthorized }) {
             <div><ShoppingCart size={17}/><span>Adăugări</span><b>{quantity(eventMetrics.addToCart)}</b></div>
             <div><Search size={17}/><span>Căutări</span><b>{quantity(eventMetrics.searches)}</b></div>
             <div><Warehouse size={17}/><span>Checkout</span><b>{quantity(eventMetrics.checkoutStarted)}</b></div>
-            <div><span>Conversie comandă</span><b>{eventMetrics.orderConversionRate}%</b></div>
-            <div><span>Conversie în coș</span><b>{eventMetrics.addToCartRate}%</b></div>
+            <div><CheckCircle2 size={17}/><span>Comenzi online</span><b>{quantity(eventMetrics.ordersCreated)}</b></div>
+            <div><Banknote size={17}/><span>Valoare comenzi</span><b>{money(eventMetrics.orderValue)}</b></div>
+            <div><span>Checkout → comandă</span><b>{eventMetrics.checkoutConversionRate}%</b></div>
+            <div><span>Vizualizare → comandă</span><b>{eventMetrics.orderConversionRate}%</b></div>
           </div> : <div className="adm-stat-events-empty">{eventsError || 'Citirea Analytics Engine nu este configurată; rapoartele D1 rămân disponibile.'}</div>}
         </section>
 
@@ -255,7 +274,7 @@ export default function AdminStatistics({ onUnauthorized }) {
           {tab === 'products' && (report.products.length ? <ProductsTable items={report.products}/> : <div className="adm-list-message">Nu sunt produse pentru filtrele alese</div>)}
           {tab === 'categories' && <DimensionTable items={report.categories} kind="categories"/>}
           {tab === 'brands' && <DimensionTable items={report.brands} kind="brands"/>}
-          {tab === 'daily' && <div className="adm-table-wrap adm-stat-table-wrap"><table className="adm-table adm-stat-daily-table"><thead><tr><th>Zi UTC</th><th>Comenzi</th><th>Vânzări</th><th>Rambursări</th><th>Venit net</th></tr></thead><tbody>{report.daily.map((row) => <tr key={row.day}><td><b>{row.day}</b></td><td>{row.orders}</td><td>{money(row.saleRevenue)}</td><td>{money(row.refundAmount)}</td><td><strong>{money(row.netRevenue)}</strong></td></tr>)}</tbody></table></div>}
+          {tab === 'daily' && <div className="adm-table-wrap adm-stat-table-wrap"><table className="adm-table adm-stat-daily-table"><thead><tr><th>Zi UTC</th><th>Primite</th><th>Valoare comenzi</th><th>Finalizate</th><th>Vânzări</th><th>Rambursări</th><th>Venit net</th></tr></thead><tbody>{report.daily.map((row) => <tr key={row.day}><td><b>{row.day}</b></td><td>{row.receivedOrders}</td><td>{money(row.receivedValue)}</td><td>{row.orders}</td><td>{money(row.saleRevenue)}</td><td>{money(row.refundAmount)}</td><td><strong>{money(row.netRevenue)}</strong></td></tr>)}</tbody></table></div>}
 
           {tab === 'products' && <footer className="adm-pagination">
             <span>{pagination.total} produse · pagina {page} din {pages}</span>

@@ -69,9 +69,16 @@ async function fetchWithTimeout(fetcher, url, init, timeoutMs) {
   }
 }
 
+export function telegramOrderRecipients(env) {
+  const recipients = [env?.TELEGRAM_CHAT_ID, env?.TELEGRAM_SECONDARY_CHAT_ID]
+    .map((value) => String(value || '').trim())
+    .filter(Boolean);
+  return [...new Set(recipients)];
+}
+
 export async function sendTelegramOrder(env, order, options = {}) {
   const token = String(env?.TELEGRAM_BOT_TOKEN || '').trim();
-  const chatId = String(env?.TELEGRAM_CHAT_ID || '').trim();
+  const chatId = String(options.chatId || env?.TELEGRAM_CHAT_ID || '').trim();
   if (!token || !chatId) throw new TelegramDeliveryError('TELEGRAM_NOT_CONFIGURED');
 
   const fetcher = env?.TELEGRAM_FETCH || fetch;

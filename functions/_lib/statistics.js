@@ -105,7 +105,24 @@ function mapCostMetrics({ saleCogs, refundCogs, saleUnknown, refundUnknown, merc
 }
 
 async function loadSummary(db, range) {
-  const [sales, refunds, costs, inventory] = await Promise.all([
+  const [orderFlow, sales, refunds, costs, inventory] = await Promise.all([
+    db.prepare(`
+      SELECT COUNT(*) AS received_orders,
+             COALESCE(SUM(total_amount), 0) AS received_value,
+             COALESCE(SUM(CASE WHEN status IN ('pending', 'confirmed', 'processing', 'ready', 'shipped') THEN 1 ELSE 0 END), 0) AS active_orders,
+             COALESCE(SUM(CASE WHEN status IN ('pending', 'confirmed', 'processing', 'ready', 'shipped') THEN total_amount ELSE 0 END), 0) AS active_value,
+             COALESCE(SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END), 0) AS pending_orders,
+             COALESCE(SUM(CASE WHEN status = 'confirmed' THEN 1 ELSE 0 END), 0) AS confirmed_orders,
+             COALESCE(SUM(CASE WHEN status = 'processing' THEN 1 ELSE 0 END), 0) AS processing_orders,
+             COALESCE(SUM(CASE WHEN status = 'ready' THEN 1 ELSE 0 END), 0) AS ready_orders,
+             COALESCE(SUM(CASE WHEN status = 'shipped' THEN 1 ELSE 0 END), 0) AS shipped_orders,
+             COALESCE(SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END), 0) AS completed_orders,
+             COALESCE(SUM(CASE WHEN status = 'returned' THEN 1 ELSE 0 END), 0) AS returned_orders,
+             COALESCE(SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END), 0) AS cancelled_orders,
+             COALESCE(SUM(CASE WHEN status = 'cancelled' THEN total_amount ELSE 0 END), 0) AS cancelled_value
+      FROM orders
+      WHERE created_at >= ? AND created_at < ?
+    `).bind(range.from, range.to).first(),
     db.prepare(`
       SELECT COUNT(*) AS orders_count,
              SUM(CASE WHEN status = 'returned' THEN 1 ELSE 0 END) AS returned_orders,
@@ -174,6 +191,9 @@ async function loadSummary(db, range) {
   const saleRevenue = number(sales?.sale_revenue);
   const merchandiseNet = number(sales?.merchandise_after_catalog) - number(sales?.promo_discount) - refundAmount;
   const netRevenue = saleRevenue - refundAmount;
+  const inventoryOnHand = number(inventory?.on_hand);
+  const inventoryUnknownCostUnits = number(inventory?.unknown_cost_units);
+  const inventoryKnownCostUnits = Math.max(0, inventoryOnHand - inventoryUnknownCostUnits);
   const costMetrics = mapCostMetrics({
     saleCogs: costs?.sale_cogs,
     refundCogs: costs?.refund_cogs,
@@ -182,6 +202,21 @@ async function loadSummary(db, range) {
     merchandiseNet,
   });
   return {
+    orderFlow: {
+      received: number(orderFlow?.received_orders),
+      receivedValue: number(orderFlow?.received_value),
+      active: number(orderFlow?.active_orders),
+      activeValue: number(orderFlow?.active_value),
+      pending: number(orderFlow?.pending_orders),
+      confirmed: number(orderFlow?.confirmed_orders),
+      processing: number(orderFlow?.processing_orders),
+      ready: number(orderFlow?.ready_orders),
+      shipped: number(orderFlow?.shipped_orders),
+      completed: number(orderFlow?.completed_orders),
+      returned: number(orderFlow?.returned_orders),
+      cancelled: number(orderFlow?.cancelled_orders),
+      cancelledValue: number(orderFlow?.cancelled_value),
+    },
     orders,
     returnedOrders: number(sales?.returned_orders),
     grossMerchandise: number(sales?.gross_merchandise),
@@ -205,11 +240,15 @@ async function loadSummary(db, range) {
       products: number(inventory?.product_count),
       outOfStock: number(inventory?.out_of_stock),
       lowStock: number(inventory?.low_stock),
-      onHand: number(inventory?.on_hand),
+      onHand: inventoryOnHand,
       reserved: number(inventory?.reserved),
       available: number(inventory?.available),
       currentCost: number(inventory?.inventory_cost),
-      unknownCostUnits: number(inventory?.unknown_cost_units),
+      knownCostUnits: inventoryKnownCostUnits,
+      unknownCostUnits: inventoryUnknownCostUnits,
+      costCoveragePercent: inventoryOnHand
+        ? Math.round((inventoryKnownCostUnits / inventoryOnHand) * 10_000) / 100
+        : 100,
     },
   };
 }
@@ -217,8 +256,20 @@ async function loadSummary(db, range) {
 async function loadDaily(db, range) {
   const result = await db.prepare(`
     WITH events AS (
+      SELECT substr(created_at, 1, 10) AS day,
+             COUNT(*) AS received_orders,
+             SUM(total_amount) AS received_value,
+             0 AS completed_orders,
+             0 AS sale_revenue,
+             0 AS refund_amount
+      FROM orders
+      WHERE created_at >= ? AND created_at < ?
+      GROUP BY substr(created_at, 1, 10)
+      UNION ALL
       SELECT substr(completed_at, 1, 10) AS day,
-             COUNT(*) AS orders_count,
+             0 AS received_orders,
+             0 AS received_value,
+             COUNT(*) AS completed_orders,
              SUM(total_amount) AS sale_revenue,
              0 AS refund_amount
       FROM orders
@@ -227,7 +278,9 @@ async function loadDaily(db, range) {
       GROUP BY substr(completed_at, 1, 10)
       UNION ALL
       SELECT substr(r.created_at, 1, 10) AS day,
-             0 AS orders_count,
+             0 AS received_orders,
+             0 AS received_value,
+             0 AS completed_orders,
              0 AS sale_revenue,
              SUM(r.items_amount - r.promo_refund_amount) AS refund_amount
       FROM order_returns r
@@ -235,15 +288,19 @@ async function loadDaily(db, range) {
       WHERE r.created_at >= ? AND r.created_at < ?
       GROUP BY substr(r.created_at, 1, 10)
     )
-    SELECT day, SUM(orders_count) AS orders_count,
+    SELECT day, SUM(received_orders) AS received_orders,
+           SUM(received_value) AS received_value,
+           SUM(completed_orders) AS completed_orders,
            SUM(sale_revenue) AS sale_revenue,
            SUM(refund_amount) AS refund_amount,
            SUM(sale_revenue) - SUM(refund_amount) AS net_revenue
     FROM events GROUP BY day ORDER BY day
-  `).bind(range.from, range.to, range.from, range.to).all();
+  `).bind(range.from, range.to, range.from, range.to, range.from, range.to).all();
   return (result.results || []).map((row) => ({
     day: row.day,
-    orders: number(row.orders_count),
+    receivedOrders: number(row.received_orders),
+    receivedValue: number(row.received_value),
+    orders: number(row.completed_orders),
     saleRevenue: number(row.sale_revenue),
     refundAmount: number(row.refund_amount),
     netRevenue: number(row.net_revenue),
