@@ -35,6 +35,9 @@ test('checkout keeps authoritative quote UX and exposes native accessible contro
   assert.match(checkout, /type="radio" name="payment"/);
   assert.match(checkout, /htmlFor=\{id\}/);
   assert.match(checkout, /aria-invalid=\{Boolean\(errors\[k\]\)\}/);
+  assert.match(checkout, /MOLDOVA_COUNTRY_CODE/);
+  assert.match(checkout, /sanitizeMoldovaPhoneInput/);
+  assert.match(checkout, /pattern="\[1-9\]\[0-9\]\{7\}"/);
   assert.match(checkout, /IDEMPOTENCY_KEY_REUSED/);
   assert.match(checkout, /window\.confirm\(t\("newOrderAttemptConfirm"\)\)/);
   assert.doesNotMatch(checkout, /href="#"/);

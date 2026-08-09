@@ -225,6 +225,7 @@ test('Analytics SQL reader is optional, template-only and weights sampled rows',
       orderValue: 2500,
       searchResults: 300,
       addToCartRate: 20,
+      checkoutConversionRate: 50,
       orderConversionRate: 5,
     },
   });

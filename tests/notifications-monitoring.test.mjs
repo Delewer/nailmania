@@ -5,9 +5,10 @@ import { SqliteD1 } from './helpers/sqlite-d1.mjs';
 import { rateLimitRule } from '../functions/_lib/rate-limit.js';
 import { cleanupCustomerAuthRecords } from '../functions/_lib/customer-maintenance.js';
 import {
+  deliverOrderConfirmationNotification,
   deliverTelegramNotification,
 } from '../functions/_lib/notifications.js';
-import { sendTelegramOrder } from '../functions/_lib/telegram.js';
+import { sendTelegramOrder, telegramOrderRecipients } from '../functions/_lib/telegram.js';
 import { onRequestPost as forgotPassword } from '../functions/api/auth/forgot-password.js';
 import { onRequestPost as resendTelegram } from '../functions/api/admin/orders/[id]/notifications/telegram.js';
 import { onRequestPatch as updateInternalComment } from '../functions/api/admin/orders/[id]/internal-comment.js';
@@ -95,6 +96,30 @@ test('Production Telegram orders do not carry the Preview test-order label', asy
   const payload = await captureTelegramPayload('production');
   assert.doesNotMatch(payload.text, /ТЕСТОВЫЙ ЗАКАЗ|НЕ ОБРАБАТЫВАТЬ/);
   assert.match(payload.text, /^🛍 <b>Новый заказ NM-TEST-1<\/b>/);
+});
+
+test('Telegram recipients include one distinct secondary chat', async () => {
+  assert.deepEqual(telegramOrderRecipients({
+    TELEGRAM_CHAT_ID: 'primary-chat',
+    TELEGRAM_SECONDARY_CHAT_ID: 'secondary-chat',
+  }), ['primary-chat', 'secondary-chat']);
+  assert.deepEqual(telegramOrderRecipients({
+    TELEGRAM_CHAT_ID: 'same-chat',
+    TELEGRAM_SECONDARY_CHAT_ID: 'same-chat',
+  }), ['same-chat']);
+
+  const chats = [];
+  const env = {
+    TELEGRAM_BOT_TOKEN: 'test-token',
+    TELEGRAM_CHAT_ID: 'primary-chat',
+    TELEGRAM_FETCH: async (_url, init) => {
+      chats.push(JSON.parse(init.body).chat_id);
+      return Response.json({ ok: true });
+    },
+  };
+  await sendTelegramOrder(env, telegramOrder);
+  await sendTelegramOrder(env, telegramOrder, { chatId: 'secondary-chat' });
+  assert.deepEqual(chats, ['primary-chat', 'secondary-chat']);
 });
 
 function adminEnv(db, email = 'manager@example.test', extra = {}) {
@@ -439,6 +464,38 @@ test('password-reset email delivery and failure are persisted without raw email 
   );
 });
 
+test('order confirmation delivery is idempotent and persists no customer content', async (t) => {
+  const db = setup();
+  t.after(() => db.close());
+  const delivered = [];
+  const options = {
+    db,
+    env: { CUSTOMER_EMAIL_SEND: async (message) => delivered.push(message) },
+    order: { ...telegramOrder, lang: 'ro' },
+    requestKey: 'order-created:order-1',
+    requestId: 'req-order-email',
+  };
+  const [first, second] = await Promise.all([
+    deliverOrderConfirmationNotification(options),
+    deliverOrderConfirmationNotification(options),
+  ]);
+
+  assert.equal(delivered.length, 1);
+  assert.equal(delivered[0].type, 'order-confirmation');
+  assert.equal(delivered[0].to, 'ana@example.test');
+  assert.equal(delivered[0].order.total, 100);
+  assert.equal([first, second].filter((result) => result.created).length, 1);
+  const persisted = JSON.stringify({
+    attempts: db.sqlite.prepare("SELECT * FROM notification_attempts WHERE channel = 'email'").all(),
+    statuses: db.sqlite.prepare(`
+      SELECT s.* FROM notification_attempt_statuses s
+      JOIN notification_attempts a ON a.id = s.attempt_id
+      WHERE a.channel = 'email'
+    `).all(),
+  });
+  assert.doesNotMatch(persisted, /ana@example\.test|Ana Secret|\+37360000000|NM-TEST-1/);
+});
+
 test('internal manager comment uses a separate optimistic revision and immutable audit entry', async (t) => {
   const db = setup();
   t.after(() => db.close());
@@ -493,6 +550,7 @@ test('admin readiness exposes only booleans, never configured secret values, and
     TURNSTILE_SECRET_KEY: 'turnstile-super-secret',
     TELEGRAM_BOT_TOKEN: 'telegram-super-secret',
     TELEGRAM_CHAT_ID: 'telegram-chat-secret',
+    TELEGRAM_SECONDARY_CHAT_ID: 'telegram-secondary-chat-secret',
     CUSTOMER_EMAIL_ENDPOINT: 'https://email.example.test/send',
     CUSTOMER_PASSWORD_RESET_URL: 'https://nailmania.md/reset-password',
     PRODUCT_IMAGES: {},
@@ -538,6 +596,12 @@ test('admin readiness exposes only booleans, never configured secret values, and
   assert.equal(notReady.status, 503);
   const notReadyBody = await notReady.json();
   assert.equal(notReadyBody.checks.telegramBotToken, false);
+  const duplicateTelegramRecipient = await readiness(adminContext(db, '/api/admin/health/readiness', {
+    email: 'admin@example.test',
+    env: { ...secrets, TELEGRAM_SECONDARY_CHAT_ID: secrets.TELEGRAM_CHAT_ID },
+  }));
+  assert.equal(duplicateTelegramRecipient.status, 503);
+  assert.equal((await duplicateTelegramRecipient.json()).checks.telegramSecondaryChatId, false);
   const analyticsNotReady = await readiness(adminContext(db, '/api/admin/health/readiness', {
     email: 'admin@example.test',
     env: { ...secrets, ANALYTICS_READ_TOKEN: '' },

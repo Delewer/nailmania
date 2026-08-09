@@ -13,6 +13,7 @@ import {
   FolderTree,
   LoaderCircle,
   LogOut,
+  Mail,
   Package,
   Percent,
   RefreshCw,
@@ -288,6 +289,7 @@ function OrderDrawer({
   };
 
   const telegramNotifications = order?.notifications?.filter((entry) => entry.channel === 'telegram') || [];
+  const emailNotifications = order?.notifications?.filter((entry) => entry.channel === 'email') || [];
   const latestTelegram = telegramNotifications.at(-1) || null;
   const telegramPendingIsStale = latestTelegram?.status === 'pending'
     && Date.now() - Date.parse(latestTelegram.createdAt || '') >= 5 * 60 * 1000;
@@ -482,6 +484,24 @@ function OrderDrawer({
                           </strong>
                         </header>
                         <time>{dateTime(entry.createdAt)}{entry.actor ? ` · ${entry.actor.name || entry.actor.email}` : ''}</time>
+                        {entry.failureCode && <small>{entry.failureCode}{entry.providerStatus ? ` · HTTP ${entry.providerStatus}` : ''}</small>}
+                      </article>
+                    ))}
+                  </div>
+                  <div className="adm-section-head adm-notification-channel">
+                    <h3><Mail size={17}/>Email client</h3>
+                  </div>
+                  {emailNotifications.length === 0 && <div className="adm-muted-empty">Nu există încercări înregistrate</div>}
+                  <div className="adm-return-history adm-notification-history">
+                    {[...emailNotifications].reverse().map((entry) => (
+                      <article key={entry.id}>
+                        <header>
+                          <b>Confirmare comandă</b>
+                          <strong className={`adm-notification-${entry.status}`}>
+                            {entry.status === 'sent' ? 'Trimis' : entry.status === 'failed' ? 'Eroare' : 'În așteptare'}
+                          </strong>
+                        </header>
+                        <time>{dateTime(entry.createdAt)}</time>
                         {entry.failureCode && <small>{entry.failureCode}{entry.providerStatus ? ` · HTTP ${entry.providerStatus}` : ''}</small>}
                       </article>
                     ))}

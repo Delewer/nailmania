@@ -2,7 +2,12 @@ import { apiError, handleApiError, json, readBoundedJson, requireDatabase } from
 import { requireCustomerMutation, resolveCustomer } from '../_lib/customer-auth.js';
 import { chunks, DELIVERY, normalizeOrderRequest, OrderValidationError, PAYMENT, priceOrder } from '../_lib/order-core.js';
 import { catalogRevisionBump } from '../_lib/catalog-cache.js';
-import { deliverTelegramNotification, logNotificationEvent } from '../_lib/notifications.js';
+import {
+  deliverOrderConfirmationNotification,
+  deliverTelegramNotification,
+  logNotificationEvent,
+} from '../_lib/notifications.js';
+import { telegramOrderRecipients } from '../_lib/telegram.js';
 import { allocatePromoDiscount, PromoValidationError, validatePromotion } from '../_lib/promos.js';
 import { recordProductEvent } from '../_lib/product-events.js';
 import { verifyTurnstile } from '../_lib/turnstile.js';
@@ -182,21 +187,59 @@ async function notificationOrderPayload(db, order) {
   };
 }
 
-async function ensureOrderNotification(context, db, order) {
+async function ensureOrderNotifications(context, db, order) {
   const notification = Promise.resolve()
     .then(() => notificationOrderPayload(db, order))
-    .then((payload) => deliverTelegramNotification({
-      db,
-      env: context.env,
-      order: payload,
-      eventType: 'order_created',
-      requestKey: `order-created:${order.id}`,
-      requestId: context.data?.requestId || '',
-    }))
+    .then(async (payload) => {
+      const requestId = context.data?.requestId || '';
+      const recipients = telegramOrderRecipients(context.env);
+      const telegramRecipients = recipients.length ? recipients : [null];
+      const deliveries = telegramRecipients.map((chatId, index) => deliverTelegramNotification({
+        db,
+        env: context.env,
+        order: payload,
+        eventType: 'order_created',
+        requestKey: index === 0
+          ? `order-created:${order.id}`
+          : `order-created:${order.id}:recipient:${index + 1}`,
+        requestId,
+        chatId,
+      }).catch(() => {
+        logNotificationEvent({
+          level: 'error',
+          event: 'notification.telegram.persistence_failed',
+          requestId,
+          channel: 'telegram',
+          eventType: 'order_created',
+          orderNo: order.no,
+          code: 'NOTIFICATION_PERSISTENCE_FAILED',
+        });
+      }));
+      if (payload.customer.email) {
+        deliveries.push(deliverOrderConfirmationNotification({
+          db,
+          env: context.env,
+          order: payload,
+          requestKey: `order-created:${order.id}`,
+          requestId,
+        }).catch(() => {
+          logNotificationEvent({
+            level: 'error',
+            event: 'notification.email.persistence_failed',
+            requestId,
+            channel: 'email',
+            eventType: 'order_created',
+            orderNo: order.no,
+            code: 'NOTIFICATION_PERSISTENCE_FAILED',
+          });
+        }));
+      }
+      await Promise.all(deliveries);
+    })
     .catch(() => {
       logNotificationEvent({
         level: 'error',
-        event: 'notification.telegram.persistence_failed',
+        event: 'notification.order_payload.failed',
         requestId: context.data?.requestId || '',
         channel: 'telegram',
         eventType: 'order_created',
@@ -228,7 +271,7 @@ export async function onRequestPost(context) {
     );
     const replay = await findOrderReplay(db, idempotencyKey, requestFingerprint);
     if (replay) {
-      await ensureOrderNotification(context, db, replay);
+      await ensureOrderNotifications(context, db, replay);
       return json({ ok: true, order: replay }, 201, {
         'cache-control': 'no-store',
         'idempotency-replayed': 'true',
@@ -329,7 +372,7 @@ export async function onRequestPost(context) {
           requestFingerprint,
         );
         if (committed) {
-          await ensureOrderNotification(context, db, committed);
+          await ensureOrderNotifications(context, db, committed);
           return json({ ok: true, order: committed }, 201, {
             'cache-control': 'no-store',
             'idempotency-replayed': 'true',
@@ -394,7 +437,7 @@ export async function onRequestPost(context) {
       }));
     }
 
-    await ensureOrderNotification(context, db, notificationOrder);
+    await ensureOrderNotifications(context, db, notificationOrder);
     return json({ ok: true, order }, 201, { 'cache-control': 'no-store' });
   } catch (error) {
     if (error instanceof OrderValidationError) {

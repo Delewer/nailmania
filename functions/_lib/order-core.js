@@ -1,5 +1,6 @@
 import { calculateDeliveryFee, COURIER_DELIVERY_FEE } from '../../shared/order-rules.js';
 import { normalizeExpectedOrderQuote } from '../../shared/order-quote.js';
+import { normalizeMoldovaPhone } from '../../shared/moldova-phone.js';
 
 export const DELIVERY = {
   courier: { fee: COURIER_DELIVERY_FEE, ro: 'Curier', ru: 'Курьер' },
@@ -52,16 +53,17 @@ export function normalizeOrderRequest(input, { requireExpectedQuote = false } = 
   if (!PAYMENT[payment]) throw new OrderValidationError('INVALID_PAYMENT', 'Invalid payment method');
 
   const sourceCustomer = input?.customer || {};
+  const phone = normalizeMoldovaPhone(text(sourceCustomer.phone, 40));
   const customer = {
     name: text(sourceCustomer.name, 120),
-    phone: text(sourceCustomer.phone, 40),
+    phone,
     email: text(sourceCustomer.email, 180).toLowerCase(),
     city: text(sourceCustomer.city, 120),
     address: text(sourceCustomer.address, 240),
     comment: text(sourceCustomer.comment, 1000),
   };
   if (!customer.name || customer.name.length < 2) throw new OrderValidationError('INVALID_NAME', 'Customer name is required');
-  if (!customer.phone || customer.phone.replace(/\D/g, '').length < 6) throw new OrderValidationError('INVALID_PHONE', 'Valid phone number is required');
+  if (!customer.phone) throw new OrderValidationError('INVALID_PHONE', 'Valid Moldovan phone number is required');
   if (customer.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customer.email)) {
     throw new OrderValidationError('INVALID_EMAIL', 'Invalid email address');
   }

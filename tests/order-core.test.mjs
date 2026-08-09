@@ -27,6 +27,23 @@ test('duplicate cart lines cannot bypass the 99-unit per-product limit', () => {
   );
 });
 
+test('normalizes Moldovan checkout phones and rejects other formats', () => {
+  for (const phone of ['60123456', '060123456', '+373 60123456']) {
+    const request = normalizeOrderRequest(validRequest({
+      customer: { name: 'Ana Test', phone, city: 'Ungheni', address: 'Strada 1' },
+    }));
+    assert.equal(request.customer.phone, '+37360123456');
+  }
+  for (const phone of ['06012345', '+40722123456', '123456789']) {
+    assert.throws(
+      () => normalizeOrderRequest(validRequest({
+        customer: { name: 'Ana Test', phone, city: 'Ungheni', address: 'Strada 1' },
+      })),
+      (error) => error instanceof OrderValidationError && error.code === 'INVALID_PHONE',
+    );
+  }
+});
+
 test('requires address for courier delivery', () => {
   assert.throws(
     () => normalizeOrderRequest(validRequest({ customer: { name: 'Ana', phone: '068000000' } })),
