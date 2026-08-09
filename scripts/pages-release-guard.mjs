@@ -275,6 +275,30 @@ export function validateD1ReleasePair({
   };
 }
 
+export function validateD1MigrationRelease({
+  environment,
+  expectedCommit,
+  migrationManifest,
+  migrationManifestSha256,
+  nowMs = Date.now(),
+  maxAgeMs = D1_RELEASE_MANIFEST_MAX_AGE_MS,
+}) {
+  const migration = validateD1ReleaseManifest({
+    manifest: migrationManifest,
+    manifestSha256: migrationManifestSha256,
+    environment,
+    operation: 'migrate',
+    expectedCommit,
+    nowMs,
+    maxAgeMs,
+  });
+  return {
+    environment,
+    database: D1_TARGETS[environment].database,
+    migrationManifestSha256: migration.sha256,
+  };
+}
+
 export function validatePreviewAcceptanceEvidence({
   evidence,
   commit,
@@ -287,7 +311,7 @@ export function validatePreviewAcceptanceEvidence({
   if (!evidence || typeof evidence !== 'object' || Array.isArray(evidence)) {
     throw new Error('Production Pages release requires preview acceptance evidence');
   }
-  if (evidence.schemaVersion !== 2 || evidence.kind !== 'pages-preview-acceptance') {
+  if (evidence.schemaVersion !== 3 || evidence.kind !== 'pages-preview-acceptance') {
     throw new Error('Preview acceptance evidence has an unsupported format');
   }
   if (evidence.project !== PAGES_PROJECT || evidence.branch !== PAGES_TARGETS.preview.branch) {
@@ -322,8 +346,7 @@ export function validatePreviewAcceptanceEvidence({
   requireVitePublicInputContract(previewManifest, 'Preview Pages build manifest');
   requireRecentIso(previewManifest.completedAt, 'Preview Pages build manifest', nowMs, 48 * 60 * 60 * 1000);
   if (!previewD1
-      || evidence.d1MigrationManifestSha256 !== previewD1.migrationManifestSha256
-      || evidence.d1CatalogManifestSha256 !== previewD1.catalogManifestSha256) {
+      || evidence.d1MigrationManifestSha256 !== previewD1.migrationManifestSha256) {
     throw new Error('Preview acceptance D1 evidence does not match its release manifests');
   }
   if (evidence.confirmed !== true) {
@@ -349,12 +372,8 @@ export function validatePagesDeployGuard({
   previewManifestSha256,
   d1MigrationManifest,
   d1MigrationManifestSha256,
-  d1CatalogManifest,
-  d1CatalogManifestSha256,
   previewD1MigrationManifest,
   previewD1MigrationManifestSha256,
-  previewD1CatalogManifest,
-  previewD1CatalogManifestSha256,
   nowMs = Date.now(),
 }) {
   const target = requireTarget(environment);
@@ -367,13 +386,11 @@ export function validatePagesDeployGuard({
     actualFiles,
     nowMs,
   });
-  const d1 = validateD1ReleasePair({
+  const d1 = validateD1MigrationRelease({
     environment,
     expectedCommit: build.commit,
     migrationManifest: d1MigrationManifest,
     migrationManifestSha256: d1MigrationManifestSha256,
-    catalogManifest: d1CatalogManifest,
-    catalogManifestSha256: d1CatalogManifestSha256,
     nowMs,
   });
   if (confirmProject !== PAGES_PROJECT) {
@@ -387,13 +404,11 @@ export function validatePagesDeployGuard({
     throw new Error(`Pages release requires --confirm-deploy "${requiredConfirmation}"`);
   }
   if (environment === 'production') {
-    const previewD1 = validateD1ReleasePair({
+    const previewD1 = validateD1MigrationRelease({
       environment: 'preview',
       expectedCommit: build.commit,
       migrationManifest: previewD1MigrationManifest,
       migrationManifestSha256: previewD1MigrationManifestSha256,
-      catalogManifest: previewD1CatalogManifest,
-      catalogManifestSha256: previewD1CatalogManifestSha256,
       nowMs,
       maxAgeMs: 48 * 60 * 60 * 1000,
     });
@@ -428,8 +443,6 @@ export function validatePreviewAcceptanceRecord({
   manifestSha256,
   d1MigrationManifest,
   d1MigrationManifestSha256,
-  d1CatalogManifest,
-  d1CatalogManifestSha256,
   nowMs = Date.now(),
 }) {
   const git = validateGitReleaseState({
@@ -445,13 +458,11 @@ export function validatePreviewAcceptanceRecord({
     actualFiles,
     nowMs,
   });
-  const d1 = validateD1ReleasePair({
+  const d1 = validateD1MigrationRelease({
     environment: 'preview',
     expectedCommit: build.commit,
     migrationManifest: d1MigrationManifest,
     migrationManifestSha256: d1MigrationManifestSha256,
-    catalogManifest: d1CatalogManifest,
-    catalogManifestSha256: d1CatalogManifestSha256,
     nowMs,
   });
   const safeUrl = requireSafePreviewUrl(previewUrl);
@@ -466,7 +477,7 @@ export function validatePreviewAcceptanceRecord({
     throw new Error('Preview acceptance requires a valid build-manifest fingerprint');
   }
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     kind: 'pages-preview-acceptance',
     project: PAGES_PROJECT,
     branch: git.branch,
@@ -474,7 +485,6 @@ export function validatePreviewAcceptanceRecord({
     bundleSha256: build.bundleSha256,
     buildManifestSha256: manifestSha256,
     d1MigrationManifestSha256: d1.migrationManifestSha256,
-    d1CatalogManifestSha256: d1.catalogManifestSha256,
     previewUrl: safeUrl,
     acceptedAt: new Date(nowMs).toISOString(),
     confirmed: true,
@@ -542,11 +552,9 @@ export function readPagesReleaseContext({
   environment,
   manifestPath,
   d1MigrationManifestPath,
-  d1CatalogManifestPath,
   previewAcceptancePath,
   previewManifestPath,
   previewD1MigrationManifestPath,
-  previewD1CatalogManifestPath,
 }) {
   const manifestFile = resolveReleaseArtifact(root, manifestPath, 'Pages build manifest');
   const manifestArtifact = readJsonArtifact(manifestFile, 'Pages build manifest');
@@ -559,15 +567,6 @@ export function readPagesReleaseContext({
     d1MigrationManifestFile,
     `D1 ${environment} migration release manifest`,
   );
-  const d1CatalogManifestFile = resolveReleaseArtifact(
-    root,
-    d1CatalogManifestPath,
-    `D1 ${environment} catalog release manifest`,
-  );
-  const d1CatalogManifestArtifact = readJsonArtifact(
-    d1CatalogManifestFile,
-    `D1 ${environment} catalog release manifest`,
-  );
   const distDirectory = path.join(root, 'dist');
   const bundle = releaseBundleDigest(distDirectory);
   let previewAcceptance;
@@ -578,9 +577,6 @@ export function readPagesReleaseContext({
   let previewD1MigrationManifest;
   let previewD1MigrationManifestFile;
   let previewD1MigrationManifestSha256;
-  let previewD1CatalogManifest;
-  let previewD1CatalogManifestFile;
-  let previewD1CatalogManifestSha256;
   if (environment === 'production') {
     previewAcceptanceFile = resolveReleaseArtifact(
       root,
@@ -607,17 +603,6 @@ export function readPagesReleaseContext({
     );
     previewD1MigrationManifest = previewD1MigrationArtifact.value;
     previewD1MigrationManifestSha256 = previewD1MigrationArtifact.sha256;
-    previewD1CatalogManifestFile = resolveReleaseArtifact(
-      root,
-      previewD1CatalogManifestPath,
-      'Preview D1 catalog release manifest',
-    );
-    const previewD1CatalogArtifact = readJsonArtifact(
-      previewD1CatalogManifestFile,
-      'Preview D1 catalog release manifest',
-    );
-    previewD1CatalogManifest = previewD1CatalogArtifact.value;
-    previewD1CatalogManifestSha256 = previewD1CatalogArtifact.sha256;
   }
   return {
     manifest: manifestArtifact.value,
@@ -629,9 +614,6 @@ export function readPagesReleaseContext({
     d1MigrationManifest: d1MigrationManifestArtifact.value,
     d1MigrationManifestFile,
     d1MigrationManifestSha256: d1MigrationManifestArtifact.sha256,
-    d1CatalogManifest: d1CatalogManifestArtifact.value,
-    d1CatalogManifestFile,
-    d1CatalogManifestSha256: d1CatalogManifestArtifact.sha256,
     previewAcceptance,
     previewAcceptanceFile,
     previewManifest,
@@ -640,8 +622,5 @@ export function readPagesReleaseContext({
     previewD1MigrationManifest,
     previewD1MigrationManifestFile,
     previewD1MigrationManifestSha256,
-    previewD1CatalogManifest,
-    previewD1CatalogManifestFile,
-    previewD1CatalogManifestSha256,
   };
 }

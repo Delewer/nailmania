@@ -9,7 +9,6 @@ import {
 const VALUE_FLAGS = new Set([
   '--manifest',
   '--d1-migration-manifest',
-  '--d1-catalog-manifest',
   '--expected-commit',
   '--preview-url',
   '--confirm-url',
@@ -36,7 +35,6 @@ export function parsePreviewAcceptanceArgs(args) {
   return {
     manifestPath: values['--manifest'],
     d1MigrationManifestPath: values['--d1-migration-manifest'],
-    d1CatalogManifestPath: values['--d1-catalog-manifest'],
     expectedCommit: values['--expected-commit'],
     previewUrl: values['--preview-url'],
     confirmUrl: values['--confirm-url'],
@@ -48,17 +46,14 @@ export function parsePreviewAcceptanceArgs(args) {
 export function main(args = process.argv.slice(2), root = process.cwd(), nowMs = Date.now()) {
   const options = parsePreviewAcceptanceArgs(args);
   if (!options.manifestPath) throw new Error('Preview acceptance requires --manifest under tmp/releases');
-  if (!options.d1MigrationManifestPath || !options.d1CatalogManifestPath) {
-    throw new Error(
-      'Preview acceptance requires --d1-migration-manifest and --d1-catalog-manifest under tmp/releases',
-    );
+  if (!options.d1MigrationManifestPath) {
+    throw new Error('Preview acceptance requires --d1-migration-manifest under tmp/releases');
   }
   const context = readPagesReleaseContext({
     root,
     environment: 'preview',
     manifestPath: options.manifestPath,
     d1MigrationManifestPath: options.d1MigrationManifestPath,
-    d1CatalogManifestPath: options.d1CatalogManifestPath,
   });
   const evidence = validatePreviewAcceptanceRecord({ ...options, ...context, nowMs });
   if (options.dryRun) {
