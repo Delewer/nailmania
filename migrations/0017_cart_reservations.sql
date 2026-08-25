@@ -28,54 +28,11 @@ CREATE INDEX idx_cart_reservations_product_active
 ON cart_reservations(product_id, expires_at, cart_id)
 WHERE status = 'ACTIVE';
 
-CREATE TRIGGER cart_reservations_active_product_insert_guard
-BEFORE INSERT ON cart_reservations
-WHEN NEW.status = 'ACTIVE' AND NOT EXISTS (
-  SELECT 1
-  FROM products p
-  JOIN categories c ON c.id = p.category_id
-  JOIN inventory i ON i.product_id = p.id AND i.warehouse_id = 1
-  WHERE p.id = NEW.product_id AND p.is_active = 1
-    AND p.deleted_at IS NULL AND c.is_active = 1
-)
-BEGIN
-  SELECT RAISE(ABORT, 'reservation product unavailable');
-END;
+-- D1's remote migrations endpoint requires CREATE TRIGGER to remain on one line.
+CREATE TRIGGER cart_reservations_active_product_insert_guard BEFORE INSERT ON cart_reservations WHEN NEW.status = 'ACTIVE' AND NOT EXISTS (SELECT 1 FROM products p JOIN categories c ON c.id = p.category_id JOIN inventory i ON i.product_id = p.id AND i.warehouse_id = 1 WHERE p.id = NEW.product_id AND p.is_active = 1 AND p.deleted_at IS NULL AND c.is_active = 1) BEGIN SELECT RAISE(ABORT, 'reservation product unavailable'); END;
 
-CREATE TRIGGER cart_reservations_active_product_update_guard
-BEFORE UPDATE OF status, product_id ON cart_reservations
-WHEN NEW.status = 'ACTIVE' AND NOT EXISTS (
-  SELECT 1
-  FROM products p
-  JOIN categories c ON c.id = p.category_id
-  JOIN inventory i ON i.product_id = p.id AND i.warehouse_id = 1
-  WHERE p.id = NEW.product_id AND p.is_active = 1
-    AND p.deleted_at IS NULL AND c.is_active = 1
-)
-BEGIN
-  SELECT RAISE(ABORT, 'reservation product unavailable');
-END;
+CREATE TRIGGER cart_reservations_active_product_update_guard BEFORE UPDATE OF status, product_id ON cart_reservations WHEN NEW.status = 'ACTIVE' AND NOT EXISTS (SELECT 1 FROM products p JOIN categories c ON c.id = p.category_id JOIN inventory i ON i.product_id = p.id AND i.warehouse_id = 1 WHERE p.id = NEW.product_id AND p.is_active = 1 AND p.deleted_at IS NULL AND c.is_active = 1) BEGIN SELECT RAISE(ABORT, 'reservation product unavailable'); END;
 
-CREATE TRIGGER cart_reservations_converted_immutable
-BEFORE UPDATE ON cart_reservations
-WHEN OLD.status = 'CONVERTED'
-BEGIN
-  SELECT RAISE(ABORT, 'converted cart reservation is immutable');
-END;
+CREATE TRIGGER cart_reservations_converted_immutable BEFORE UPDATE ON cart_reservations WHEN OLD.status = 'CONVERTED' BEGIN SELECT RAISE(ABORT, 'converted cart reservation is immutable'); END;
 
-CREATE TRIGGER order_items_cart_reservation_guard
-BEFORE INSERT ON order_items
-WHEN COALESCE((SELECT cart_id FROM orders WHERE id = NEW.order_id), '') <> ''
-  AND NOT EXISTS (
-    SELECT 1
-    FROM orders o
-    JOIN cart_reservations r
-      ON r.cart_id = o.cart_id AND r.product_id = NEW.product_id
-    WHERE o.id = NEW.order_id
-      AND r.status = 'ACTIVE'
-      AND r.quantity = NEW.quantity
-      AND r.expires_at > o.created_at
-  )
-BEGIN
-  SELECT RAISE(ABORT, 'active cart reservation required');
-END;
+CREATE TRIGGER order_items_cart_reservation_guard BEFORE INSERT ON order_items WHEN COALESCE((SELECT cart_id FROM orders WHERE id = NEW.order_id), '') <> '' AND NOT EXISTS (SELECT 1 FROM orders o JOIN cart_reservations r ON r.cart_id = o.cart_id AND r.product_id = NEW.product_id WHERE o.id = NEW.order_id AND r.status = 'ACTIVE' AND r.quantity = NEW.quantity AND r.expires_at > o.created_at) BEGIN SELECT RAISE(ABORT, 'active cart reservation required'); END;
