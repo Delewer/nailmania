@@ -17,6 +17,7 @@ const schema = [
   readFileSync(new URL('../migrations/0007_catalog_cache.sql', import.meta.url), 'utf8'),
   readFileSync(new URL('../migrations/0009_promotions.sql', import.meta.url), 'utf8'),
   readFileSync(new URL('../migrations/0015_cancelled_order_reopening.sql', import.meta.url), 'utf8'),
+  readFileSync(new URL('../migrations/0017_cart_reservations.sql', import.meta.url), 'utf8'),
 ].join('\n');
 
 function setup() {

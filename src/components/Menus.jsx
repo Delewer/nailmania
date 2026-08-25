@@ -8,6 +8,7 @@ import { useAuth } from '../auth.jsx'
 import { accountText } from '../account-copy.js'
 import { useDialogFocus } from '../dialog-a11y.js'
 import { cartLineLimit } from '../cart-quantity.js'
+import { ReservationTimer } from './ReservationTimer.jsx'
 
 export function CatalogMega(){
   const {name,setDrawer,t} = useShop();
@@ -63,7 +64,7 @@ export function CatalogMega(){
 export function CartLine({item}){
   const {find,name,t,setQty,removeFromCart} = useShop();
   const p=find(item.id); if(!p) return null;
-  const atLineLimit = item.q>=cartLineLimit(p);
+  const atLineLimit = item.q>=cartLineLimit(p,item.q);
   return (
     <div className="litem">
       <Placeholder g={p.g} icon="bottle" radius={11} img={p.img} label={name(p)}/>
@@ -83,7 +84,7 @@ export function CartLine({item}){
 }
 
 export function CartDrawer(){
-  const {t,cart,cartTotal,clearCart,setDrawer,find,allProducts,ensureCatalog,catalogLoading,catalogLoaded,catalogError} = useShop();
+  const {t,cart,cartTotal,cartReservationExpiresAt,clearCart,setDrawer,find,allProducts,ensureCatalog,catalogLoading,catalogLoaded,catalogError} = useShop();
   const navigate = useNavigate();
   const resolved = cart.map(i=>find(i.id)).filter(Boolean);
   const unavailable = cart.length>0 && resolved.length===0 && Boolean(catalogError);
@@ -103,6 +104,7 @@ export function CartDrawer(){
         : <>
             <div className="dbody nm-scroll">{cart.map(it=><CartLine key={it.id} item={it}/>)}</div>
             <div className="dfoot">
+              <ReservationTimer expiresAt={cartReservationExpiresAt}/>
               <div className="totrow"><span>{t("total")}</span><b>{cartTotal} {t("lei")}</b></div>
               <button className="checkout" onClick={goCheckout}><Icon n="check" s={20}/>{t("checkout")}</button>
               <button className="clear" onClick={clearCart}>{t("clear")}</button>

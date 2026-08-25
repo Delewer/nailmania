@@ -6,6 +6,7 @@ import { COURIER_DELIVERY_FEE, FREE_DELIVERY_THRESHOLD } from '../shared/order-r
 // ---- UI strings ----
 export const I18N = {
   ro:{
+    reservationExpiresIn:"Produsele sunt rezervate încă {time}", reservationExpired:"Rezervarea a expirat. Coșul se actualizează…",
     topPromo:`Livrare gratuită prin Moldova de la ${FREE_DELIVERY_THRESHOLD} lei`,
     hours:"Zilnic 09:00–18:00",
     workHours:"Luni–Sâmbătă 09:00–18:00 · Duminică 10:00–16:00",
@@ -98,6 +99,7 @@ export const I18N = {
     retry:"Încearcă din nou"
   },
   ru:{
+    reservationExpiresIn:"Товары зарезервированы ещё на {time}", reservationExpired:"Резерв истёк. Обновляем корзину…",
     topPromo:`Бесплатная доставка по Молдове от ${FREE_DELIVERY_THRESHOLD} лей`,
     hours:"Ежедневно 09:00–18:00",
     workHours:"Пн–Сб 09:00–18:00 · Вс 10:00–16:00",

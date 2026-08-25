@@ -162,6 +162,41 @@ test('stock plans cannot reduce physical stock below reservations', () => {
   );
 });
 
+test('a physical sale releases expired cart holds before checking available stock', async (t) => {
+  const db = setup();
+  t.after(() => db.close());
+  db.sqlite.exec(`
+    INSERT INTO products (
+      id, catalog_key, sku, slug, category_id, name_ro, name_ru,
+      price, source_type, admin_revision
+    ) VALUES (1, 'EXP-001', 'EXP-001', 'exp-001', 'test',
+              'Produs expirat', 'Expired product', 100, 'admin', 'product:initial');
+    INSERT INTO inventory (product_id, warehouse_id, on_hand, reserved, admin_revision)
+    VALUES (1, 1, 1, 1, 'inventory:initial');
+    INSERT INTO cart_reservations (
+      id, cart_id, product_id, quantity, status, expires_at, created_at, updated_at
+    ) VALUES (
+      '11111111-1111-4111-8111-111111111111',
+      '22222222-2222-4222-8222-222222222222', 1, 1, 'ACTIVE',
+      '2020-01-01T00:15:00.000Z', '2020-01-01T00:00:00.000Z', '2020-01-01T00:00:00.000Z'
+    );
+  `);
+
+  const response = await adjustInventory(jsonContext(
+    db,
+    '/api/admin/products/1/inventory',
+    'POST',
+    { revision: 'inventory:initial', operation: 'write_off', quantity: 1, reason: 'Physical shop sale' },
+    { id: '1' },
+  ));
+  assert.equal(response.status, 200);
+  assert.deepEqual(
+    { ...db.sqlite.prepare('SELECT on_hand, reserved FROM inventory WHERE product_id = 1').get() },
+    { on_hand: 0, reserved: 0 },
+  );
+  assert.equal(db.sqlite.prepare('SELECT status FROM cart_reservations').get().status, 'EXPIRED');
+});
+
 test('admin product lifecycle records metadata, stock movements and audit entries', async (t) => {
   const db = setup();
   t.after(() => db.close());

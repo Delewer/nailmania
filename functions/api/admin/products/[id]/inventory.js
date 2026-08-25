@@ -7,6 +7,7 @@ import {
 } from '../../../../_lib/admin-products.js';
 import { apiError, handleApiError, json } from '../../../../_lib/http.js';
 import { catalogRevisionBump } from '../../../../_lib/catalog-cache.js';
+import { releaseExpiredCartReservationsForProduct } from '../../../../_lib/cart-reservations.js';
 
 const productId = (params) => decodeURIComponent(String(params.id || '')).trim().slice(0, 120);
 const requestIp = (request) => String(request.headers.get('cf-connecting-ip') || '').slice(0, 80);
@@ -21,10 +22,16 @@ export async function onRequestPost(context) {
     try { body = await context.request.json(); }
     catch { return apiError('INVALID_JSON', 'Request body must be valid JSON', 400); }
     if (!Object.hasOwn(body || {}, 'revision')) return apiError('INVENTORY_REVISION_REQUIRED', 'Inventory revision is required', 400);
-    const product = await getAdminProduct(db, id);
+    let product = await getAdminProduct(db, id);
     if (!product) return apiError('PRODUCT_NOT_FOUND', 'Product not found', 404);
+    const submittedRevision = String(body.revision || '').slice(0, 120);
+    if (String(product.inventoryRevision || '') !== submittedRevision) {
+      return apiError('INVENTORY_REVISION_CONFLICT', 'Stock changed while this adjustment was being processed', 409);
+    }
+    await releaseExpiredCartReservationsForProduct(db, product.id);
+    product = await getAdminProduct(db, id);
     const plan = stockAdjustmentPlan(body, product);
-    const expectedRevision = String(body.revision || '').slice(0, 120);
+    const expectedRevision = String(product.inventoryRevision || '');
     const revision = crypto.randomUUID();
     const now = new Date().toISOString();
     const movementId = `stock:${revision}`;

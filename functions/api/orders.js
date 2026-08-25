@@ -31,38 +31,39 @@ const orderNumber = () => {
   return `NM${timestamp}${suffix}`;
 };
 
-function inventoryUpdate(db, items, revision) {
+function inventoryUpdate(db, items, revision, releaseReserved) {
   const cases = items.map(() => 'WHEN ? THEN ?').join(' ');
   const ids = items.map((item) => item.productId);
   const bindings = items.flatMap((item) => [item.productId, item.quantity]);
   return db.prepare(`
     UPDATE inventory
-    SET reserved = reserved + CASE product_id ${cases} ELSE 0 END,
+    SET on_hand = on_hand - ${releaseReserved ? `CASE product_id ${cases} ELSE 0 END` : '0'},
+        reserved = reserved ${releaseReserved ? '-' : '+'} CASE product_id ${cases} ELSE 0 END,
         updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
         admin_revision = ?
     WHERE warehouse_id = 1 AND product_id IN (${placeholders(ids.length)})
-  `).bind(...bindings, revision, ...ids);
+  `).bind(...(releaseReserved ? bindings : []), ...bindings, revision, ...ids);
 }
 
-function orderItemsInsert(db, orderId, items) {
-  const values = items.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ');
+function orderItemsInsert(db, orderId, items, soldAtCreation) {
+  const values = items.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ');
   const bindings = items.flatMap((item) => [
     orderId, item.productId, item.productKey, item.sku, item.brand,
     item.name, item.categoryId, item.categoryNameRo, item.categoryNameRu,
     item.costPriceSnapshot, item.unitPrice, item.listPrice, item.quantity,
-    item.promoDiscountAllocation || 0, item.lineTotal,
+    soldAtCreation ? item.quantity : 0, item.promoDiscountAllocation || 0, item.lineTotal,
   ]);
   return db.prepare(`
     INSERT INTO order_items (
       order_id, product_id, product_key, sku, brand, name,
       category_id_snapshot, category_name_ro_snapshot, category_name_ru_snapshot,
       cost_price_snapshot,
-      unit_price, list_price, quantity, promo_discount_allocation, line_total
+      unit_price, list_price, quantity, sold_quantity, promo_discount_allocation, line_total
     ) VALUES ${values}
   `).bind(...bindings);
 }
 
-function reservationMovementsInsert(db, orderId, items) {
+function orderMovementsInsert(db, orderId, items, releaseReserved) {
   const cases = items.map(() => 'WHEN ? THEN ?').join(' ');
   const ids = items.map((item) => item.productId);
   const bindings = items.flatMap((item) => [item.productId, item.quantity]);
@@ -72,30 +73,76 @@ function reservationMovementsInsert(db, orderId, items) {
       balance_on_hand, balance_reserved, order_id, reason
     )
     SELECT
-      'reserve:' || ? || ':' || i.product_id,
-      i.product_id, 1, 'reservation', 0,
-      CASE i.product_id ${cases} ELSE 0 END,
-      i.on_hand, i.reserved, ?, 'Online order reservation'
+      '${releaseReserved ? 'sale' : 'reserve'}:' || ? || ':' || i.product_id,
+      i.product_id, 1, '${releaseReserved ? 'sale' : 'reservation'}',
+      ${releaseReserved ? `-(CASE i.product_id ${cases} ELSE 0 END)` : '0'},
+      ${releaseReserved ? `-(CASE i.product_id ${cases} ELSE 0 END)` : `CASE i.product_id ${cases} ELSE 0 END`},
+      i.on_hand, i.reserved, ?,
+      '${releaseReserved ? 'Cart reservation converted when order was placed' : 'Legacy order reservation'}'
     FROM inventory i
     WHERE i.warehouse_id = 1 AND i.product_id IN (${placeholders(ids.length)})
-  `).bind(orderId, ...bindings, orderId, ...ids);
+  `).bind(
+    orderId,
+    ...(releaseReserved ? bindings : []),
+    ...bindings,
+    orderId,
+    ...ids,
+  );
 }
 
-async function loadAuthoritativeOrderQuote(db, request, userId) {
+function cartReservationConversion(db, orderId, cartId, items, createdAt) {
+  const ids = items.map((item) => item.productId);
+  return db.prepare(`
+    UPDATE cart_reservations
+    SET status = 'CONVERTED', order_id = ?, updated_at = ?
+    WHERE cart_id = ? AND status = 'ACTIVE' AND expires_at > ?
+      AND product_id IN (${placeholders(ids.length)})
+  `).bind(orderId, createdAt, cartId, createdAt, ...ids);
+}
+
+async function loadAuthoritativeOrderQuote(db, request, userId, now = new Date().toISOString()) {
   const keys = request.items.map((item) => item.productKey);
+  const cartJoin = request.cartId ? `
+    LEFT JOIN cart_reservations cr
+      ON cr.product_id = p.id AND cr.cart_id = ?
+      AND cr.status = 'ACTIVE' AND cr.expires_at > ?
+  ` : '';
   const productResult = await db.prepare(`
     SELECT p.id, p.catalog_key, p.sku, p.brand, p.name_ro, p.name_ru, p.category_id,
            prices.effective_price AS price, prices.effective_old_price AS old_price,
            p.cost_price,
            c.name_ro AS category_name_ro, c.name_ru AS category_name_ru,
-           i.on_hand, i.reserved
+           i.on_hand,
+           i.reserved - COALESCE((
+             SELECT SUM(expired.quantity) FROM cart_reservations expired
+             WHERE expired.product_id = p.id AND expired.status = 'ACTIVE'
+               AND expired.expires_at <= ?
+           ), 0) - ${request.cartId ? 'COALESCE(cr.quantity, 0)' : '0'} AS reserved,
+           ${request.cartId ? 'cr.id' : 'NULL'} AS cart_reservation_id,
+           ${request.cartId ? 'cr.quantity' : '0'} AS cart_reserved_quantity
     FROM products p
     JOIN product_catalog_prices prices ON prices.product_id = p.id
     JOIN categories c ON c.id = p.category_id
     JOIN inventory i ON i.product_id = p.id AND i.warehouse_id = 1
+    ${cartJoin}
     WHERE p.is_active = 1 AND p.deleted_at IS NULL AND c.is_active = 1
       AND p.catalog_key IN (${placeholders(keys.length)})
-  `).bind(...keys).all();
+  `).bind(now, ...(request.cartId ? [request.cartId, now] : []), ...keys).all();
+  if (request.cartId) {
+    const products = new Map((productResult.results || []).map((product) => [product.catalog_key, product]));
+    const missingReservation = request.items.find((item) => {
+      const product = products.get(item.productKey);
+      return !product?.cart_reservation_id || Number(product.cart_reserved_quantity) !== item.quantity;
+    });
+    if (missingReservation) {
+      throw new OrderValidationError(
+        'ACTIVE_RESERVATION_REQUIRED',
+        'The cart reservation expired or no longer matches the requested quantity',
+        409,
+        { productKey: missingReservation.productKey },
+      );
+    }
+  }
   const priced = priceOrder(request, productResult.results || []);
   let promotion = null;
   if (request.promoCode) {
@@ -277,16 +324,25 @@ export async function onRequestPost(context) {
         'idempotency-replayed': 'true',
       });
     }
+    if (!request.cartId && context.env?.ENVIRONMENT !== 'local') {
+      return apiError(
+        'ACTIVE_RESERVATION_REQUIRED',
+        'An active cart reservation is required before an order can be submitted',
+        409,
+      );
+    }
     await verifyTurnstile({
       request: context.request,
       env: context.env,
       token: body?.turnstileToken,
       action: 'order',
     });
+    const quoteNow = new Date().toISOString();
     const { priced, promotion, currentQuote } = await loadAuthoritativeOrderQuote(
       db,
       request,
       customerAuth?.user.id,
+      quoteNow,
     );
     if (!orderQuotesEqual(request.expectedQuote, currentQuote)) {
       return apiError(
@@ -299,7 +355,9 @@ export async function onRequestPost(context) {
     const id = crypto.randomUUID();
     const no = orderNumber();
     const createdAt = new Date().toISOString();
-    const reservationExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    const reservationExpiresAt = request.cartId
+      ? null
+      : new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
     const deliveryLabel = DELIVERY[request.delivery][request.language];
     const paymentLabel = PAYMENT[request.payment][request.language];
     const notificationOrder = buildOrderResponse({
@@ -309,13 +367,13 @@ export async function onRequestPost(context) {
 
     const statements = [db.prepare(`
       INSERT INTO orders (
-        id, order_no, user_id, status, language, customer_name, customer_phone, customer_email,
+        id, order_no, user_id, cart_id, status, language, customer_name, customer_phone, customer_email,
         city, address, customer_comment, delivery_method, delivery_label, delivery_fee,
         payment_method, payment_label, items_subtotal, catalog_discount, promo_discount,
         total_amount, promo_code_id, reservation_expires_at, created_at, updated_at
-      ) VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
-      id, no, customerAuth?.user.id || null,
+      id, no, customerAuth?.user.id || null, request.cartId,
       request.language, request.customer.name, request.customer.phone, request.customer.email,
       request.customer.city, request.customer.address, request.customer.comment,
       request.delivery, deliveryLabel, priced.deliveryFee, request.payment, paymentLabel,
@@ -328,11 +386,15 @@ export async function onRequestPost(context) {
         idempotency_key, request_fingerprint, order_id, response_json, created_at
       ) VALUES (?, ?, ?, ?, ?)
     `).bind(idempotencyKey, requestFingerprint, id, JSON.stringify(order), createdAt));
-    const inventoryRevision = `order:${id}:reservation`;
-    for (const itemChunk of chunks(priced.items, 25)) statements.push(inventoryUpdate(db, itemChunk, inventoryRevision));
+    const inventoryRevision = `order:${id}:${request.cartId ? 'sale' : 'reservation'}`;
+    for (const itemChunk of chunks(priced.items, request.cartId ? 19 : 25)) {
+      statements.push(inventoryUpdate(db, itemChunk, inventoryRevision, Boolean(request.cartId)));
+    }
     // D1 accepts at most 100 bound parameters per statement. Each order item
-    // uses 15 bindings, so six rows (90 bindings) leave a safe margin.
-    for (const itemChunk of chunks(priced.items, 6)) statements.push(orderItemsInsert(db, id, itemChunk));
+    // uses 16 bindings, so six rows (96 bindings) leave a safe margin.
+    for (const itemChunk of chunks(priced.items, 6)) {
+      statements.push(orderItemsInsert(db, id, itemChunk, Boolean(request.cartId)));
+    }
     if (promotion) {
       statements.push(db.prepare(`
         INSERT INTO promo_redemptions (
@@ -346,7 +408,10 @@ export async function onRequestPost(context) {
         promotion.eligibleSubtotal, promotion.merchandiseSubtotal,
       ));
     }
-    for (const itemChunk of chunks(priced.items, 25)) statements.push(reservationMovementsInsert(db, id, itemChunk));
+    for (const itemChunk of chunks(priced.items, request.cartId ? 19 : 25)) {
+      statements.push(orderMovementsInsert(db, id, itemChunk, Boolean(request.cartId)));
+      if (request.cartId) statements.push(cartReservationConversion(db, id, request.cartId, itemChunk, createdAt));
+    }
     statements.push(db.prepare(`
       INSERT INTO order_status_history (order_id, from_status, to_status, comment)
       VALUES (?, NULL, 'pending', 'Order created')
@@ -402,6 +467,13 @@ export async function onRequestPost(context) {
           'The authoritative order quote changed; review it before submitting again',
           409,
           { currentQuote: refreshed.currentQuote },
+        );
+      }
+      if (/active cart reservation required/i.test(batchMessage)) {
+        return apiError(
+          'ACTIVE_RESERVATION_REQUIRED',
+          'The cart reservation expired or changed before the order was submitted',
+          409,
         );
       }
       if (/CHECK constraint failed|SQLITE_CONSTRAINT_CHECK/i.test(String(error?.message || error))) {

@@ -47,6 +47,7 @@ const migrationNames = [
   '0013_order_commercial_snapshot_guard.sql',
   '0014_catalog_discounts_and_promo_brands.sql',
   '0015_cancelled_order_reopening.sql',
+  '0017_cart_reservations.sql',
 ];
 const schema = migrationNames.map((name) => readFileSync(new URL(`../migrations/${name}`, import.meta.url), 'utf8')).join('\n');
 

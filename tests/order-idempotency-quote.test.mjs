@@ -5,6 +5,7 @@ import test from 'node:test';
 import { newSessionRecord } from '../functions/_lib/customer-auth.js';
 import { fingerprintOrderRequest } from '../functions/_lib/order-idempotency.js';
 import { normalizeOrderRequest } from '../functions/_lib/order-core.js';
+import { synchronizeCartReservation } from '../functions/_lib/cart-reservations.js';
 import { onRequestPost as createOrder } from '../functions/api/orders.js';
 import { submitOrderRequest } from '../src/order-api.js';
 import { SqliteD1 } from './helpers/sqlite-d1.mjs';
@@ -25,6 +26,7 @@ const migrations = [
   '0012_order_idempotency.sql',
   '0013_order_commercial_snapshot_guard.sql',
   '0014_catalog_discounts_and_promo_brands.sql',
+  '0017_cart_reservations.sql',
 ];
 const schema = migrations.map((name) => readFileSync(
   new URL(`../migrations/${name}`, import.meta.url),
@@ -244,7 +246,11 @@ test('committed replay precedes Turnstile, but still enforces same-origin and ex
       return Response.json({ success: verifications === 1, action: 'order', hostname: 'shop.test' });
     },
   };
-  const body = withOrderContract(db, baseBody());
+  const cartId = '11111111-1111-4111-8111-111111111111';
+  await synchronizeCartReservation(db, { cartId, productKey: 'P1', quantity: 1 }, {
+    env: { RESERVATION_TTL_MINUTES: '15' },
+  });
+  const body = withOrderContract(db, baseBody({ cartId }));
   const first = await endpointRequest(db, body, { env });
   assert.equal(first.status, 201);
 

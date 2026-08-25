@@ -293,6 +293,8 @@
 .qty span{min-width:26px;text-align:center;font-weight:700;font-size:14px}
 .qty.fav-add{margin-left:auto}
 .dfoot{padding:18px 22px 22px;border-top:1px solid var(--line);background:var(--blush)}
+.reservation-timer{margin:0 0 12px;padding:9px 11px;border-radius:10px;background:#fff5e8;color:#7b4b14;font-size:13px;font-weight:700;text-align:center}
+.reservation-timer.expired{background:#fff0f2;color:var(--rose-deep)}
 .dfoot .totrow{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px}
 .dfoot .totrow span{color:var(--gray);font-weight:600}
 .dfoot .totrow b{font-size:24px;font-family:var(--serif)}

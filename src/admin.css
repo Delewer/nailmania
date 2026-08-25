@@ -213,3 +213,17 @@
   .adm-promo-form{padding:0 14px 84px}.adm-promo-grid{grid-template-columns:1fr}.adm-promo-grid .full{grid-column:auto}.adm-promo-category-grid{grid-template-columns:1fr}.adm-promo-product-search{grid-template-columns:1fr}.adm-promo-product-search .adm-compact-btn{width:100%}.adm-promo-orders article{grid-template-columns:1fr}.adm-promo-orders article>div:last-child{text-align:left}.adm-promo-actions{margin:0 -14px -84px;padding:10px 14px}
   .adm-sidebar nav{flex:1;min-width:0;margin-left:0;overflow-x:auto;scrollbar-width:none}.adm-sidebar nav::-webkit-scrollbar{display:none}.adm-sidebar nav button,.adm-sidebar nav a{flex:0 0 40px}.adm-sidebar-user{flex:none}
 }
+.adm-reservation-summary{grid-template-columns:repeat(2,minmax(0,1fr))}
+.adm-reservation-summary button{display:grid;grid-template-columns:1fr auto;align-items:end;text-align:left}
+.adm-reservation-summary button small{grid-column:1/-1;color:var(--gray);font-size:12px;margin-top:4px}
+.adm-reservations-table{min-width:1050px}
+.adm-reservations-table .adm-reservation-state{display:inline-flex;align-items:center;gap:6px;padding:6px 9px;border-radius:999px;font-size:12px;font-weight:800;white-space:nowrap}
+.adm-reservation-state.active{background:#fff1d6;color:#85520a}
+.adm-reservation-state.ordered{background:#eaf7ef;color:#187445}
+.adm-reservation-countdown{font-variant-numeric:tabular-nums;color:#85520a}
+.adm-order-link{display:flex;flex-direction:column;color:inherit;text-decoration:none}
+.adm-order-link:hover b{color:var(--rose-deep)}
+
+@media(max-width:700px){
+  .adm-reservation-summary{grid-template-columns:1fr}
+}

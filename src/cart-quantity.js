@@ -1,9 +1,12 @@
 export const CART_LINE_CAP = 99;
 
-export function cartLineLimit(product) {
+export function cartLineLimit(product, ownedReservation = 0) {
   const stock = product?.stock;
   if (typeof stock !== "number" || !Number.isFinite(stock)) return CART_LINE_CAP;
-  return Math.min(CART_LINE_CAP, Math.max(0, Math.floor(stock)));
+  const owned = Number.isFinite(Number(ownedReservation))
+    ? Math.max(0, Math.floor(Number(ownedReservation)))
+    : 0;
+  return Math.min(CART_LINE_CAP, Math.max(0, Math.floor(stock)) + owned);
 }
 
 export function normalizeCartIncrement(value, fallback = 0) {
@@ -12,10 +15,10 @@ export function normalizeCartIncrement(value, fallback = 0) {
   return Math.min(CART_LINE_CAP, Math.floor(quantity));
 }
 
-export function clampCartQuantity(value, product) {
+export function clampCartQuantity(value, product, ownedReservation = 0) {
   const quantity = Number(value);
   if (!Number.isFinite(quantity) || quantity <= 0) return 0;
-  return Math.min(cartLineLimit(product), Math.floor(quantity));
+  return Math.min(cartLineLimit(product, ownedReservation), Math.floor(quantity));
 }
 
 export function incrementCartQuantity(current, increment, product) {

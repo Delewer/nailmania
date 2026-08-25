@@ -3,6 +3,10 @@
   "name": "nailmania-storefront-local",
   "compatibility_date": "2026-07-16",
   "pages_build_output_dir": "./dist",
+  "vars": {
+    "ENVIRONMENT": "local",
+    "RESERVATION_TTL_MINUTES": "15"
+  },
   "d1_databases": [
     {
       "binding": "DB",

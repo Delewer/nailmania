@@ -73,7 +73,7 @@ export function validateReservationsConfig({ config, environment }) {
     throw new Error('Reservations Wrangler config has an unexpected base worker contract');
   }
   if (envConfig?.name !== target.worker
-      || JSON.stringify(envConfig?.triggers?.crons) !== JSON.stringify(['*/5 * * * *'])) {
+      || JSON.stringify(envConfig?.triggers?.crons) !== JSON.stringify(['* * * * *'])) {
     throw new Error(`Reservations Wrangler config has an unexpected ${environment} Worker target`);
   }
   if (!Array.isArray(databases)

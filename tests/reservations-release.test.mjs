@@ -55,7 +55,7 @@ const config = {
   env: {
     preview: {
       name: RESERVATIONS_TARGETS.preview.worker,
-      triggers: { crons: ['*/5 * * * *'] },
+      triggers: { crons: ['* * * * *'] },
       d1_databases: [{
         binding: 'DB',
         database_name: RESERVATIONS_TARGETS.preview.database,
@@ -65,7 +65,7 @@ const config = {
     },
     production: {
       name: RESERVATIONS_TARGETS.production.worker,
-      triggers: { crons: ['*/5 * * * *'] },
+      triggers: { crons: ['* * * * *'] },
       d1_databases: [{
         binding: 'DB',
         database_name: RESERVATIONS_TARGETS.production.database,

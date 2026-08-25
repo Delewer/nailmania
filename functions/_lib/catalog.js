@@ -42,7 +42,11 @@ export const PRODUCT_SELECT = `
     p.description_ro, prices.effective_price AS price,
     prices.effective_old_price AS old_price, p.specs_json,
     p.is_new, prices.effective_is_promo AS is_promo, p.is_summer,
-    MAX(0, COALESCE(i.on_hand, 0) - COALESCE(i.reserved, 0)) AS available_stock
+    MAX(0, COALESCE(i.on_hand, 0) - COALESCE(i.reserved, 0) + COALESCE((
+      SELECT SUM(r.quantity) FROM cart_reservations r
+      WHERE r.product_id = p.id AND r.status = 'ACTIVE'
+        AND r.expires_at <= strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+    ), 0)) AS available_stock
   FROM products p
   JOIN product_catalog_prices prices ON prices.product_id = p.id
   LEFT JOIN inventory i ON i.product_id = p.id AND i.warehouse_id = 1

@@ -9,7 +9,11 @@ export async function onRequestGet(context) {
       const product = await db.prepare(`
         SELECT
           p.id, p.catalog_key,
-          MAX(0, COALESCE(i.on_hand, 0) - COALESCE(i.reserved, 0)) AS available,
+          MAX(0, COALESCE(i.on_hand, 0) - COALESCE(i.reserved, 0) + COALESCE((
+            SELECT SUM(r.quantity) FROM cart_reservations r
+            WHERE r.product_id = p.id AND r.status = 'ACTIVE'
+              AND r.expires_at <= strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+          ), 0)) AS available,
           i.updated_at
         FROM products p
         JOIN categories c ON c.id = p.category_id AND c.is_active = 1

@@ -45,7 +45,7 @@ function OrderContent() {
         setRepeatResult({ type: "error", message: accountText(lang, "repeatUnavailable") });
         return;
       }
-      addItemsToCart(plan.entries,{source:'repeat_order'});
+      await addItemsToCart(plan.entries,{source:'repeat_order'});
       const affected = plan.unavailable.length + plan.adjusted.length;
       setRepeatResult({
         type: affected ? "warning" : "success",

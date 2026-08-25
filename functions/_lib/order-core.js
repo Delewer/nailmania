@@ -47,6 +47,10 @@ export function normalizeOrderRequest(input, { requireExpectedQuote = false } = 
   }
 
   const language = input?.lang === 'ru' ? 'ru' : 'ro';
+  const cartId = text(input?.cartId, 80).toLowerCase();
+  if (cartId && !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(cartId)) {
+    throw new OrderValidationError('INVALID_CART_ID', 'Cart id is invalid');
+  }
   const delivery = text(input?.delivery, 20);
   const payment = text(input?.payment, 20);
   if (!DELIVERY[delivery]) throw new OrderValidationError('INVALID_DELIVERY', 'Invalid delivery method');
@@ -86,6 +90,7 @@ export function normalizeOrderRequest(input, { requireExpectedQuote = false } = 
 
   return {
     items,
+    cartId: cartId || null,
     language,
     delivery,
     payment,

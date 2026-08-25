@@ -113,6 +113,7 @@ test('admin mobile navigation and editors retain accessible names and focus hand
   const discounts = source('src/pages/AdminDiscounts.jsx');
   const productScopePicker = source('src/components/AdminProductScopePicker.jsx');
   const inventory = source('src/pages/AdminInventoryJournal.jsx');
+  const reservations = source('src/pages/AdminReservations.jsx');
   const audit = source('src/pages/AdminAuditLog.jsx');
   for (const file of [orders, products, categories, promos, discounts]) assert.match(file, /useDialogFocus/);
   assert.match(orders, /aria-current=\{ordersMode/);
@@ -123,6 +124,8 @@ test('admin mobile navigation and editors retain accessible names and focus hand
   assert.match(orders, /const isAdmin = session\.user\.role === 'admin'/);
   assert.match(orders, /\{isAdmin && <Link aria-label="Coduri promo"/);
   assert.match(orders, /<Link aria-label="Reduceri"/);
+  assert.match(orders, /<Link aria-label="Rezervări"/);
+  assert.match(orders, /reservationsMode \? <AdminReservations/);
   assert.match(orders, /\{isAdmin && <Link aria-label="Statistică"/);
   assert.match(orders, /promosMode \? \(isAdmin \? <AdminPromos/);
   assert.match(orders, /statisticsMode \? \(isAdmin \? <AdminStatistics/);
@@ -147,6 +150,9 @@ test('admin mobile navigation and editors retain accessible names and focus hand
   assert.match(discounts, /discountId/);
   assert.match(discounts, /aria-pressed=\{state === 'active'\}/);
   assert.match(inventory, /aria-label="Caută în jurnalul de stoc"/);
+  assert.match(reservations, /setInterval\(\(\) => \{/);
+  assert.match(reservations, /}, 5000\)/);
+  assert.match(reservations, /Rezervări și comenzi noi/);
   assert.match(audit, /aria-label="Caută în jurnalul de audit"/);
   assert.match(promos, /adm-summary-metric/);
 });

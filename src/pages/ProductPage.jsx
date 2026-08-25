@@ -24,7 +24,7 @@ export default function ProductPage(){
   const p = findProduct(id);
   const liveProduct = p ? (find(p.key) || p) : null;
   const cartQuantity = p ? (cart.find(item=>item.id===p.key)?.q || 0) : 0;
-  const remainingQuantity = p ? Math.max(0,cartLineLimit(liveProduct)-cartQuantity) : 0;
+  const remainingQuantity = p ? Math.max(0,cartLineLimit(liveProduct,cartQuantity)-cartQuantity) : 0;
   const maxSelectable = Math.max(1,remainingQuantity);
   const atCartLimit = Boolean(p) && remainingQuantity<=0;
   React.useEffect(()=>{ if(p) rememberProduct(p); },[p, rememberProduct]);
@@ -56,13 +56,13 @@ export default function ProductPage(){
   const gallery = productGallery(p);
   const shades = [p.g, [p.g[1], p.g[0]], ["#fff", p.g[0]], [p.g[0], "#fff"]];
 
-  const handleAdd = ()=>{
-    const addedQuantity = addToCart(p,{quantity:Math.min(qty,remainingQuantity),source:'product_page'});
+  const handleAdd = async ()=>{
+    const addedQuantity = await addToCart(p,{quantity:Math.min(qty,remainingQuantity),source:'product_page'});
     if(addedQuantity<=0) return;
     setAdded(true); clearTimeout(addT.current); addT.current=setTimeout(()=>setAdded(false),1400);
   };
-  const buyNow = ()=>{
-    if(!atCartLimit) addToCart(p,{quantity:Math.min(qty,remainingQuantity),source:'product_page'});
+  const buyNow = async ()=>{
+    if(!atCartLimit) await addToCart(p,{quantity:Math.min(qty,remainingQuantity),source:'product_page'});
     navigate("/checkout");
   };
   const related = relatedProducts(p, 4);

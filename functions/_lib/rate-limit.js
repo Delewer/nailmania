@@ -82,6 +82,9 @@ export async function cleanupExpiredRateLimits(db, { now = new Date() } = {}) {
 
 export const RATE_LIMIT_RULES = [
   { method: 'POST', pathname: '/api/orders', scope: 'orders.create', limit: 12, windowSeconds: 10 * 60 },
+  { method: 'POST', pathname: '/api/reservations', scope: 'reservations.change', limit: 120, windowSeconds: 10 * 60 },
+  { method: 'PATCH', pattern: /^\/api\/reservations\/[^/]+$/, scope: 'reservations.change', limit: 120, windowSeconds: 10 * 60 },
+  { method: 'DELETE', pattern: /^\/api\/reservations\/[^/]+$/, scope: 'reservations.change', limit: 120, windowSeconds: 10 * 60 },
   { method: 'POST', pathname: '/api/auth/register', scope: 'auth.register', limit: 5, windowSeconds: 60 * 60 },
   { method: 'POST', pathname: '/api/auth/login', scope: 'auth.login', limit: 10, windowSeconds: 10 * 60 },
   { method: 'POST', pathname: '/api/auth/forgot-password', scope: 'auth.forgot', limit: 5, windowSeconds: 60 * 60 },

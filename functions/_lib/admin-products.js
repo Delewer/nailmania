@@ -137,7 +137,12 @@ const number = (value) => Number(value || 0);
 
 export const ADMIN_PRODUCT_SELECT = `
   SELECT p.*, c.name_ro AS category_name_ro, c.name_ru AS category_name_ru,
-         COALESCE(i.on_hand, 0) AS on_hand, COALESCE(i.reserved, 0) AS reserved,
+         COALESCE(i.on_hand, 0) AS on_hand,
+         MAX(0, COALESCE(i.reserved, 0) - COALESCE((
+           SELECT SUM(r.quantity) FROM cart_reservations r
+           WHERE r.product_id = p.id AND r.status = 'ACTIVE'
+             AND r.expires_at <= strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+         ), 0)) AS reserved,
          i.admin_revision AS inventory_revision,
          prices.effective_price, prices.effective_old_price,
          prices.discount_percentage, prices.effective_is_promo,

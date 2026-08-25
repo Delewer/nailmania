@@ -14,7 +14,11 @@ export function ProductCard({p}){
   const addT = React.useRef(0);
   React.useEffect(()=>{ rememberProduct(p); },[p, rememberProduct]);
   React.useEffect(()=>()=>clearTimeout(addT.current),[]);
-  const onAdd = ()=>{ addToCart(p); setAdded(true); clearTimeout(addT.current); addT.current=setTimeout(()=>setAdded(false),1400); };
+  const onAdd = async ()=>{
+    const quantity = await addToCart(p);
+    if(quantity<=0) return;
+    setAdded(true); clearTimeout(addT.current); addT.current=setTimeout(()=>setAdded(false),1400);
+  };
   const tag = p.badge==="new" ? {c:"new",txt:t("newBadge")}
             : p.badge==="sale" ? {c:"sale",txt:"-"+Math.round((1-p.price/p.old)*100)+"%"}
             : p.badge==="hit" ? {c:"hit",txt:"HIT"} : null;

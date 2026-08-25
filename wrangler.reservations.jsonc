@@ -8,7 +8,7 @@
     "preview": {
       "name": "nailmania-reservation-maintenance-preview",
       "triggers": {
-        "crons": ["*/5 * * * *"]
+        "crons": ["* * * * *"]
       },
       "d1_databases": [
         {
@@ -22,7 +22,7 @@
     "production": {
       "name": "nailmania-reservation-maintenance-production",
       "triggers": {
-        "crons": ["*/5 * * * *"]
+        "crons": ["* * * * *"]
       },
       "d1_databases": [
         {

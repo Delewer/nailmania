@@ -5,10 +5,11 @@ import { submitOrderRequest } from './order-api.js'
 import { loadFreshStorefrontProducts } from './account-catalog.js'
 import { trackProductEvent } from './product-analytics.js'
 import { completeOrderAttemptKey, purgeLegacyGuestOrderHistory } from './order-attempt.js'
+import { loadCartReservations, synchronizeReservation } from './reservation-api.js'
 import { readStoredList, readStoredValue, writeStoredValue } from './storage.js'
 import {
+  cartLineLimit,
   clampCartQuantity,
-  incrementCartQuantity,
   normalizeCartIncrement,
   reconcileCartItems,
 } from './cart-quantity.js'
@@ -111,6 +112,15 @@ export function ShopProvider({children}){
     ()=>null,
     {keepUnresolved:true},
   ));
+  const newCartId = ()=>crypto.randomUUID();
+  const [cartId,setCartId] = React.useState(()=>{
+    const stored = readStoredValue("nm_cart_id","");
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(stored)
+      ? stored.toLowerCase()
+      : newCartId();
+  });
+  const [reservationsReady,setReservationsReady] = React.useState(false);
+  const [reservationExpiries,setReservationExpiries] = React.useState({});
   const [favs, setFavs] = React.useState(()=>readStoredList("nm_favs"));
   const [drawer, setDrawer] = React.useState(null); // 'cart' | 'fav' | 'menu' | 'catalog'
   const [toast, setToast] = React.useState(null);
@@ -120,7 +130,17 @@ export function ShopProvider({children}){
   const [catalogLoaded, setCatalogLoaded] = React.useState(false);
   const [catalogError, setCatalogError] = React.useState(null);
   const toastT = React.useRef(0);
+  const cartRef = React.useRef(cart);
+  const reservationQueue = React.useRef(Promise.resolve());
   const hasDrawer = Boolean(drawer);
+
+  const applyCart = React.useCallback((updater)=>{
+    setCart(current=>{
+      const next = typeof updater === "function" ? updater(current) : updater;
+      cartRef.current = next;
+      return next;
+    });
+  },[]);
 
   React.useEffect(()=>{
     document.documentElement.lang = lang === "ru" ? "ru" : "ro";
@@ -130,10 +150,71 @@ export function ShopProvider({children}){
   // value: React treats every non-undefined return as an effect cleanup and
   // would try to call that boolean on the next cart/favourites update.
   React.useEffect(()=>{ writeStoredValue("nm_cart",JSON.stringify(cart)); },[cart]);
+  React.useEffect(()=>{ writeStoredValue("nm_cart_id",cartId); },[cartId]);
   React.useEffect(()=>{ writeStoredValue("nm_favs",JSON.stringify(favs)); },[favs]);
   // Older builds persisted the complete guest order response, including contact
   // fields. Guest history has no UI consumer; purge that legacy PII copy.
   React.useEffect(()=>purgeLegacyGuestOrderHistory(),[]);
+  React.useEffect(()=>{
+    let disposed = false;
+    const localCart = cartRef.current;
+    const hydrate = async ()=>{
+      try{
+        const active = await loadCartReservations(cartId);
+        let next = active.map(item=>({id:item.productKey,q:item.quantity}));
+        const expiries = Object.fromEntries(active.map(item=>[item.productKey,item.expiresAt]));
+        // Carts created by the previous storefront build have no server-side
+        // reservation yet. Try to reserve them once during the upgrade.
+        if(!active.length && localCart.length){
+          next = [];
+          for(const item of localCart){
+            try{
+              const reservation = await synchronizeReservation({
+                cartId,productKey:item.id,quantity:item.q,
+              });
+              if(reservation.quantity>0){
+                next.push({id:item.id,q:reservation.quantity});
+                expiries[item.id]=reservation.expiresAt;
+              }
+            }catch{/* Unavailable legacy lines are removed instead of shown as reserved. */}
+          }
+        }
+        if(!disposed){
+          setReservationExpiries(expiries);
+          applyCart(next);
+        }
+      }catch{/* Keep the local cart visible; every later mutation still fails closed server-side. */}
+      finally{if(!disposed) setReservationsReady(true);}
+    };
+    const queued = reservationQueue.current.catch(()=>{}).then(hydrate);
+    reservationQueue.current = queued.catch(()=>{});
+    return ()=>{disposed=true;};
+  },[applyCart,cartId]);
+
+  const cartReservationExpiresAt = React.useMemo(()=>{
+    const deadlines = cart
+      .map(item=>reservationExpiries[item.id])
+      .filter(value=>Number.isFinite(Date.parse(value)))
+      .sort();
+    return deadlines[0] || null;
+  },[cart,reservationExpiries]);
+
+  React.useEffect(()=>{
+    if(!cartReservationExpiresAt) return undefined;
+    const delay = Math.max(0,Date.parse(cartReservationExpiresAt)-Date.now()+100);
+    const timer = setTimeout(()=>{
+      const refresh = reservationQueue.current.catch(()=>{}).then(async()=>{
+        try{
+          const active = await loadCartReservations(cartId);
+          setReservationExpiries(Object.fromEntries(active.map(item=>[item.productKey,item.expiresAt])));
+          applyCart(active.map(item=>({id:item.productKey,q:item.quantity})));
+        }catch{/* The next cart mutation and checkout still validate the reservation server-side. */}
+      });
+      reservationQueue.current = refresh.catch(()=>{});
+    },Math.min(delay,2_147_483_647));
+    return ()=>clearTimeout(timer);
+  },[applyCart,cartId,cartReservationExpiresAt]);
+
   React.useEffect(()=>{
     if(!hasDrawer) return;
     const y = window.scrollY || window.pageYOffset || 0;
@@ -221,8 +302,14 @@ export function ShopProvider({children}){
   // catalog is loaded, removed products are dropped. Stock zero removes a line
   // and reduced stock clamps it without weakening the server-side stock check.
   React.useEffect(()=>{
-    setCart(current=>{
-      const next = reconcileCartItems(current,find,{
+    if(!reservationsReady) return;
+    applyCart(current=>{
+      const quantities = new Map(current.map(item=>[item.id,item.q]));
+      const next = reconcileCartItems(current,key=>{
+        const product = find(key);
+        if(!product || typeof product.stock!=="number") return product;
+        return {...product,stock:product.stock+(quantities.get(key)||0)};
+      },{
         keepUnresolved:!catalogLoaded || Boolean(catalogError),
       });
       const unchanged = next.length===current.length
@@ -232,37 +319,55 @@ export function ShopProvider({children}){
     if(catalogLoaded && !catalogError){
       setFavs(f=>{ const g=f.filter(k=>find(k)); return g.length===f.length ? f : g; });
     }
-  },[catalogError, catalogLoaded, find]);
+  },[catalogError, catalogLoaded, find, reservationsReady]);
 
   const showToast = (msg)=>{
     setToast(msg); clearTimeout(toastT.current);
     toastT.current = setTimeout(()=>setToast(null), 2200);
   };
-  const addToCart = (p, options={})=>{
+  const queueReservationChange = (productKey, desiredQuantity)=>{
+    const run = reservationQueue.current.catch(()=>{}).then(async()=>{
+      const current = cartRef.current.find(item=>item.id===productKey)?.q || 0;
+      const desired = typeof desiredQuantity === "function"
+        ? desiredQuantity(current)
+        : desiredQuantity;
+      try{
+        const reservation = await synchronizeReservation({
+          cartId,productKey,quantity:Math.max(0,Math.min(99,Math.floor(Number(desired)||0))),
+        });
+        applyCart(items=>{
+          const without = items.filter(item=>item.id!==productKey);
+          return reservation.quantity>0
+            ? [...without,{id:productKey,q:reservation.quantity}]
+            : without;
+        });
+        setReservationExpiries(current=>{
+          const next={...current};
+          if(reservation.quantity>0) next[productKey]=reservation.expiresAt;
+          else delete next[productKey];
+          return next;
+        });
+        return {previous:current,quantity:reservation.quantity};
+      }catch(error){
+        showToast(error?.code==="INSUFFICIENT_STOCK" ? t("stockLimitReached") : t("catalogUnavailableText"));
+        return {previous:current,quantity:current,error};
+      }
+    });
+    reservationQueue.current = run.then(()=>undefined,()=>undefined);
+    return run;
+  };
+
+  const addToCart = async (p, options={})=>{
     if(!p?.key) return 0;
     const product = find(p.key) || p;
     const quantity = normalizeCartIncrement(options.quantity,1);
-    const snapshot = reconcileCartItems(cart,key=>key===p.key ? product : find(key),{
-      keepUnresolved:!catalogLoaded || Boolean(catalogError),
-    });
-    const present = snapshot.find(item=>item.id===p.key)?.q || 0;
-    const projected = incrementCartQuantity(present,quantity,product);
-    const addedQuantity = Math.max(0,projected-present);
     rememberProduct(product);
-    setCart(current=>{
-      const next = reconcileCartItems(current,key=>key===p.key ? product : find(key),{
-        keepUnresolved:!catalogLoaded || Boolean(catalogError),
-      });
-      const index = next.findIndex(item=>item.id===p.key);
-      const currentQuantity = index>=0 ? next[index].q : 0;
-      const total = incrementCartQuantity(currentQuantity,quantity,product);
-      if(total<=0) return index>=0 ? next.filter(item=>item.id!==p.key) : next;
-      if(index>=0){
-        if(next[index].q===total) return next;
-        return next.map((item,itemIndex)=>itemIndex===index ? {...item,q:total} : item);
-      }
-      return [...next,{id:p.key,q:total}];
+    const result = await queueReservationChange(p.key,current=>{
+      const limit = cartLineLimit(product,current);
+      return Math.min(limit,current+quantity);
     });
+    const addedQuantity = Math.max(0,result.quantity-result.previous);
+    if(result.error) return 0;
     if(addedQuantity>0){
       trackProductEvent('add_to_cart',{
         productKey:p.key,quantity:addedQuantity,language:lang,source:options.source||'product_card',
@@ -273,53 +378,26 @@ export function ShopProvider({children}){
     }
     return addedQuantity;
   };
-  const addItemsToCart = (entries, options={})=>{
+  const addItemsToCart = async (entries, options={})=>{
     const valid = (entries||[]).filter(entry=>entry?.product?.key && Number(entry.quantity)>0);
     if(!valid.length) return 0;
     indexProducts(valid.map(entry=>entry.product));
-    setCart(current=>{
-      const incoming = new Map(valid.map(entry=>[entry.product.key,entry.product]));
-      const next = reconcileCartItems(current,key=>incoming.get(key) || find(key),{
-        keepUnresolved:!catalogLoaded || Boolean(catalogError),
-      });
-      let added = 0;
-      for(const {product,quantity} of valid){
-        const index = next.findIndex(item=>item.id===product.key);
-        const present = index>=0 ? next[index].q : 0;
-        const requested = normalizeCartIncrement(quantity);
-        const total = incrementCartQuantity(present,requested,product);
-        const delta = Math.max(0,total-present);
-        if(!delta) continue;
-        added += delta;
-        if(index>=0) next[index]={...next[index],q:total};
-        else next.push({id:product.key,q:total});
-      }
-      const unchanged = next.length===current.length
-        && next.every((item,index)=>item.id===current[index].id && item.q===current[index].q);
-      return unchanged ? current : next;
-    });
+    let added = 0;
     for(const {product,quantity} of valid){
-      trackProductEvent('add_to_cart',{
-        productKey:product.key,
-        quantity:Math.min(99,Math.max(1,Math.floor(Number(quantity)||1))),
-        language:lang,
-        source:options.source||'repeat_order',
-      });
+      added += await addToCart(product,{quantity,source:options.source||'repeat_order'});
     }
-    showToast(t("addedToast"));
-    return valid.length;
+    return added;
   };
-  const setQty=(id,q)=> setCart(current=>{
+  const setQty=async(id,q)=>{
     const product = find(id);
-    const next = reconcileCartItems(current,find,{
-      keepUnresolved:!catalogLoaded || Boolean(catalogError),
-    });
-    const quantity = clampCartQuantity(q,product);
-    if(quantity<=0) return next.filter(item=>item.id!==id);
-    return next.map(item=>item.id===id ? {...item,q:quantity} : item);
-  });
-  const removeFromCart=(id)=> setCart(c=>c.filter(i=>i.id!==id));
-  const clearCart=()=> setCart([]);
+    const current = cartRef.current.find(item=>item.id===id)?.q || 0;
+    const quantity = clampCartQuantity(q,product,current);
+    return queueReservationChange(id,quantity);
+  };
+  const removeFromCart=(id)=>queueReservationChange(id,0);
+  const clearCart=async()=>{
+    for(const item of [...cartRef.current]) await queueReservationChange(item.id,0);
+  };
   const toggleFav=(id)=>{ if(!find(id)) ensureCatalog(); setFavs(f=> f.includes(id)? f.filter(x=>x!==id): [...f,id]); };
 
   const cartCount = cart.reduce((s,i)=>s+i.q,0);
@@ -328,8 +406,11 @@ export function ShopProvider({children}){
   // D1 is the only order authority: the server owns prices, totals and stock
   // reservation. The cart is cleared only after the API confirms the order.
   const submitOrder = async (details)=>{
+    await reservationQueue.current;
+    const submittedCart = cartRef.current;
     const savedOrder = await submitOrderRequest({
-      items:cart.map(item=>({productKey:item.id,quantity:item.q})),
+      cartId,
+      items:submittedCart.map(item=>({productKey:item.id,quantity:item.q})),
       customer:details.customer,
       delivery:details.delivery,
       payment:details.payment,
@@ -339,14 +420,17 @@ export function ShopProvider({children}){
       expectedQuote:details.expectedQuote,
       lang,
     });
-    clearCart();
+    applyCart([]);
+    setReservationExpiries({});
+    setReservationsReady(false);
+    setCartId(newCartId());
     completeOrderAttemptKey(details.idempotencyKey);
     return savedOrder;
   };
 
   const value = {
     lang,setLang,t,name,
-    cart,addToCart,addItemsToCart,setQty,removeFromCart,clearCart,cartCount,cartTotal,
+    cart,addToCart,addItemsToCart,setQty,removeFromCart,clearCart,cartCount,cartTotal,cartReservationExpiresAt,
     submitOrder,
     favs,toggleFav,
     drawer,setDrawer,

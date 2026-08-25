@@ -61,8 +61,7 @@ function releaseStatements(db, orderId, toStatus, token, now, actorUserId, reaso
             SELECT oi.quantity FROM order_items oi
             WHERE oi.order_id = ? AND oi.product_id = inventory.product_id
           ),
-          updated_at = ?,
-          admin_revision = ?
+          updated_at = ?, admin_revision = ?
       WHERE warehouse_id = 1
         AND EXISTS (
           SELECT 1 FROM order_items oi
@@ -75,10 +74,9 @@ function releaseStatements(db, orderId, toStatus, token, now, actorUserId, reaso
         id, product_id, warehouse_id, movement_type, delta_on_hand, delta_reserved,
         balance_on_hand, balance_reserved, order_id, actor_user_id, reason, created_at
       )
-      SELECT
-        'release:' || ? || ':' || i.product_id,
-        i.product_id, 1, 'reservation_release', 0, -oi.quantity,
-        i.on_hand, i.reserved, ?, ?, ?, ?
+      SELECT 'release:' || ? || ':' || i.product_id,
+             i.product_id, 1, 'reservation_release', 0, -oi.quantity,
+             i.on_hand, i.reserved, ?, ?, ?, ?
       FROM order_items oi
       JOIN inventory i ON i.product_id = oi.product_id AND i.warehouse_id = 1
       JOIN orders o ON o.id = oi.order_id
@@ -103,8 +101,7 @@ function reserveStatements(db, orderId, toStatus, token, now, actorUserId, reaso
             SELECT oi.quantity FROM order_items oi
             WHERE oi.order_id = ? AND oi.product_id = inventory.product_id
           ),
-          updated_at = ?,
-          admin_revision = ?
+          updated_at = ?, admin_revision = ?
       WHERE warehouse_id = 1
         AND EXISTS (
           SELECT 1 FROM order_items oi
@@ -117,10 +114,9 @@ function reserveStatements(db, orderId, toStatus, token, now, actorUserId, reaso
         id, product_id, warehouse_id, movement_type, delta_on_hand, delta_reserved,
         balance_on_hand, balance_reserved, order_id, actor_user_id, reason, created_at
       )
-      SELECT
-        'reserve:' || ? || ':' || i.product_id,
-        i.product_id, 1, 'reservation', 0, oi.quantity,
-        i.on_hand, i.reserved, ?, ?, ?, ?
+      SELECT 'reserve:' || ? || ':' || i.product_id,
+             i.product_id, 1, 'reservation', 0, oi.quantity,
+             i.on_hand, i.reserved, ?, ?, ?, ?
       FROM order_items oi
       JOIN inventory i ON i.product_id = oi.product_id AND i.warehouse_id = 1
       JOIN orders o ON o.id = oi.order_id
@@ -137,16 +133,16 @@ function reserveStatements(db, orderId, toStatus, token, now, actorUserId, reaso
   ];
 }
 
-function saleStatements(db, orderId, toStatus, token, now, actorUserId, reason) {
+function restoreStatements(db, orderId, toStatus, token, now, actorUserId, reason) {
   return [
     db.prepare(`
       UPDATE inventory
-      SET on_hand = on_hand - (
-            SELECT oi.quantity FROM order_items oi
+      SET on_hand = on_hand + (
+            SELECT oi.sold_quantity FROM order_items oi
             WHERE oi.order_id = ? AND oi.product_id = inventory.product_id
           ),
           reserved = reserved - (
-            SELECT oi.quantity FROM order_items oi
+            SELECT oi.quantity - oi.sold_quantity FROM order_items oi
             WHERE oi.order_id = ? AND oi.product_id = inventory.product_id
           ),
           updated_at = ?,
@@ -157,7 +153,62 @@ function saleStatements(db, orderId, toStatus, token, now, actorUserId, reason) 
           WHERE oi.order_id = ? AND oi.product_id = inventory.product_id
         )
         AND ${transitionGuard}
-    `).bind(orderId, orderId, now, inventoryRevision(token, 'sale'), orderId, orderId, toStatus, token),
+    `).bind(orderId, orderId, now, inventoryRevision(token, 'restore'), orderId, orderId, toStatus, token),
+    db.prepare(`
+      INSERT INTO inventory_movements (
+        id, product_id, warehouse_id, movement_type, delta_on_hand, delta_reserved,
+        balance_on_hand, balance_reserved, order_id, actor_user_id, reason, created_at
+      )
+      SELECT
+        'restore:' || ? || ':' || i.product_id,
+        i.product_id, 1,
+        CASE WHEN oi.sold_quantity > 0 THEN 'return' ELSE 'reservation_release' END,
+        oi.sold_quantity, -(oi.quantity - oi.sold_quantity),
+        i.on_hand, i.reserved, ?, ?, ?, ?
+      FROM order_items oi
+      JOIN inventory i ON i.product_id = oi.product_id AND i.warehouse_id = 1
+      JOIN orders o ON o.id = oi.order_id
+      WHERE oi.order_id = ? AND o.status = ? AND o.transition_token = ?
+      ON CONFLICT(id) DO NOTHING
+    `).bind(token, orderId, actorUserId, reason, now, orderId, toStatus, token),
+    db.prepare(`
+      UPDATE order_items
+      SET sold_quantity = 0
+      WHERE order_id = ? AND ${transitionGuard}
+    `).bind(orderId, orderId, toStatus, token),
+    db.prepare(`
+      UPDATE promo_redemptions
+      SET released_at = ?, release_reason = ?
+      WHERE order_id = ? AND released_at IS NULL
+        AND ${transitionGuard}
+    `).bind(now, reason, orderId, orderId, toStatus, token),
+    catalogRevisionBump(db, transitionGuard, [orderId, toStatus, token]),
+  ];
+}
+
+function saleStatements(db, orderId, toStatus, token, now, actorUserId, reason) {
+  return [
+    db.prepare(`
+      UPDATE inventory
+       SET on_hand = on_hand - (
+             SELECT oi.quantity - oi.sold_quantity FROM order_items oi
+             WHERE oi.order_id = ? AND oi.product_id = inventory.product_id
+           ),
+           reserved = reserved - (
+             SELECT CASE WHEN ? = 'completed'
+               THEN oi.quantity - oi.sold_quantity ELSE 0 END
+             FROM order_items oi
+             WHERE oi.order_id = ? AND oi.product_id = inventory.product_id
+           ),
+          updated_at = ?,
+          admin_revision = ?
+      WHERE warehouse_id = 1
+        AND EXISTS (
+          SELECT 1 FROM order_items oi
+          WHERE oi.order_id = ? AND oi.product_id = inventory.product_id
+        )
+        AND ${transitionGuard}
+    `).bind(orderId, toStatus, orderId, now, inventoryRevision(token, 'sale'), orderId, orderId, toStatus, token),
     db.prepare(`
       INSERT INTO inventory_movements (
         id, product_id, warehouse_id, movement_type, delta_on_hand, delta_reserved,
@@ -165,18 +216,27 @@ function saleStatements(db, orderId, toStatus, token, now, actorUserId, reason) 
       )
       SELECT
         'sale:' || ? || ':' || i.product_id,
-        i.product_id, 1, 'sale', -oi.quantity, -oi.quantity,
+        i.product_id, 1, 'sale', -(oi.quantity - oi.sold_quantity),
+        CASE WHEN o.status = 'completed'
+          THEN -(oi.quantity - oi.sold_quantity) ELSE 0 END,
         i.on_hand, i.reserved, ?, ?, ?, ?
       FROM order_items oi
       JOIN inventory i ON i.product_id = oi.product_id AND i.warehouse_id = 1
       JOIN orders o ON o.id = oi.order_id
-      WHERE oi.order_id = ? AND o.status = ? AND o.transition_token = ?
+      WHERE oi.order_id = ? AND oi.sold_quantity < oi.quantity
+        AND o.status = ? AND o.transition_token = ?
       ON CONFLICT(id) DO NOTHING
     `).bind(orderId, orderId, actorUserId, reason, now, orderId, toStatus, token),
     db.prepare(`
       UPDATE order_items
       SET sold_quantity = quantity
       WHERE order_id = ? AND ${transitionGuard}
+    `).bind(orderId, orderId, toStatus, token),
+    db.prepare(`
+      UPDATE promo_redemptions
+      SET released_at = NULL, release_reason = NULL
+      WHERE order_id = ? AND released_at IS NOT NULL
+        AND ${transitionGuard}
     `).bind(orderId, orderId, toStatus, token),
     catalogRevisionBump(db, transitionGuard, [orderId, toStatus, token]),
   ];
@@ -274,6 +334,7 @@ function returnStatements(db, orderId, toStatus, token, now, actorUserId, reason
 const lifecycleStatements = (db, action, args) => {
   if (action === 'reserve') return reserveStatements(db, ...args);
   if (action === 'release') return releaseStatements(db, ...args);
+  if (action === 'restore') return restoreStatements(db, ...args);
   if (action === 'sale') return saleStatements(db, ...args);
   if (action === 'return') return returnStatements(db, ...args);
   return [];
@@ -291,24 +352,39 @@ export async function transitionOrder(db, options) {
   if (!orderId || !toStatus) throw new OrderLifecycleError('INVALID_TRANSITION_REQUEST', 'Order id and target status are required', 400);
 
   const order = await database.prepare(`
-    SELECT id, order_no, status, reservation_expires_at
+    SELECT id, order_no, cart_id, status, reservation_expires_at
     FROM orders WHERE id = ?
   `).bind(orderId).first();
   if (!order) throw new OrderLifecycleError('ORDER_NOT_FOUND', 'Order not found', 404, { orderId });
 
-  const plan = transitionPlan(order.status, toStatus);
+  const basePlan = transitionPlan(order.status, toStatus);
+  const plan = order.cart_id && !basePlan.idempotent
+    ? {
+        ...basePlan,
+        action: order.status === 'cancelled' && toStatus === 'confirmed'
+          ? 'sale'
+          : toStatus === 'cancelled'
+            ? 'restore'
+            : toStatus === 'completed'
+              ? 'none'
+              : basePlan.action,
+      }
+    : basePlan;
   if (plan.idempotent) {
     return { changed: false, orderId, orderNo: order.order_no, fromStatus: order.status, toStatus, action: plan.action };
   }
 
   const token = crypto.randomUUID();
   const reason = comment || ({
-    reserve: 'Cancelled order reopened and stock reserved',
-    release: 'Order reservation released',
-    sale: 'Order completed and stock sold',
+    reserve: 'Cancelled legacy order reopened and stock reserved',
+    release: 'Legacy order reservation released',
+    restore: 'Cancelled order restored to stock',
+    sale: order.status === 'cancelled'
+      ? 'Cancelled order reopened and stock committed'
+      : 'Legacy reservation converted to a sale',
     return: 'Full order return',
   }[plan.action] || `Order status changed to ${toStatus}`);
-  const reopenGuard = plan.action === 'reserve' ? `
+  const reopenGuard = order.status === 'cancelled' && ['reserve', 'sale'].includes(plan.action) ? `
     AND NOT EXISTS (
       SELECT 1
       FROM order_items oi
@@ -337,7 +413,7 @@ export async function transitionOrder(db, options) {
         completed_at = CASE WHEN ? = 'completed' THEN COALESCE(completed_at, ?) ELSE completed_at END,
         cancelled_at = CASE
           WHEN ? = 'cancelled' THEN COALESCE(cancelled_at, ?)
-          WHEN ? = 'reserve' THEN NULL
+          WHEN ? IN ('reserve', 'sale') AND status = 'cancelled' THEN NULL
           ELSE cancelled_at
         END,
         transition_token = ?,
@@ -395,7 +471,7 @@ export async function transitionOrder(db, options) {
     if (current?.status === toStatus) {
       return { changed: false, orderId, orderNo: order.order_no, fromStatus: current.status, toStatus, action: plan.action };
     }
-    if (plan.action === 'reserve' && current?.status === order.status) {
+    if (order.status === 'cancelled' && ['reserve', 'sale'].includes(plan.action) && current?.status === order.status) {
       const blockers = await database.prepare(`
         SELECT
           EXISTS (

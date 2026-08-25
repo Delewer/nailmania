@@ -37,6 +37,7 @@ import {
 import AdminProducts from './AdminProducts.jsx';
 import AdminCategories from './AdminCategories.jsx';
 import AdminInventoryJournal from './AdminInventoryJournal.jsx';
+import AdminReservations from './AdminReservations.jsx';
 import AdminAuditLog from './AdminAuditLog.jsx';
 import AdminPromos from './AdminPromos.jsx';
 import AdminDiscounts from './AdminDiscounts.jsx';
@@ -526,15 +527,16 @@ function OrderDrawer({
 }
 
 export default function AdminOrders() {
-  const { pathname } = useLocation();
+  const { pathname, search: locationSearch } = useLocation();
   const productsMode = pathname.startsWith('/admin/products');
   const categoriesMode = pathname.startsWith('/admin/categories');
+  const reservationsMode = pathname.startsWith('/admin/reservations');
   const inventoryMode = pathname.startsWith('/admin/inventory');
   const auditMode = pathname.startsWith('/admin/audit');
   const promosMode = pathname.startsWith('/admin/promos');
   const discountsMode = pathname.startsWith('/admin/discounts');
   const statisticsMode = pathname.startsWith('/admin/statistics');
-  const ordersMode = !productsMode && !categoriesMode && !inventoryMode && !auditMode && !promosMode && !discountsMode && !statisticsMode;
+  const ordersMode = !productsMode && !categoriesMode && !reservationsMode && !inventoryMode && !auditMode && !promosMode && !discountsMode && !statisticsMode;
   const [session, setSession] = React.useState(null);
   const [authChecked, setAuthChecked] = React.useState(false);
   const [authError, setAuthError] = React.useState('');
@@ -552,11 +554,11 @@ export default function AdminOrders() {
   const [detailError, setDetailError] = React.useState('');
 
   React.useEffect(() => {
-    const title = productsMode ? 'Produse' : categoriesMode ? 'Categorii' : discountsMode ? 'Reduceri' : inventoryMode ? 'Jurnal de stoc' : promosMode ? 'Coduri promo' : statisticsMode ? 'Statistică' : auditMode ? 'Audit' : 'Comenzi';
+    const title = productsMode ? 'Produse' : categoriesMode ? 'Categorii' : reservationsMode ? 'Rezervări' : discountsMode ? 'Reduceri' : inventoryMode ? 'Jurnal de stoc' : promosMode ? 'Coduri promo' : statisticsMode ? 'Statistică' : auditMode ? 'Audit' : 'Comenzi';
     document.title = `${title} · Nail Mania Admin`;
     document.body.classList.add('adm-body-active');
     return () => document.body.classList.remove('adm-body-active');
-  }, [auditMode, categoriesMode, discountsMode, inventoryMode, productsMode, promosMode, statisticsMode]);
+  }, [auditMode, categoriesMode, discountsMode, inventoryMode, productsMode, promosMode, reservationsMode, statisticsMode]);
 
   const checkSession = React.useCallback(async () => {
     try {
@@ -612,6 +614,10 @@ export default function AdminOrders() {
     }
   }, []);
   const closeOrder = React.useCallback(() => { setSelectedId(''); setDetail(null); setDetailError(''); }, []);
+  React.useEffect(() => {
+    const openId = new URLSearchParams(locationSearch).get('open');
+    if (session && ordersMode && openId) openOrder(openId);
+  }, [locationSearch, openOrder, ordersMode, session]);
   const transition = React.useCallback(async (id, nextStatus, comment) => {
     const payload = await adminRequest(`/api/admin/orders/${encodeURIComponent(id)}`, {
       method: 'PATCH',
@@ -666,6 +672,7 @@ export default function AdminOrders() {
         <div className="adm-brand"><span>nm</span><div><b>Nail Mania</b><small>Administrare</small></div></div>
         <nav>
           <Link aria-label="Comenzi" aria-current={ordersMode ? 'page' : undefined} className={ordersMode ? 'active' : ''} to="/admin/orders"><ShoppingBag size={19}/><span>Comenzi</span>{(counts.pending || 0) > 0 && <i>{counts.pending}</i>}</Link>
+          <Link aria-label="Rezervări" aria-current={reservationsMode ? 'page' : undefined} className={reservationsMode ? 'active' : ''} to="/admin/reservations"><Clock3 size={19}/><span>Rezervări</span></Link>
           <Link aria-label="Produse" aria-current={productsMode ? 'page' : undefined} className={productsMode ? 'active' : ''} to="/admin/products"><Boxes size={19}/><span>Produse</span></Link>
           <Link aria-label="Categorii" aria-current={categoriesMode ? 'page' : undefined} className={categoriesMode ? 'active' : ''} to="/admin/categories"><FolderTree size={19}/><span>Categorii</span></Link>
           <Link aria-label="Reduceri" aria-current={discountsMode ? 'page' : undefined} className={discountsMode ? 'active' : ''} to="/admin/discounts"><Percent size={19}/><span>Reduceri</span></Link>
@@ -686,6 +693,7 @@ export default function AdminOrders() {
       <main className="adm-main">
         {productsMode ? <AdminProducts onUnauthorized={invalidateSession}/>
           : categoriesMode ? <AdminCategories onUnauthorized={invalidateSession}/>
+            : reservationsMode ? <AdminReservations onUnauthorized={invalidateSession}/>
             : discountsMode ? <AdminDiscounts onUnauthorized={invalidateSession}/>
               : promosMode ? (isAdmin ? <AdminPromos onUnauthorized={invalidateSession}/> : adminOnlyMessage)
               : inventoryMode ? <AdminInventoryJournal onUnauthorized={invalidateSession}/>

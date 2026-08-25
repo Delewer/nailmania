@@ -13,6 +13,7 @@ const schema = [
   readFileSync(new URL('../migrations/0007_catalog_cache.sql', import.meta.url), 'utf8'),
   readFileSync(new URL('../migrations/0008_rate_limits.sql', import.meta.url), 'utf8'),
   readFileSync(new URL('../migrations/0009_promotions.sql', import.meta.url), 'utf8'),
+  readFileSync(new URL('../migrations/0017_cart_reservations.sql', import.meta.url), 'utf8'),
 ].join('\n');
 
 function setupExpiredOrder() {
@@ -71,7 +72,7 @@ test('scheduled worker entrypoint releases an expired reservation', async (t) =>
   t.after(() => db.close());
 
   await worker.scheduled({
-    cron: '*/5 * * * *',
+    cron: '* * * * *',
     scheduledTime: Date.parse('2026-07-16T10:00:00.000Z'),
   }, { DB: db });
 
@@ -100,7 +101,7 @@ test('scheduled worker entrypoint releases an expired reservation', async (t) =>
 
 test('scheduled worker entrypoint fails clearly without its D1 binding', async () => {
   await assert.rejects(
-    worker.scheduled({ scheduledTime: Date.now(), cron: '*/5 * * * *' }, {}),
+    worker.scheduled({ scheduledTime: Date.now(), cron: '* * * * *' }, {}),
     /D1 binding DB is not configured/,
   );
 });

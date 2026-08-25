@@ -11,6 +11,7 @@ import { trackProductEvent } from '../product-analytics.js'
 import { getOrCreateOrderAttemptKey, startNewOrderAttemptKey } from '../order-attempt.js'
 import { createOrderQuote, normalizeExpectedOrderQuote } from '../../shared/order-quote.js'
 import { cartLineLimit } from '../cart-quantity.js'
+import { ReservationTimer } from '../components/ReservationTimer.jsx'
 import {
   MOLDOVA_COUNTRY_CODE,
   moldovaLocalPhone,
@@ -32,13 +33,18 @@ const ORDER_UNAVAILABLE_CODES = new Set([
   "DB_NOT_CONFIGURED",
   "LEGACY_ORDER_ENDPOINT_DISABLED",
 ]);
+const RESERVATION_INVALID_CODES = new Set([
+  "ACTIVE_RESERVATION_REQUIRED",
+  "RESERVATION_EXPIRED",
+  "RESERVATION_NOT_FOUND",
+]);
 const PROMO_INVALID_CODES = new Set(["INVALID_PROMO_CODE", "PROMO_NOT_FOUND", "PROMO_INACTIVE", "PROMO_NOT_STARTED", "PROMO_EXPIRED"]);
 const PROMO_LIMIT_CODES = new Set(["PROMO_TOTAL_LIMIT_REACHED", "PROMO_USER_LIMIT_REACHED"]);
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function Checkout(){
   const navigate = useNavigate();
-  const { lang, t, name, cart, find, cartTotal, submitOrder, setQty, removeFromCart, allProducts, ensureCatalog, catalogLoading, catalogLoaded, catalogError } = useShop();
+  const { lang, t, name, cart, find, cartTotal, cartReservationExpiresAt, submitOrder, setQty, removeFromCart, allProducts, ensureCatalog, catalogLoading, catalogLoaded, catalogError } = useShop();
   const { user, defaultAddress } = useAuth();
 
   const [delivery, setDelivery] = React.useState("");
@@ -250,7 +256,7 @@ export default function Checkout(){
         }catch{
           setSubmitError(t("orderSubmitError"));
         }
-      }else if(error?.code==="INSUFFICIENT_STOCK" || error?.code==="PRODUCT_NOT_FOUND"){
+      }else if(error?.code==="INSUFFICIENT_STOCK" || error?.code==="PRODUCT_NOT_FOUND" || RESERVATION_INVALID_CODES.has(error?.code)){
         setSubmitError(t("orderStockError"));
       }else if(error?.code?.startsWith?.("PROMO_") || error?.code === "INVALID_PROMO_CODE"){
         setAppliedPromo(null);
@@ -455,9 +461,10 @@ export default function Checkout(){
         {/* order summary */}
         <aside className="co-sum">
           <h3>{t("yourOrder")}</h3>
+          <ReservationTimer expiresAt={cartReservationExpiresAt}/>
           <div className="lines nm-scroll">
             {lines.map(l=>{
-              const atLineLimit = l.q>=cartLineLimit(l.p);
+              const atLineLimit = l.q>=cartLineLimit(l.p,l.q);
               return <div className="sline" key={l.id}>
                 <Placeholder g={l.p.g} icon="bottle" radius={10} img={l.p.img} label={name(l.p)}/>
                 <div className="sn">
