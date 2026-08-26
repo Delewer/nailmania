@@ -65,7 +65,7 @@ function context(db, query = '') {
   };
 }
 
-test('seller reservation page lists active carts and newly converted orders but excludes expired holds', async (t) => {
+test('seller reservation page lists active carts and open orders but excludes expired holds and cancelled orders', async (t) => {
   const db = setup();
   t.after(() => db.close());
 
@@ -85,10 +85,24 @@ test('seller reservation page lists active carts and newly converted orders but 
   assert.deepEqual(active.inventory, { onHand: 5, reserved: 2, available: 3 });
   assert.equal(ordered.order.no, 'NM-NEW-1');
   assert.equal(ordered.order.customerName, 'Client Nou');
+  assert.ok(ordered.order.updatedAt);
 
   const orderedResponse = await listReservations(context(db, '?state=ordered&q=NM-NEW'));
   const orderedPayload = await orderedResponse.json();
   assert.equal(orderedResponse.status, 200);
   assert.equal(orderedPayload.items.length, 1);
   assert.equal(orderedPayload.items[0].state, 'ordered');
+
+  db.sqlite.exec(`
+    UPDATE orders
+    SET status = 'cancelled', updated_at = '2099-01-01T00:05:00.000Z'
+    WHERE id = 'order-1';
+  `);
+  const cancelledResponse = await listReservations(context(db));
+  const cancelledPayload = await cancelledResponse.json();
+  assert.equal(cancelledResponse.status, 200);
+  assert.equal(cancelledPayload.summary.recentOrders, 0);
+  assert.equal(cancelledPayload.summary.recentOrderedUnits, 0);
+  assert.equal(cancelledPayload.items.length, 1);
+  assert.equal(cancelledPayload.items[0].state, 'active');
 });

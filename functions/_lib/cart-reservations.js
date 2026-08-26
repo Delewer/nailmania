@@ -1,6 +1,6 @@
 import { catalogRevisionBump } from './catalog-cache.js';
 
-const DEFAULT_TTL_MINUTES = 15;
+const DEFAULT_TTL_MINUTES = 60;
 const MAX_TTL_MINUTES = 60;
 
 export class CartReservationError extends Error {

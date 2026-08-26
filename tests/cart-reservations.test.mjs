@@ -37,14 +37,14 @@ function setup(onHand = 1) {
 
 const reserve = (db, cartId, quantity, now = '2026-08-25T10:00:00.000Z') => (
   synchronizeCartReservation(db, { cartId, productKey: 'P1', quantity }, {
-    env: { RESERVATION_TTL_MINUTES: '15' },
+    env: { RESERVATION_TTL_MINUTES: '60' },
     now,
   })
 );
 
 function reservationContext(db, id, method, body) {
   return {
-    env: { DB: db, ENVIRONMENT: 'local', RESERVATION_TTL_MINUTES: '15' },
+    env: { DB: db, ENVIRONMENT: 'local', RESERVATION_TTL_MINUTES: '60' },
     params: { id },
     request: new Request(`https://example.test/api/reservations/${id}`, {
       method,
@@ -79,18 +79,18 @@ test('adding the last unit to a cart immediately blocks another cart and a physi
   );
 });
 
-test('the first 15 minute deadline is not extended and expiry releases stock without the worker', async (t) => {
+test('the first 60 minute deadline is not extended and expiry releases stock without the worker', async (t) => {
   const db = setup(2);
   t.after(() => db.close());
 
   const first = await reserve(db, CART_A, 1);
   const changed = await reserve(db, CART_A, 2, '2026-08-25T10:10:00.000Z');
-  assert.equal(first.expiresAt, '2026-08-25T10:15:00.000Z');
+  assert.equal(first.expiresAt, '2026-08-25T11:00:00.000Z');
   assert.equal(changed.expiresAt, first.expiresAt);
   assert.equal(db.sqlite.prepare('SELECT reserved FROM inventory').get().reserved, 2);
 
   const active = await listActiveCartReservations(db, CART_A, {
-    now: '2026-08-25T10:15:00.001Z',
+    now: '2026-08-25T11:00:00.001Z',
   });
   assert.deepEqual(active, []);
   assert.equal(db.sqlite.prepare('SELECT reserved FROM inventory').get().reserved, 0);
@@ -128,7 +128,7 @@ test('quantity changes and removal update the same reservation and release avail
     cartId: CART_A,
     productKey: 'P1',
     quantity: 1,
-  }, { env: { RESERVATION_TTL_MINUTES: '15' } });
+  }, { env: { RESERVATION_TTL_MINUTES: '60' } });
 
   const increased = await patchReservation(reservationContext(db, created.id, 'PATCH', {
     cartId: CART_A,
@@ -177,7 +177,7 @@ test('placing an order converts the cart reservation into one sale without onlin
     cartId: CART_A,
     productKey: 'P1',
     quantity: 1,
-  }, { env: { RESERVATION_TTL_MINUTES: '15' } });
+  }, { env: { RESERVATION_TTL_MINUTES: '60' } });
 
   const body = withOrderContract(db, {
     cartId: CART_A,

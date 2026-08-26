@@ -31,7 +31,7 @@ The existing D1 inventory and `/admin` staff application remain the single syste
 - Two carts cannot reserve the same last unit.
 - A physical sale and an online reservation cannot both win the same last unit.
 - Expired reservations are excluded from public and staff availability even before cleanup changes their status.
-- Cart activity does not extend the original 15-minute deadline.
+- Cart activity does not extend the original 60-minute deadline.
 - Successful order submission, not online payment, performs the one-time sale conversion.
 
 Implementation and rollout details are in [docs/CART_RESERVATIONS.md](docs/CART_RESERVATIONS.md).

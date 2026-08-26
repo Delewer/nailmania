@@ -23,7 +23,8 @@ export async function onRequestGet(context) {
     const recentSince = new Date(Date.parse(now) - 7 * 24 * 60 * 60 * 1000).toISOString();
 
     const activeCondition = `(r.status = 'ACTIVE' AND r.expires_at > ?)`;
-    const orderedCondition = `(r.status = 'CONVERTED' AND o.created_at >= ?)`;
+    const orderedCondition = `(r.status = 'CONVERTED' AND o.created_at >= ?
+      AND o.status NOT IN ('completed', 'cancelled', 'returned'))`;
     const conditions = [];
     const bindings = [];
     if (state === 'active') {
@@ -64,7 +65,8 @@ export async function onRequestGet(context) {
                p.id AS product_id, p.catalog_key, p.sku, p.name_ro, p.name_ru,
                i.on_hand, ${effectiveReserved} AS effective_reserved,
                o.id AS order_id, o.order_no, o.status AS order_status,
-               o.customer_name, o.delivery_label, o.created_at AS order_created_at
+               o.customer_name, o.delivery_label, o.created_at AS order_created_at,
+               o.updated_at AS order_updated_at
         ${joins} ${where}
         ORDER BY CASE r.status WHEN 'ACTIVE' THEN 0 ELSE 1 END,
                  CASE WHEN r.status = 'ACTIVE' THEN r.expires_at ELSE o.created_at END DESC,
@@ -82,6 +84,7 @@ export async function onRequestGet(context) {
         FROM cart_reservations r
         JOIN orders o ON o.id = r.order_id
         WHERE r.status = 'CONVERTED' AND o.created_at >= ?
+          AND o.status NOT IN ('completed', 'cancelled', 'returned')
       `).bind(recentSince).first(),
     ]);
 
@@ -113,7 +116,7 @@ export async function onRequestGet(context) {
           order: row.order_id ? {
             id: row.order_id, no: row.order_no, status: row.order_status,
             customerName: row.customer_name, deliveryLabel: row.delivery_label,
-            createdAt: row.order_created_at,
+            createdAt: row.order_created_at, updatedAt: row.order_updated_at,
           } : null,
         };
       }),

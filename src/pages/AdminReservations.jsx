@@ -83,14 +83,14 @@ export default function AdminReservations({ onUnauthorized }) {
           <span>Rezervări active</span><b>{summary.activeReservations}</b><small>{summary.activeUnits} unități</small>
         </button>
         <button type="button" className={state === 'ordered' ? 'active' : ''} onClick={() => setState(state === 'ordered' ? 'all' : 'ordered')}>
-          <span>Comenzi în 7 zile</span><b>{summary.recentOrders}</b><small>{summary.recentOrderedUnits} unități</small>
+          <span>Comenzi deschise (7 zile)</span><b>{summary.recentOrders}</b><small>{summary.recentOrderedUnits} unități</small>
         </button>
       </section>
       <section className="adm-orders-panel">
         <div className="adm-toolbar adm-reservations-toolbar">
           <div className="adm-search"><Search size={18}/><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Produs, SKU, număr comandă, client" aria-label="Caută rezervări și comenzi"/></div>
           <select value={state} onChange={(event) => setState(event.target.value)} aria-label="Filtru rezervări">
-            <option value="all">Active și comenzi</option><option value="active">Doar rezervări active</option><option value="ordered">Doar comenzi</option>
+            <option value="all">Active și comenzi deschise</option><option value="active">Doar rezervări active</option><option value="ordered">Doar comenzi deschise</option>
           </select>
           {(state !== 'all' || query) && <button className="adm-clear" type="button" onClick={() => { setState('all'); setSearch(''); }}>Resetează</button>}
         </div>
@@ -113,7 +113,7 @@ export default function AdminReservations({ onUnauthorized }) {
                 <td>{item.order
                   ? <Link className="adm-order-link" to={`/admin/orders?open=${encodeURIComponent(item.order.id)}`}><b>{item.order.no}</b><span>{ORDER_STATUS[item.order.status] || item.order.status} · {item.order.customerName}</span></Link>
                   : <span>Coș online</span>}</td>
-                <td>{dateTime(item.order?.createdAt || item.updatedAt)}</td>
+                <td>{dateTime(item.order?.updatedAt || item.order?.createdAt || item.updatedAt)}</td>
               </tr>
             ))}</tbody>
           </table>

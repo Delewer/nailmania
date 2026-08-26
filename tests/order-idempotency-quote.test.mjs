@@ -248,7 +248,7 @@ test('committed replay precedes Turnstile, but still enforces same-origin and ex
   };
   const cartId = '11111111-1111-4111-8111-111111111111';
   await synchronizeCartReservation(db, { cartId, productKey: 'P1', quantity: 1 }, {
-    env: { RESERVATION_TTL_MINUTES: '15' },
+    env: { RESERVATION_TTL_MINUTES: '60' },
   });
   const body = withOrderContract(db, baseBody({ cartId }));
   const first = await endpointRequest(db, body, { env });
