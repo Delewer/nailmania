@@ -190,10 +190,12 @@ export function adminProductSummary(row) {
 
 export async function getAdminProduct(db, id) {
   const key = text(id, 120);
+  const numericId = /^[1-9]\d*$/.test(key) ? Number(key) : null;
+  const findById = Number.isSafeInteger(numericId);
   const row = await db.prepare(`${ADMIN_PRODUCT_SELECT}
-    WHERE CAST(p.id AS TEXT) = ? OR p.catalog_key = ?
+    WHERE ${findById ? 'p.id = ?' : 'p.catalog_key = ?'}
     LIMIT 1
-  `).bind(key, key).first();
+  `).bind(findById ? numericId : key).first();
   if (!row) return null;
   const [imageResult, movementResult] = await Promise.all([
     db.prepare(`

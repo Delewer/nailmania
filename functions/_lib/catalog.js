@@ -7,17 +7,16 @@ const parseSpecs = (value) => {
   }
 };
 
-export const imagesByProduct = (rows) => {
-  const grouped = new Map();
-  for (const row of rows || []) {
-    const list = grouped.get(row.product_id) || [];
-    list.push(row.public_url);
-    grouped.set(row.product_id, list);
+export const catalogImageUrls = (value) => {
+  try {
+    const parsed = JSON.parse(value || '[]');
+    return Array.isArray(parsed) ? parsed.filter((item) => typeof item === 'string' && item) : [];
+  } catch {
+    return [];
   }
-  return grouped;
 };
 
-export const publicProduct = (row, images = []) => ({
+export const publicProduct = (row, images = catalogImageUrls(row.images_json)) => ({
   id: row.id,
   key: row.catalog_key,
   code: row.sku || '',
@@ -46,16 +45,17 @@ export const PRODUCT_SELECT = `
       SELECT SUM(r.quantity) FROM cart_reservations r
       WHERE r.product_id = p.id AND r.status = 'ACTIVE'
         AND r.expires_at <= strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-    ), 0)) AS available_stock
+    ), 0)) AS available_stock,
+    COALESCE((
+      SELECT json_group_array(ordered.public_url)
+      FROM (
+        SELECT pi.public_url
+        FROM product_images pi
+        WHERE pi.product_id = p.id
+        ORDER BY pi.sort_order, pi.id
+      ) ordered
+    ), '[]') AS images_json
   FROM products p
   JOIN product_catalog_prices prices ON prices.product_id = p.id
   LEFT JOIN inventory i ON i.product_id = p.id AND i.warehouse_id = 1
-`;
-
-export const PRODUCT_IMAGES_SELECT = `
-  SELECT pi.product_id, pi.public_url
-  FROM product_images pi
-  JOIN products p ON p.id = pi.product_id
-  WHERE p.is_active = 1 AND p.deleted_at IS NULL
-  ORDER BY pi.product_id, pi.sort_order, pi.id
 `;

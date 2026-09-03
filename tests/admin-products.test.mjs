@@ -2,10 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   AdminProductError,
+  getAdminProduct,
   normalizeAdminProduct,
   stockAdjustmentPlan,
 } from '../functions/_lib/admin-products.js';
-import { onRequestPost as createProduct } from '../functions/api/admin/products/index.js';
+import {
+  onRequestGet as listProducts,
+  onRequestPost as createProduct,
+} from '../functions/api/admin/products/index.js';
 import {
   onRequestDelete as deleteProduct,
   onRequestPatch as updateProduct,
@@ -78,6 +82,26 @@ class BeforeFirstBatchD1 {
   }
 }
 
+class RecordingD1 {
+  constructor(db) {
+    this.db = db;
+    this.queries = [];
+  }
+
+  prepare(sql) {
+    this.queries.push(sql);
+    return this.db.prepare(sql);
+  }
+
+  withSession() {
+    return this;
+  }
+
+  batch(statements) {
+    return this.db.batch(statements);
+  }
+}
+
 function insertProductAndOrder(db, options) {
   const productId = 1;
   const orderId = `order-${options.status}`;
@@ -139,6 +163,69 @@ test('normalizes product input and rejects an invalid old price', () => {
     () => normalizeAdminProduct(draft({ price: 100, oldPrice: 90 })),
     (error) => error instanceof AdminProductError && error.code === 'INVALID_OLD_PRICE',
   );
+});
+
+test('admin product snapshot replaces repeated search, count and summary queries', async (t) => {
+  const db = setup();
+  const recordingDb = new RecordingD1(db);
+  t.after(() => db.close());
+  db.sqlite.exec(`
+    INSERT INTO products (
+      id, catalog_key, sku, slug, category_id, name_ro, name_ru,
+      price, source_type, admin_revision
+    ) VALUES (1, 'LIST-001', 'LIST-001', 'list-001', 'test',
+              'Produs listat', 'Listed product', 100, 'admin', 'product:initial');
+    INSERT INTO inventory (product_id, warehouse_id, on_hand, reserved, admin_revision)
+    VALUES (1, 1, 2, 0, 'inventory:initial');
+  `);
+  const response = await listProducts({
+    env: env(recordingDb),
+    request: new Request('http://127.0.0.1:8788/api/admin/products?snapshot=1', {
+      headers: { authorization: 'Bearer test-secret' },
+    }),
+  });
+  const payload = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(payload.items.length, 1);
+  assert.equal(Object.hasOwn(payload, 'counts'), false);
+  assert.equal(recordingDb.queries.some((sql) => sql.includes('AS out_of_stock')), false);
+  assert.equal(recordingDb.queries.some((sql) => /SELECT\s+COUNT\(\*\)\s+AS count\s+FROM products/i.test(sql)), false);
+});
+
+test('admin product detail uses an indexed identity predicate', async (t) => {
+  const db = setup();
+  const recordingDb = new RecordingD1(db);
+  t.after(() => db.close());
+  db.sqlite.exec(`
+    INSERT INTO products (
+      id, catalog_key, sku, slug, category_id, name_ro, name_ru,
+      price, source_type, admin_revision
+    ) VALUES (1, 'DETAIL-001', 'DETAIL-001', 'detail-001', 'test',
+              'Produs detaliat', 'Detailed product', 100, 'admin', 'product:initial');
+    INSERT INTO inventory (product_id, warehouse_id, on_hand, reserved, admin_revision)
+    VALUES (1, 1, 2, 0, 'inventory:initial');
+  `);
+
+  const product = await getAdminProduct(recordingDb, '1');
+  const detailQuery = recordingDb.queries.find((sql) => sql.includes('JOIN product_catalog_prices'));
+
+  assert.equal(product.id, 1);
+  assert.match(detailQuery, /WHERE p\.id = \?/);
+  assert.doesNotMatch(detailQuery, /CAST\(p\.id AS TEXT\)|\bOR p\.catalog_key\b/);
+});
+
+test('case-insensitive SKU conflict checks use the dedicated index', (t) => {
+  const db = setup();
+  t.after(() => db.close());
+  const plan = db.sqlite.prepare(`
+    EXPLAIN QUERY PLAN
+    SELECT id FROM products
+    WHERE id <> ? AND sku = ? COLLATE NOCASE
+    LIMIT 1
+  `).all(1, 'sku-1');
+
+  assert.match(plan.map((row) => row.detail).join('\n'), /idx_products_sku_nocase/);
 });
 
 test('stock plans cannot reduce physical stock below reservations', () => {

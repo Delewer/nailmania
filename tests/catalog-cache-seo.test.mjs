@@ -1,7 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { SqliteD1 } from './helpers/sqlite-d1.mjs';
-import { cachedCatalogResponse, catalogRevisionBump } from '../functions/_lib/catalog-cache.js';
+import {
+  CATALOG_EDGE_TTL_SECONDS,
+  cachedCatalogResponse,
+  catalogRevisionBump,
+} from '../functions/_lib/catalog-cache.js';
 import { onRequestGet as productPage } from '../functions/product/[key].js';
 import { onRequestGet as categoryPage } from '../functions/category/[key].js';
 import { onRequestGet as brandPage } from '../functions/brand/[name].js';
@@ -82,6 +86,8 @@ test('catalog cache hits, then a D1 revision bump makes the old global key unrea
   assert.equal(await first.text(), 'generation-1');
   assert.equal(first.headers.get('x-catalog-cache'), 'MISS');
   assert.equal(first.headers.get('cache-control'), 'no-store');
+  assert.equal(CATALOG_EDGE_TTL_SECONDS, 86_400);
+  assert.equal([...cache.entries.values()][0].headers.get('cache-control'), 'public, max-age=86400');
 
   const second = await cachedCatalogResponse(requestContext, build);
   assert.equal(await second.text(), 'generation-1');

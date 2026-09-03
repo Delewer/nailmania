@@ -1,6 +1,9 @@
 import { requireDatabase } from './http.js';
 
-export const CATALOG_EDGE_TTL_SECONDS = 60;
+// Every catalog or inventory mutation bumps the D1 revision used in the cache
+// key, so a long edge TTL cannot serve an older revision. Keeping each revision
+// for a day prevents unchanged catalog/SEO responses from being rebuilt in D1.
+export const CATALOG_EDGE_TTL_SECONDS = 24 * 60 * 60;
 
 export const catalogPrimaryDatabase = (env) => {
   const db = requireDatabase(env);

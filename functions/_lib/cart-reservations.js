@@ -94,15 +94,17 @@ export async function synchronizeCartReservation(db, input, options = {}) {
   const now = options.now ? new Date(options.now).toISOString() : new Date().toISOString();
   const ttlMinutes = reservationTtlMinutes(options.env);
   const expiresAt = new Date(new Date(now).getTime() + ttlMinutes * 60 * 1000).toISOString();
+  const numericProductId = /^[1-9]\d*$/.test(productKey) ? Number(productKey) : null;
+  const findById = Number.isSafeInteger(numericProductId);
   const product = await database.prepare(`
     SELECT p.id, p.catalog_key, i.on_hand, i.reserved
     FROM products p
     JOIN categories c ON c.id = p.category_id AND c.is_active = 1
     JOIN inventory i ON i.product_id = p.id AND i.warehouse_id = 1
     WHERE p.is_active = 1 AND p.deleted_at IS NULL
-      AND (p.catalog_key = ? OR CAST(p.id AS TEXT) = ? OR p.sku = ? COLLATE NOCASE)
+      AND ${findById ? 'p.id = ?' : 'p.catalog_key = ?'}
     LIMIT 1
-  `).bind(productKey, productKey, productKey).first();
+  `).bind(findById ? numericProductId : productKey).first();
   if (!product) throw new CartReservationError('PRODUCT_NOT_FOUND', 'Product is unavailable', 404);
 
   const reservationId = crypto.randomUUID();

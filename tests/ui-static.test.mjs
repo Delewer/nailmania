@@ -134,11 +134,15 @@ test('admin mobile navigation and editors retain accessible names and focus hand
   assert.match(orders, /Object\.keys\(STATUS\)\.map/);
   assert.match(orders, /!order\.allowedTransitions\.includes\(status\)/);
   assert.match(products, /handleTabListKeyDown/);
+  assert.match(products, /loadAdminProductSnapshot/);
+  assert.match(products, /filteredProducts\.slice\(offset, offset \+ PAGE_SIZE\)/);
   assert.match(products, /aria-label=\{`Denumirea specificației/);
   assert.match(products, /aria-label="Adresa imaginii"/);
   assert.match(productScopePicker, /aria-label=\{`Caută produse pentru \$\{label\}`\}/);
   assert.match(productScopePicker, /onUnauthorized/);
   assert.match(productScopePicker, /searchSequence/);
+  assert.match(productScopePicker, /loadAdminProductSnapshot/);
+  assert.doesNotMatch(productScopePicker, /api\/admin\/products\?/);
   assert.match(promos, /Branduri eligibile/);
   assert.match(promos, /scopesReady/);
   assert.match(promos, /scopeError/);

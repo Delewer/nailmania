@@ -6,6 +6,7 @@ import {
   requireAdmin,
   requireSameOrigin,
 } from '../functions/_lib/admin-auth.js';
+import { handleApiError } from '../functions/_lib/http.js';
 import { SqliteD1 } from './helpers/sqlite-d1.mjs';
 
 const schema = [
@@ -115,4 +116,15 @@ test('administrative mutations accept only the request origin', () => {
     new Request('http://127.0.0.1:8788/api/admin/orders/1'),
     { ENVIRONMENT: 'local' },
   ));
+});
+
+test('D1 daily read quota failures return an actionable service response', async () => {
+  const response = handleApiError(new Error(
+    "D1_ERROR: Your account has exceeded D1's free tier daily row read limit. [code: 7500]",
+  ));
+  const payload = await response.json();
+
+  assert.equal(response.status, 503);
+  assert.equal(payload.error.code, 'DATABASE_READ_QUOTA_EXCEEDED');
+  assert.match(payload.error.message, /00:00 UTC/);
 });

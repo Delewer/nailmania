@@ -10,6 +10,22 @@ import { fullSchema } from './helpers/full-schema.mjs';
 
 const schema = fullSchema;
 
+class RecordingD1 {
+  constructor(db) {
+    this.db = db;
+    this.queries = [];
+  }
+
+  prepare(sql) {
+    this.queries.push(sql);
+    return this.db.prepare(sql);
+  }
+
+  withSession() {
+    return this;
+  }
+}
+
 test('the public D1 product and category routes satisfy the storefront contract', async (t) => {
   const db = new SqliteD1(schema);
   t.after(() => db.close());
@@ -143,4 +159,29 @@ test('public catalog filters/sorts by availability and exposes no raw stock coun
   });
   assert.equal(invalidPaging.status, 200);
   assert.deepEqual((await invalidPaging.json()).pagination, { limit: 5000, offset: 0, total: 3 });
+});
+
+test('complete public catalog reads images inline and skips a redundant total scan', async (t) => {
+  const db = new SqliteD1(schema);
+  const recordingDb = new RecordingD1(db);
+  t.after(() => db.close());
+  db.sqlite.exec(`
+    INSERT INTO categories (id, slug, name_ro, name_ru) VALUES ('test', 'test', 'Test', 'Test');
+    INSERT INTO products (id, catalog_key, sku, slug, category_id, brand, name_ro, price)
+    VALUES (1, 'P-ONE', 'P-ONE', 'p-one', 'test', 'Brand', 'Produs', 90);
+    INSERT INTO inventory (product_id, warehouse_id, on_hand, reserved) VALUES (1, 1, 1, 0);
+    INSERT INTO product_images (product_id, public_url, sort_order, is_primary)
+    VALUES (1, 'https://images.example/P-ONE.webp', 0, 1);
+  `);
+
+  const response = await listProducts({
+    request: new Request('https://shop.example/api/products?limit=5000'),
+    env: { DB: recordingDb },
+  });
+  const payload = await response.json();
+
+  assert.equal(payload.items[0].image, 'https://images.example/P-ONE.webp');
+  assert.equal(payload.pagination.total, 1);
+  assert.equal(recordingDb.queries.some((sql) => /SELECT\s+COUNT\(\*\)\s+AS count\s+FROM products/i.test(sql)), false);
+  assert.equal(recordingDb.queries.some((sql) => sql.includes('json_group_array')), true);
 });

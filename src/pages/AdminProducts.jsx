@@ -21,6 +21,7 @@ import {
   X,
 } from 'lucide-react';
 import { AdminApiError, adminRequest } from '../admin-api.js';
+import { loadAdminProductSnapshot, mergeAdminProductSnapshot } from '../admin-product-snapshot.js';
 import { handleTabListKeyDown, useDialogFocus } from '../dialog-a11y.js';
 
 const PAGE_SIZE = 30;
@@ -448,8 +449,7 @@ function ProductEditor({ product, categories, loading, error, onClose, onSave, o
 export default function AdminProducts({ onUnauthorized }) {
   const [categories, setCategories] = React.useState([]);
   const [products, setProducts] = React.useState([]);
-  const [counts, setCounts] = React.useState({});
-  const [pagination, setPagination] = React.useState({ total: 0, offset: 0, limit: PAGE_SIZE });
+  const [offset, setOffset] = React.useState(0);
   const [search, setSearch] = React.useState('');
   const [query, setQuery] = React.useState('');
   const [category, setCategory] = React.useState('');
@@ -473,25 +473,23 @@ export default function AdminProducts({ onUnauthorized }) {
     });
   }, [onUnauthorized]);
 
-  const loadProducts = React.useCallback(async (nextOffset = pagination.offset) => {
+  const loadProducts = React.useCallback(async (refresh = false) => {
     setLoading(true);
     setListError('');
     try {
-      const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(nextOffset), state, stock });
-      if (query) params.set('q', query);
-      if (category) params.set('category', category);
-      const payload = await adminRequest(`/api/admin/products?${params}`);
-      setProducts(payload.items);
-      setCounts(payload.counts);
-      setPagination(payload.pagination);
+      setProducts(await loadAdminProductSnapshot({ refresh }));
+      setOffset(0);
     } catch (error) {
       setListError(error.message);
       if (error instanceof AdminApiError && [401, 403].includes(error.status)) onUnauthorized();
     } finally {
       setLoading(false);
     }
-  }, [category, onUnauthorized, pagination.offset, query, state, stock]);
-  React.useEffect(() => { loadProducts(0); }, [query, category, state, stock]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [onUnauthorized]);
+  // Revalidate once when entering the product section. The API snapshot itself
+  // is revision-keyed at the edge, so this stays cheap while avoiding stale
+  // prices/category names after changes made in another admin section.
+  React.useEffect(() => { loadProducts(true); }, [loadProducts]);
 
   const openProduct = React.useCallback(async (id) => {
     setSelectedId(String(id));
@@ -514,6 +512,13 @@ export default function AdminProducts({ onUnauthorized }) {
     if (error instanceof AdminApiError && [401, 403].includes(error.status)) onUnauthorized();
     throw error;
   }, [onUnauthorized]);
+  const mergeProduct = React.useCallback((product) => {
+    mergeAdminProductSnapshot(product);
+    setProducts((current) => [
+      product,
+      ...current.filter((item) => item.id !== product.id),
+    ].sort((left, right) => String(right.updatedAt || '').localeCompare(String(left.updatedAt || '')) || right.id - left.id));
+  }, []);
   const save = async (body) => {
     try {
       const creating = selectedId === 'new';
@@ -523,7 +528,8 @@ export default function AdminProducts({ onUnauthorized }) {
       });
       setSelectedId(String(payload.product.id));
       setDetail(payload.product);
-      await loadProducts(creating ? 0 : pagination.offset);
+      mergeProduct(payload.product);
+      if (creating) setOffset(0);
       return payload.product;
     } catch (error) {
       return rethrowWithAuth(error);
@@ -533,7 +539,7 @@ export default function AdminProducts({ onUnauthorized }) {
     try {
       const payload = await adminRequest(`/api/admin/products/${encodeURIComponent(selectedId)}`, { method: 'DELETE', body: { revision } });
       setDetail(payload.product);
-      await loadProducts(pagination.offset);
+      mergeProduct(payload.product);
       return payload.product;
     } catch (error) {
       return rethrowWithAuth(error);
@@ -543,7 +549,7 @@ export default function AdminProducts({ onUnauthorized }) {
     try {
       const payload = await adminRequest(`/api/admin/products/${encodeURIComponent(selectedId)}/inventory`, { method: 'POST', body });
       setDetail(payload.product);
-      await loadProducts(pagination.offset);
+      mergeProduct(payload.product);
       return payload.product;
     } catch (error) {
       return rethrowWithAuth(error);
@@ -567,15 +573,42 @@ export default function AdminProducts({ onUnauthorized }) {
     }
   };
 
+  const counts = React.useMemo(() => products.reduce((result, product) => {
+    if (product.isActive) {
+      result.active += 1;
+      if (product.available <= 0) result.outOfStock += 1;
+      else if (product.available <= product.lowStockThreshold) result.lowStock += 1;
+    } else result.inactive += 1;
+    return result;
+  }, { active: 0, inactive: 0, outOfStock: 0, lowStock: 0 }), [products]);
+  const filteredProducts = React.useMemo(() => {
+    const needle = query.toLocaleLowerCase('ro');
+    return products.filter((product) => {
+      if (needle && ![product.name, product.sku, product.key, product.brand]
+        .some((value) => String(value || '').toLocaleLowerCase('ro').includes(needle))) return false;
+      if (category && String(product.categoryId) !== category) return false;
+      if (state === 'active' && !product.isActive) return false;
+      if (state === 'inactive' && product.isActive) return false;
+      if (stock === 'out' && product.available > 0) return false;
+      if (stock === 'low' && (product.available <= 0 || product.available > product.lowStockThreshold)) return false;
+      return true;
+    });
+  }, [category, products, query, state, stock]);
+  React.useEffect(() => { setOffset(0); }, [category, query, state, stock]);
+  React.useEffect(() => {
+    const lastPageOffset = Math.max(0, Math.floor(Math.max(0, filteredProducts.length - 1) / PAGE_SIZE) * PAGE_SIZE);
+    if (offset > lastPageOffset) setOffset(lastPageOffset);
+  }, [filteredProducts.length, offset]);
+  const visibleProducts = filteredProducts.slice(offset, offset + PAGE_SIZE);
+  const totalPages = Math.max(1, Math.ceil(filteredProducts.length / PAGE_SIZE));
+  const currentPage = Math.floor(offset / PAGE_SIZE) + 1;
   const resetFilters = () => { setSearch(''); setCategory(''); setState('all'); setStock('all'); };
-  const totalPages = Math.max(1, Math.ceil(pagination.total / PAGE_SIZE));
-  const currentPage = Math.floor(pagination.offset / PAGE_SIZE) + 1;
   return (
     <>
       <header className="adm-topbar adm-products-topbar">
         <div><span>Catalog</span><h1>Produse</h1></div>
         <div>
-          <button className="adm-icon-btn" type="button" onClick={() => loadProducts(pagination.offset)} title="Actualizează"><RefreshCw className={loading ? 'adm-spin' : ''} size={19}/></button>
+          <button className="adm-icon-btn" type="button" onClick={() => loadProducts(true)} title="Actualizează"><RefreshCw className={loading ? 'adm-spin' : ''} size={19}/></button>
           <button className="adm-primary" type="button" onClick={createProduct}><Plus size={18}/>Produs nou</button>
         </div>
       </header>
@@ -596,12 +629,12 @@ export default function AdminProducts({ onUnauthorized }) {
           {(query || category || state !== 'all' || stock !== 'all') && <button className="adm-clear" type="button" onClick={resetFilters}>Resetează</button>}
         </div>
         {listError && <div className="adm-list-message adm-error"><AlertTriangle size={18}/>{listError}</div>}
-        {!listError && !loading && products.length === 0 && <div className="adm-list-message"><Boxes size={24}/>Nu sunt produse</div>}
+        {!listError && !loading && visibleProducts.length === 0 && <div className="adm-list-message"><Boxes size={24}/>Nu sunt produse</div>}
         <div className="adm-table-wrap">
           <table className="adm-table adm-products-table">
             <thead><tr><th>Produs</th><th>Categorie</th><th>Preț</th><th>Stoc fizic</th><th>Rezervat</th><th>Stare</th><th>Actualizat</th><th aria-label="Acțiune"/></tr></thead>
             <tbody>
-              {products.map((product) => (
+              {visibleProducts.map((product) => (
                 <tr key={product.id} onClick={() => openProduct(product.id)}>
                   <td><div className="adm-product-cell"><div className="adm-product-thumb">{product.image ? <img src={product.image} alt=""/> : <ImageIcon size={18}/>}</div><div><b>{product.name}</b><span>{product.sku || product.key} · {product.brand}</span></div></div></td>
                   <td>{product.categoryName}</td>
@@ -618,10 +651,10 @@ export default function AdminProducts({ onUnauthorized }) {
           {loading && <div className="adm-table-loading"><LoaderCircle className="adm-spin" size={24}/></div>}
         </div>
         <footer className="adm-pagination">
-          <span>{pagination.total} produse · pagina {currentPage} din {totalPages}</span>
+          <span>{filteredProducts.length} produse · pagina {currentPage} din {totalPages}</span>
           <div>
-            <button className="adm-icon-btn" type="button" title="Pagina precedentă" disabled={pagination.offset === 0 || loading} onClick={() => loadProducts(Math.max(0, pagination.offset - PAGE_SIZE))}><ArrowLeft size={18}/></button>
-            <button className="adm-icon-btn" type="button" title="Pagina următoare" disabled={pagination.offset + PAGE_SIZE >= pagination.total || loading} onClick={() => loadProducts(pagination.offset + PAGE_SIZE)}><ArrowRight size={18}/></button>
+            <button className="adm-icon-btn" type="button" title="Pagina precedentă" disabled={offset === 0 || loading} onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}><ArrowLeft size={18}/></button>
+            <button className="adm-icon-btn" type="button" title="Pagina următoare" disabled={offset + PAGE_SIZE >= filteredProducts.length || loading} onClick={() => setOffset(offset + PAGE_SIZE)}><ArrowRight size={18}/></button>
           </div>
         </footer>
       </section>

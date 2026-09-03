@@ -7,7 +7,7 @@ import {
   normalizeAdminProduct,
 } from '../../../_lib/admin-products.js';
 import { apiError, handleApiError, json } from '../../../_lib/http.js';
-import { catalogRevisionBump } from '../../../_lib/catalog-cache.js';
+import { cachedCatalogResponse, catalogRevisionBump } from '../../../_lib/catalog-cache.js';
 import { clampLikeTerm, likeContainsPattern } from '../../../_lib/search-pattern.js';
 
 const requestIp = (request) => String(request.headers.get('cf-connecting-ip') || '').slice(0, 80);
@@ -31,8 +31,25 @@ export async function onRequestGet(context) {
     const category = String(url.searchParams.get('category') || '').trim().slice(0, 100);
     const state = String(url.searchParams.get('state') || 'all').trim();
     const stock = String(url.searchParams.get('stock') || 'all').trim();
+    const includeSummary = url.searchParams.get('summary') === '1';
+    const snapshot = url.searchParams.get('snapshot') === '1';
     if (!['all', 'active', 'inactive'].includes(state)) return apiError('INVALID_PRODUCT_STATE', 'Unknown product state', 400);
     if (!['all', 'out', 'low'].includes(stock)) return apiError('INVALID_STOCK_FILTER', 'Unknown stock filter', 400);
+
+    if (snapshot) {
+      return cachedCatalogResponse(context, async ({ db: snapshotDb }) => {
+        const result = await snapshotDb.prepare(`${ADMIN_PRODUCT_SELECT}
+          ORDER BY p.updated_at DESC, p.id DESC
+          LIMIT 5000
+        `).all();
+        const items = (result.results || []).map(adminProductSummary);
+        return json({
+          ok: true,
+          items,
+          pagination: { limit: 5000, offset: 0, total: items.length },
+        });
+      }, { ignoreSearch: true });
+    }
 
     const conditions = [];
     const bindings = [];
@@ -49,16 +66,12 @@ export async function onRequestGet(context) {
     if (stock === 'low') conditions.push(`${availableExpression} > 0 AND ${availableExpression} <= p.low_stock_threshold`);
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
-    const [productResult, countRow, summaryRow] = await Promise.all([
+    const requests = [
       db.prepare(`${ADMIN_PRODUCT_SELECT} ${where}
         ORDER BY p.updated_at DESC, p.id DESC LIMIT ? OFFSET ?
-      `).bind(...bindings, limit, offset).all(),
-      db.prepare(`
-        SELECT COUNT(*) AS count
-        FROM products p LEFT JOIN inventory i ON i.product_id = p.id AND i.warehouse_id = 1
-        ${where}
-      `).bind(...bindings).first(),
-      db.prepare(`
+      `).bind(...bindings, limit + 1, offset).all(),
+    ];
+    if (includeSummary) requests.push(db.prepare(`
         SELECT
           SUM(CASE WHEN is_active = 1 AND deleted_at IS NULL THEN 1 ELSE 0 END) AS active,
           SUM(CASE WHEN is_active = 0 OR deleted_at IS NOT NULL THEN 1 ELSE 0 END) AS inactive,
@@ -69,19 +82,21 @@ export async function onRequestGet(context) {
                  MAX(0, COALESCE(i.on_hand, 0) - COALESCE(i.reserved, 0)) AS available
           FROM products p LEFT JOIN inventory i ON i.product_id = p.id AND i.warehouse_id = 1
         )
-      `).first(),
-    ]);
+      `).first());
+    const [productResult, summaryRow] = await Promise.all(requests);
+    const rows = productResult.results || [];
+    const hasMore = rows.length > limit;
 
     return json({
       ok: true,
-      items: (productResult.results || []).map(adminProductSummary),
-      counts: {
+      items: rows.slice(0, limit).map(adminProductSummary),
+      ...(includeSummary ? { counts: {
         active: Number(summaryRow?.active || 0),
         inactive: Number(summaryRow?.inactive || 0),
         outOfStock: Number(summaryRow?.out_of_stock || 0),
         lowStock: Number(summaryRow?.low_stock || 0),
-      },
-      pagination: { limit, offset, total: Number(countRow?.count || 0) },
+      } } : {}),
+      pagination: { limit, offset, hasMore },
     }, 200, { 'cache-control': 'no-store' });
   } catch (error) {
     return productError(error);

@@ -1,6 +1,7 @@
 import React from 'react';
 import { AlertTriangle, LoaderCircle, Plus, Search, X } from 'lucide-react';
-import { AdminApiError, adminRequest } from '../admin-api.js';
+import { AdminApiError } from '../admin-api.js';
+import { loadAdminProductSnapshot } from '../admin-product-snapshot.js';
 
 const productLabel = (product) => product.nameRo || product.name || product.sku || product.key || product.id;
 
@@ -23,11 +24,15 @@ export default function AdminProductScopePicker({
     setLoading(true);
     setError('');
     try {
-      const params = new URLSearchParams({ q: term, limit: '20', state: 'active', stock: 'all' });
-      const payload = await adminRequest(`/api/admin/products?${params}`);
+      const products = await loadAdminProductSnapshot();
       if (sequence !== searchSequence.current) return;
       const chosen = new Set(selected.map((item) => Number(item.id)));
-      setResults(payload.items.filter((item) => !chosen.has(Number(item.id))));
+      const needle = term.toLocaleLowerCase('ro');
+      setResults(products.filter((item) => item.isActive
+        && !chosen.has(Number(item.id))
+        && [item.name, item.sku, item.key, item.brand].some((value) => (
+          String(value || '').toLocaleLowerCase('ro').includes(needle)
+        ))).slice(0, 20));
     } catch (caught) {
       if (caught instanceof AdminApiError && [401, 403].includes(caught.status)) onUnauthorized?.();
       if (sequence === searchSequence.current) setError(caught.message);

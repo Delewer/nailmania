@@ -100,13 +100,29 @@ export async function readBoundedJson(request, {
 }
 
 export const handleApiError = (error) => {
+  const message = String(error?.message || error);
+  const databaseReadQuotaExceeded = Number(error?.code) === 7500
+    || /exceeded D1(?:'s)? free tier daily row read limit|daily row read limit.*(?:D1|database)|\bcode:\s*7500\b/i.test(message);
+  if (databaseReadQuotaExceeded) {
+    console.error(JSON.stringify({
+      level: 'error',
+      event: 'api.error',
+      code: 'DATABASE_READ_QUOTA_EXCEEDED',
+      message: message.slice(0, 500),
+    }));
+    return apiError(
+      'DATABASE_READ_QUOTA_EXCEEDED',
+      'Baza de date a atins limita zilnică de citire. Reîncercați după resetarea cotei la 00:00 UTC.',
+      503,
+    );
+  }
   const status = error?.status || 500;
   if (status >= 500) {
     console.error(JSON.stringify({
       level: 'error',
       event: 'api.error',
       code: error?.code || 'INTERNAL_ERROR',
-      message: String(error?.message || error).slice(0, 500),
+      message: message.slice(0, 500),
     }));
   }
   return apiError(

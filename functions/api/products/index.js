@@ -1,5 +1,5 @@
 import { apiError, handleApiError, json } from '../../_lib/http.js';
-import { imagesByProduct, PRODUCT_IMAGES_SELECT, PRODUCT_SELECT, publicProduct } from '../../_lib/catalog.js';
+import { PRODUCT_SELECT, publicProduct } from '../../_lib/catalog.js';
 import { cachedCatalogResponse } from '../../_lib/catalog-cache.js';
 import { clampLikeTerm, likeContainsPattern } from '../../_lib/search-pattern.js';
 
@@ -52,27 +52,29 @@ export async function onRequestGet(context) {
     if (stock === 'out') conditions.push(`${availableExpression} = 0`);
     const where = ` WHERE ${conditions.join(' AND ')}`;
     return cachedCatalogResponse(context, async ({ db }) => {
-      const productsStatement = db.prepare(`${PRODUCT_SELECT}${where} ORDER BY ${orderBy} LIMIT ? OFFSET ?`)
-        .bind(...bindings, limit, offset);
-      const countStatement = db.prepare(`
-        SELECT COUNT(*) AS count
-        FROM products p
-        LEFT JOIN inventory i ON i.product_id = p.id AND i.warehouse_id = 1
-        ${where}
-      `).bind(...bindings);
-
-      const [productsResult, countRow, imageResult] = await Promise.all([
-        productsStatement.all(),
-        countStatement.first(),
-        db.prepare(PRODUCT_IMAGES_SELECT).all(),
-      ]);
-      const imageMap = imagesByProduct(imageResult.results);
-      const items = (productsResult.results || []).map((row) => publicProduct(row, imageMap.get(row.id) || []));
+      const productsResult = await db.prepare(`${PRODUCT_SELECT}${where} ORDER BY ${orderBy} LIMIT ? OFFSET ?`)
+        .bind(...bindings, limit + 1, offset)
+        .all();
+      const rows = productsResult.results || [];
+      const hasMore = rows.length > limit;
+      const pageRows = rows.slice(0, limit);
+      let total;
+      if (!hasMore && (offset === 0 || pageRows.length > 0)) total = offset + pageRows.length;
+      else {
+        const countRow = await db.prepare(`
+          SELECT COUNT(*) AS count
+          FROM products p
+          LEFT JOIN inventory i ON i.product_id = p.id AND i.warehouse_id = 1
+          ${where}
+        `).bind(...bindings).first();
+        total = Number(countRow?.count || 0);
+      }
+      const items = pageRows.map((row) => publicProduct(row));
 
       return json({
         ok: true,
         items,
-        pagination: { limit, offset, total: Number(countRow?.count || 0) },
+        pagination: { limit, offset, total },
       });
     }, { fallbackUrl: request.url });
   } catch (error) {
