@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { AdminApiError, adminRequest } from '../admin-api.js';
 import { loadAdminProductSnapshot, mergeAdminProductSnapshot } from '../admin-product-snapshot.js';
+import AdminProductImport from '../components/AdminProductImport.jsx';
 import { handleTabListKeyDown, useDialogFocus } from '../dialog-a11y.js';
 
 const PAGE_SIZE = 30;
@@ -461,6 +462,7 @@ export default function AdminProducts({ onUnauthorized }) {
   const [detail, setDetail] = React.useState(null);
   const [detailLoading, setDetailLoading] = React.useState(false);
   const [detailError, setDetailError] = React.useState('');
+  const [importOpen, setImportOpen] = React.useState(false);
 
   React.useEffect(() => {
     const timer = setTimeout(() => setQuery(search.trim()), 250);
@@ -609,6 +611,7 @@ export default function AdminProducts({ onUnauthorized }) {
         <div><span>Catalog</span><h1>Produse</h1></div>
         <div>
           <button className="adm-icon-btn" type="button" onClick={() => loadProducts(true)} title="Actualizează"><RefreshCw className={loading ? 'adm-spin' : ''} size={19}/></button>
+          <button className="adm-compact-btn adm-import-trigger" type="button" onClick={() => setImportOpen(true)}><Upload size={17}/>Import Excel</button>
           <button className="adm-primary" type="button" onClick={createProduct}><Plus size={18}/>Produs nou</button>
         </div>
       </header>
@@ -660,6 +663,7 @@ export default function AdminProducts({ onUnauthorized }) {
       </section>
 
       {selectedId && <ProductEditor key={selectedId} product={detail} categories={categories} loading={detailLoading} error={detailError} onClose={closeProduct} onSave={save} onDelete={remove} onAdjust={adjust} onUpload={upload} onDiscardUpload={discardUpload}/>}
+      {importOpen && <AdminProductImport categories={categories} products={products} onClose={() => setImportOpen(false)} onComplete={() => loadProducts(true)} onUnauthorized={onUnauthorized}/>}
     </>
   );
 }

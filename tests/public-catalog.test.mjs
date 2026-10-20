@@ -161,6 +161,36 @@ test('public catalog filters/sorts by availability and exposes no raw stock coun
   assert.deepEqual((await invalidPaging.json()).pagination, { limit: 5000, offset: 0, total: 3 });
 });
 
+test('availability resolves a numeric catalog key before an internal product id', async (t) => {
+  const db = new SqliteD1(schema);
+  t.after(() => db.close());
+  db.sqlite.exec(`
+    INSERT INTO categories (id, slug, name_ro, name_ru) VALUES ('test', 'test', 'Test', 'Test');
+    INSERT INTO products (id, catalog_key, sku, slug, category_id, brand, name_ro, price)
+    VALUES
+      (2, 'OTHER', 'OTHER', 'other', 'test', 'Brand', 'Alt produs', 50),
+      (10, '2', '2', 'numeric-key', 'test', 'Valeri', 'Valeri Builder Gel', 145);
+    INSERT INTO inventory (product_id, warehouse_id, on_hand, reserved)
+    VALUES (2, 1, 9, 0), (10, 1, 3, 1);
+  `);
+
+  const response = await getAvailability({
+    request: new Request('https://shop.example/api/products/2/availability'),
+    params: { id: '2' },
+    env: { DB: db },
+  });
+  const payload = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(payload.availability, {
+    productId: 10,
+    productKey: '2',
+    available: 2,
+    inStock: true,
+    updatedAt: payload.availability.updatedAt,
+  });
+});
+
 test('complete public catalog reads images inline and skips a redundant total scan', async (t) => {
   const db = new SqliteD1(schema);
   const recordingDb = new RecordingD1(db);

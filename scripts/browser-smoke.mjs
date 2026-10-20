@@ -47,6 +47,46 @@ export function isReadOnlyHttpMethod(method) {
   return READ_ONLY_METHODS.has(String(method || '').toUpperCase());
 }
 
+export function mockBrowserReservation(request, baseOrigin, now = new Date()) {
+  const details = sanitizedRequest(request?.url, baseOrigin);
+  if (!details.sameOrigin
+    || details.path !== '/api/reservations'
+    || String(request?.method || '').toUpperCase() !== 'POST') return null;
+  let input;
+  try { input = JSON.parse(request.postData || ''); }
+  catch { return null; }
+  const cartId = String(input?.cartId || '').trim().toLowerCase();
+  const productKey = String(input?.productKey || '').trim();
+  const quantity = Number(input?.quantity);
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(cartId)
+    || !productKey
+    || productKey.length > 120
+    || !Number.isInteger(quantity)
+    || quantity < 0
+    || quantity > 99) return null;
+  const expiresAt = quantity > 0 ? new Date(now.getTime() + 60 * 60 * 1000).toISOString() : null;
+  return {
+    responseCode: 200,
+    responseHeaders: [
+      { name: 'content-type', value: 'application/json; charset=utf-8' },
+      { name: 'cache-control', value: 'no-store' },
+    ],
+    body: Buffer.from(JSON.stringify({
+      ok: true,
+      reservation: {
+        id: 'browser-smoke-reservation',
+        cartId,
+        productId: 0,
+        productKey,
+        quantity,
+        status: quantity > 0 ? 'ACTIVE' : 'CANCELLED',
+        expiresAt,
+        available: 99,
+      },
+    })).toString('base64'),
+  };
+}
+
 export function parseArguments(argv) {
   const valueFlags = new Set(['--base-url', '--report-file', '--browser-path']);
   const booleanFlags = new Set(['--help']);
@@ -470,14 +510,16 @@ async function evaluate(client, expression, { awaitPromise = false, timeoutMs = 
 
 async function waitForPage(client, required) {
   const deadline = Date.now() + PAGE_TIMEOUT_MS;
+  let lastSnapshot = null;
   while (Date.now() < deadline) {
     try {
       const snapshot = await evaluate(client, inspectionExpression(required));
+      lastSnapshot = snapshot;
       if (snapshot?.readyState === 'complete' && snapshot.requirements.every((item) => item.present)) return;
     } catch {}
     await sleep(120);
   }
-  throw new Error('Timed out waiting for required page content');
+  throw new Error(`Timed out waiting for required page content: ${JSON.stringify(lastSnapshot)}`);
 }
 
 async function putOneProductInLocalCart(client) {
@@ -548,6 +590,7 @@ export async function runBrowserSmoke({
   let currentRoute = null;
   const requestMap = new Map();
   const blockedWriteRequests = [];
+  const mockedReservationRequests = [];
   const failedResponses = [];
   const pageErrors = [];
   const pages = [];
@@ -562,6 +605,17 @@ export async function runBrowserSmoke({
       const method = String(request.method || '').toUpperCase();
       const details = sanitizedRequest(request.url, baseOrigin);
       if (!isReadOnlyHttpMethod(method)) {
+        const mockedReservation = mockBrowserReservation(request, baseOrigin);
+        if (mockedReservation) {
+          mockedReservationRequests.push({
+            routeName: currentRoute || 'startup',
+            method,
+            path: details.path,
+            sameOrigin: details.sameOrigin,
+          });
+          await client.send('Fetch.fulfillRequest', { requestId, ...mockedReservation });
+          return;
+        }
         blockedWriteRequests.push({
           routeName: currentRoute || 'startup',
           method,
@@ -732,6 +786,7 @@ export async function runBrowserSmoke({
     safety: {
       serverWriteRequestsSent: 0,
       blockedWriteRequestCount: uniqueWrites.length,
+      mockedReservationRequestCount: mockedReservationRequests.length,
       forbiddenWriteAttemptCount: forbiddenWriteAttempts.length,
       cartQuantity: selectedProduct?.quantity || 0,
       cartPersistenceUpdate,

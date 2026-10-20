@@ -7,7 +7,6 @@ export async function onRequestGet(context) {
     if (!id) return apiError('INVALID_PRODUCT_ID', 'Product id is required', 400);
     return cachedCatalogResponse(context, async ({ db }) => {
       const numericProductId = /^[1-9]\d*$/.test(id) ? Number(id) : null;
-      const findById = Number.isSafeInteger(numericProductId);
       const product = await db.prepare(`
         SELECT
           p.id, p.catalog_key,
@@ -21,9 +20,12 @@ export async function onRequestGet(context) {
         JOIN categories c ON c.id = p.category_id AND c.is_active = 1
         LEFT JOIN inventory i ON i.product_id = p.id AND i.warehouse_id = 1
         WHERE p.is_active = 1 AND p.deleted_at IS NULL
-          AND ${findById ? 'p.id = ?' : 'p.catalog_key = ?'}
+          AND p.id = COALESCE(
+            (SELECT keyed.id FROM products keyed WHERE keyed.catalog_key = ? LIMIT 1),
+            ?
+          )
         LIMIT 1
-      `).bind(findById ? numericProductId : id).first();
+      `).bind(id, Number.isSafeInteger(numericProductId) ? numericProductId : null).first();
       if (!product) return apiError('PRODUCT_NOT_FOUND', 'Product not found', 404);
       const available = Math.max(0, Number(product.available || 0));
       return json({

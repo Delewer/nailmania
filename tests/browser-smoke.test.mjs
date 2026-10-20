@@ -10,6 +10,7 @@ import {
   isExpectedFailedResponse,
   isLoopbackBaseUrl,
   isReadOnlyHttpMethod,
+  mockBrowserReservation,
   normalizeLoopbackBaseUrl,
   parseArguments,
   resolveBrowserSmokePath,
@@ -50,6 +51,32 @@ test('browser smoke blocks every method that can change server state', () => {
   assert.equal(isReadOnlyHttpMethod('PATCH'), false);
   assert.equal(isReadOnlyHttpMethod('DELETE'), false);
   assert.equal(isReadOnlyHttpMethod('OPTIONS'), false);
+});
+
+test('browser smoke can mock a valid local reservation without sending a write', () => {
+  const request = {
+    url: 'http://127.0.0.1:8797/api/reservations',
+    method: 'POST',
+    postData: JSON.stringify({
+      cartId: '22222222-2222-4222-8222-222222222222',
+      productKey: '3407',
+      quantity: 1,
+    }),
+  };
+  const mocked = mockBrowserReservation(request, 'http://127.0.0.1:8797', new Date('2026-10-20T10:00:00.000Z'));
+  assert.equal(mocked.responseCode, 200);
+  assert.deepEqual(JSON.parse(Buffer.from(mocked.body, 'base64').toString('utf8')).reservation, {
+    id: 'browser-smoke-reservation',
+    cartId: '22222222-2222-4222-8222-222222222222',
+    productId: 0,
+    productKey: '3407',
+    quantity: 1,
+    status: 'ACTIVE',
+    expiresAt: '2026-10-20T11:00:00.000Z',
+    available: 99,
+  });
+  assert.equal(mockBrowserReservation({ ...request, url: 'https://example.test/api/reservations' }, 'http://127.0.0.1:8797'), null);
+  assert.equal(mockBrowserReservation({ ...request, postData: '{}' }, 'http://127.0.0.1:8797'), null);
 });
 
 test('browser executable override must resolve to a real file', () => {

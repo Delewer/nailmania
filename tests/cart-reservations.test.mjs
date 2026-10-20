@@ -42,6 +42,31 @@ const reserve = (db, cartId, quantity, now = '2026-08-25T10:00:00.000Z') => (
   })
 );
 
+test('a numeric catalog key is not confused with an internal product id', async (t) => {
+  const db = setup(1);
+  t.after(() => db.close());
+  db.sqlite.exec(`
+    INSERT INTO products (
+      id, catalog_key, sku, slug, category_id, brand, name_ro, name_ru, price, old_price
+    ) VALUES
+      (2, 'OTHER', 'OTHER', 'other', 'test', 'Brand', 'Alt produs', 'Other product', 50, 0),
+      (10, '2', '2', 'numeric-key', 'test', 'Valeri', 'Valeri Builder Gel', 'Valeri Builder Gel', 145, 0);
+    INSERT INTO inventory (product_id, warehouse_id, on_hand, reserved)
+    VALUES (2, 1, 5, 0), (10, 1, 3, 0);
+  `);
+
+  const reservation = await synchronizeCartReservation(db, {
+    cartId: CART_A,
+    productKey: '2',
+    quantity: 1,
+  }, { env: { RESERVATION_TTL_MINUTES: '60' } });
+
+  assert.equal(reservation.productId, 10);
+  assert.equal(reservation.productKey, '2');
+  assert.equal(db.sqlite.prepare('SELECT reserved FROM inventory WHERE product_id = 2').get().reserved, 0);
+  assert.equal(db.sqlite.prepare('SELECT reserved FROM inventory WHERE product_id = 10').get().reserved, 1);
+});
+
 function reservationContext(db, id, method, body) {
   return {
     env: { DB: db, ENVIRONMENT: 'local', RESERVATION_TTL_MINUTES: '60' },

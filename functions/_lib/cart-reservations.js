@@ -85,7 +85,8 @@ function expiredCleanupStatements(db, { productId, now, revision }) {
 export async function synchronizeCartReservation(db, input, options = {}) {
   const database = primarySession(db);
   const cartId = normalizeCartId(input?.cartId);
-  const productKey = text(input?.productKey ?? input?.productId, 120);
+  const hasProductKey = input?.productKey !== undefined && input?.productKey !== null;
+  const productKey = text(hasProductKey ? input.productKey : input?.productId, 120);
   const quantity = Number(input?.quantity);
   if (!productKey) throw new CartReservationError('INVALID_PRODUCT_ID', 'Product id is required');
   if (!Number.isInteger(quantity) || quantity < 0 || quantity > 99) {
@@ -94,7 +95,10 @@ export async function synchronizeCartReservation(db, input, options = {}) {
   const now = options.now ? new Date(options.now).toISOString() : new Date().toISOString();
   const ttlMinutes = reservationTtlMinutes(options.env);
   const expiresAt = new Date(new Date(now).getTime() + ttlMinutes * 60 * 1000).toISOString();
-  const numericProductId = /^[1-9]\d*$/.test(productKey) ? Number(productKey) : null;
+  // Storefront carts contain the stable catalog key. Numeric SKUs are valid
+  // catalog keys too, so only treat a numeric value as a database id when the
+  // caller explicitly used the legacy productId field.
+  const numericProductId = !hasProductKey && /^[1-9]\d*$/.test(productKey) ? Number(productKey) : null;
   const findById = Number.isSafeInteger(numericProductId);
   const product = await database.prepare(`
     SELECT p.id, p.catalog_key, i.on_hand, i.reserved
