@@ -11,6 +11,7 @@ import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { catalogImageUrls, isValidCatalogImageUrl } from '../shared/catalog-images.js';
 import { assertCanonicalCatalogImagesForRelease } from './catalog-image-policy.mjs';
+import { timeTravelBookmarkTimestamp } from './d1-release-time.mjs';
 import { verifyMigrationManifest } from './migration-integrity.mjs';
 
 const root = process.cwd();
@@ -128,11 +129,12 @@ if (operation === 'backup') {
   const bookmarkPath = path.join(backupDirectory, `${basename}.bookmark.json`);
   const metadataPath = path.join(backupDirectory, `${basename}.metadata.json`);
   const timestamp = now.toISOString();
+  const bookmarkTimestamp = timeTravelBookmarkTimestamp(now);
 
   const bookmark = run(process.execPath, [
     path.join(root, 'node_modules', 'wrangler', 'bin', 'wrangler.js'),
     'd1', 'time-travel', 'info', target.database,
-    '--timestamp', timestamp, '--json', '--config', 'wrangler.toml', '--env', environment,
+    '--timestamp', bookmarkTimestamp, '--json', '--config', 'wrangler.toml', '--env', environment,
   ], { capture: true });
   let bookmarkPayload;
   try {
@@ -148,6 +150,7 @@ if (operation === 'backup') {
     environment,
     database: target.database,
     createdAt: timestamp,
+    bookmarkTimestamp,
     commit: git('rev-parse', 'HEAD'),
     sqlFile: path.relative(root, sqlPath),
     sqlBytes: statSync(sqlPath).size,

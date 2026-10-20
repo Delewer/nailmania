@@ -11,6 +11,7 @@ import { migrationSha256, verifyMigrationManifest } from '../scripts/migration-i
 const ROOT = path.resolve(new URL('..', import.meta.url).pathname.replace(/^\/(?:([A-Za-z]):)/, '$1:'));
 const SEED_ADMIN = path.join(ROOT, 'scripts', 'seed-admin.mjs');
 const D1_RELEASE = path.join(ROOT, 'scripts', 'd1-release.mjs');
+const D1_RELEASE_TIME = path.join(ROOT, 'scripts', 'd1-release-time.mjs');
 const MIGRATION_INTEGRITY = path.join(ROOT, 'scripts', 'migration-integrity.mjs');
 const RELEASE_BUILD = path.join(ROOT, 'scripts', 'release-build.mjs');
 const RELEASE_BUNDLE = path.join(ROOT, 'scripts', 'release-bundle.mjs');
@@ -222,6 +223,7 @@ test('production D1 wrapper rejects missing/tampered backup and records a guarde
   mkdirSync(wranglerDirectory, { recursive: true });
   mkdirSync(backupDirectory, { recursive: true });
   copyFileSync(D1_RELEASE, path.join(scriptsDirectory, 'd1-release.mjs'));
+  copyFileSync(D1_RELEASE_TIME, path.join(scriptsDirectory, 'd1-release-time.mjs'));
   copyFileSync(MIGRATION_INTEGRITY, path.join(scriptsDirectory, 'migration-integrity.mjs'));
   copyFileSync(CATALOG_IMAGE_POLICY, path.join(scriptsDirectory, 'catalog-image-policy.mjs'));
   writeCatalogImagesFixture(directory);
@@ -354,6 +356,7 @@ test('catalog D1 wrapper records remote postconditions and fails closed on a mis
   mkdirSync(wranglerDirectory, { recursive: true });
   mkdirSync(backupDirectory, { recursive: true });
   copyFileSync(D1_RELEASE, path.join(scriptsDirectory, 'd1-release.mjs'));
+  copyFileSync(D1_RELEASE_TIME, path.join(scriptsDirectory, 'd1-release-time.mjs'));
   copyFileSync(MIGRATION_INTEGRITY, path.join(scriptsDirectory, 'migration-integrity.mjs'));
   copyFileSync(CATALOG_IMAGE_POLICY, path.join(scriptsDirectory, 'catalog-image-policy.mjs'));
   writeCatalogImagesFixture(directory);
