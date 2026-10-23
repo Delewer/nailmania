@@ -36,7 +36,7 @@ export async function onRequestPost(context) {
       SELECT id, email, phone, name, role, status, password_hash, email_verified_at
       FROM users WHERE email = ? COLLATE NOCASE LIMIT 1
     `).bind(email).first() : null;
-    const passwordMatches = await verifyPassword(body.password, row?.password_hash);
+    const passwordMatches = await verifyPassword(body.password, row?.password_hash, context.env);
     if (!row || row.status !== 'active' || !passwordMatches) throw invalidCredentials();
 
     const session = await newSessionRecord(db, row.id, context.request, context.env);

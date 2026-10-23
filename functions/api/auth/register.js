@@ -27,7 +27,7 @@ export async function onRequestPost(context) {
       name: body.name ?? body.profile?.name,
       phone: body.phone ?? body.profile?.phone,
     });
-    const passwordHash = await hashPassword(body.password);
+    const passwordHash = await hashPassword(body.password, context.env);
     const binding = requireDatabase(context.env);
     const db = typeof binding.withSession === 'function' ? binding.withSession('first-primary') : binding;
     const id = crypto.randomUUID();

@@ -6,6 +6,7 @@ import {
   hashPassword,
   newSessionRecord,
   normalizeEmail,
+  PASSWORD_ITERATIONS,
   requireCustomerMutation,
   resolveCustomer,
   sessionCookie,
@@ -19,13 +20,30 @@ const schema = [
 ].join('\n');
 
 test('customer password hashes use a unique salt and verify without storing plaintext', async () => {
-  const first = await hashPassword('very long passphrase');
-  const second = await hashPassword('very long passphrase');
+  const environment = { ENVIRONMENT: 'local' };
+  const first = await hashPassword('very long passphrase', environment);
+  const second = await hashPassword('very long passphrase', environment);
   assert.notEqual(first, second);
   assert.doesNotMatch(first, /very long passphrase/);
-  assert.equal(await verifyPassword('very long passphrase', first), true);
-  assert.equal(await verifyPassword('wrong password', first), false);
-  assert.equal(await verifyPassword('wrong password', ''), false);
+  assert.match(first, /^pbkdf2-sha256-worker-v1\$100000\$/);
+  assert.equal(PASSWORD_ITERATIONS, 100_000);
+  assert.equal(await verifyPassword('very long passphrase', first, environment), true);
+  assert.equal(await verifyPassword('wrong password', first, environment), false);
+  assert.equal(await verifyPassword('wrong password', '', environment), false);
+});
+
+test('production password hashing stays within the Workers PBKDF2 ceiling and requires server secret material', async () => {
+  const environment = {
+    ENVIRONMENT: 'production',
+    AUTH_FINGERPRINT_SALT: 'production-auth-secret-material',
+  };
+  const encoded = await hashPassword('another long passphrase', environment);
+  assert.match(encoded, /^pbkdf2-sha256-worker-v1\$100000\$/);
+  assert.equal(await verifyPassword('another long passphrase', encoded, environment), true);
+  await assert.rejects(
+    hashPassword('another long passphrase', { ENVIRONMENT: 'production' }),
+    (error) => error.code === 'AUTH_NOT_CONFIGURED',
+  );
 });
 
 test('email normalization and same-origin JSON protection reject unsafe account requests', () => {

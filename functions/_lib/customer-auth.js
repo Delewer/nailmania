@@ -3,9 +3,14 @@ import { requireDatabase, requireJsonContentType } from './http.js';
 const encoder = new TextEncoder();
 const SESSION_COOKIE = 'nm_session';
 const SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
-const PASSWORD_ITERATIONS = 600_000;
+// Cloudflare Workers production rejects PBKDF2 requests above 100,000 iterations.
+// Keep the runtime-compatible work factor and protect the material with a
+// server-side, domain-separated HMAC before it reaches PBKDF2.
+const PASSWORD_ITERATIONS = 100_000;
 const PASSWORD_ALGORITHM = 'PBKDF2';
-const PASSWORD_FORMAT = 'pbkdf2-sha256';
+const PASSWORD_FORMAT = 'pbkdf2-sha256-worker-v1';
+const LEGACY_PASSWORD_FORMAT = 'pbkdf2-sha256';
+const PASSWORD_PEPPER_CONTEXT = 'nailmania:customer-password:v1\0';
 const DUMMY_PASSWORD_HASH = `${PASSWORD_FORMAT}$${PASSWORD_ITERATIONS}$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA`;
 
 export class CustomerAuthError extends Error {
@@ -40,10 +45,39 @@ const digestHex = async (value) => [...new Uint8Array(await crypto.subtle.digest
   .map((byte) => byte.toString(16).padStart(2, '0'))
   .join('');
 
-async function derivePassword(password, salt, iterations = PASSWORD_ITERATIONS) {
+function passwordPepper(env) {
+  const secret = String(
+    env?.AUTH_PASSWORD_PEPPER
+    || env?.AUTH_FINGERPRINT_SALT
+    || (env?.ENVIRONMENT === 'local' ? 'local-development-only' : ''),
+  );
+  if (secret.length < 16) {
+    throw new CustomerAuthError('AUTH_NOT_CONFIGURED', 'Customer authentication is temporarily unavailable', 503);
+  }
+  return secret;
+}
+
+async function passwordMaterial(password, env, format) {
+  if (format === LEGACY_PASSWORD_FORMAT) return encoder.encode(password);
+  const key = await crypto.subtle.importKey(
+    'raw',
+    encoder.encode(passwordPepper(env)),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+  return new Uint8Array(await crypto.subtle.sign(
+    'HMAC',
+    key,
+    encoder.encode(`${PASSWORD_PEPPER_CONTEXT}${password}`),
+  ));
+}
+
+async function derivePassword(password, salt, iterations, env, format) {
+  const materialBytes = await passwordMaterial(password, env, format);
   const material = await crypto.subtle.importKey(
     'raw',
-    encoder.encode(password),
+    materialBytes,
     PASSWORD_ALGORITHM,
     false,
     ['deriveBits'],
@@ -90,30 +124,31 @@ export function normalizeProfile(input, { requireName = true } = {}) {
   return { name, phone };
 }
 
-export async function hashPassword(value) {
+export async function hashPassword(value, env) {
   const password = normalizePassword(value);
   const salt = new Uint8Array(16);
   crypto.getRandomValues(salt);
-  const hash = await derivePassword(password, salt);
+  const hash = await derivePassword(password, salt, PASSWORD_ITERATIONS, env, PASSWORD_FORMAT);
   return `${PASSWORD_FORMAT}$${PASSWORD_ITERATIONS}$${bytesToBase64Url(salt)}$${bytesToBase64Url(hash)}`;
 }
 
-export async function verifyPassword(value, encodedHash) {
+export async function verifyPassword(value, encodedHash, env) {
   const password = typeof value === 'string' && value.length <= 128 ? value : '';
   const parts = String(encodedHash || DUMMY_PASSWORD_HASH).split('$');
-  if (parts.length !== 4 || parts[0] !== PASSWORD_FORMAT) {
-    await derivePassword(password, new Uint8Array(16));
+  const format = parts[0];
+  if (parts.length !== 4 || ![PASSWORD_FORMAT, LEGACY_PASSWORD_FORMAT].includes(format)) {
+    await derivePassword(password, new Uint8Array(16), PASSWORD_ITERATIONS, env, PASSWORD_FORMAT);
     return false;
   }
   const iterations = Number(parts[1]);
-  if (!Number.isInteger(iterations) || iterations < 100_000 || iterations > 2_000_000) {
-    await derivePassword(password, new Uint8Array(16));
+  if (!Number.isInteger(iterations) || iterations < 100_000 || iterations > PASSWORD_ITERATIONS) {
+    await derivePassword(password, new Uint8Array(16), PASSWORD_ITERATIONS, env, PASSWORD_FORMAT);
     return false;
   }
   try {
     const salt = base64UrlToBytes(parts[2]);
     const expected = base64UrlToBytes(parts[3]);
-    const actual = await derivePassword(password, salt, iterations);
+    const actual = await derivePassword(password, salt, iterations, env, format);
     return constantTimeEqual(actual, expected);
   } catch {
     return false;
@@ -235,6 +270,8 @@ export async function revokeSession(db, sessionId, now = new Date()) {
 
 export {
   DUMMY_PASSWORD_HASH,
+  LEGACY_PASSWORD_FORMAT,
+  PASSWORD_FORMAT,
   PASSWORD_ITERATIONS,
   SESSION_COOKIE,
   SESSION_MAX_AGE_SECONDS,

@@ -43,7 +43,7 @@ export async function onRequestPost(context) {
     `).bind(tokenHash, now).first();
     if (!wellFormed || !reset) throw invalidReset();
 
-    const passwordHash = await hashPassword(body.password);
+    const passwordHash = await hashPassword(body.password, context.env);
     const results = await db.batch([
       db.prepare(`
         UPDATE users
