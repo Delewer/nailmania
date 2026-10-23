@@ -4,12 +4,15 @@ import {
   Archive,
   ChevronRight,
   FolderTree,
+  ImagePlus,
   LoaderCircle,
   Plus,
   RefreshCw,
   RotateCcw,
   Save,
   Search,
+  Trash2,
+  Upload,
   X,
 } from 'lucide-react';
 import { AdminApiError, adminRequest } from '../admin-api.js';
@@ -35,6 +38,8 @@ const emptyCategory = (sortOrder = 0) => ({
   nameRu: '',
   sortOrder: String(sortOrder),
   isActive: true,
+  imageUrl: '',
+  imageObjectKey: '',
   seoTitleRo: '',
   seoTitleRu: '',
   seoDescriptionRo: '',
@@ -52,6 +57,8 @@ const categoryPayload = (form) => ({
   nameRu: form.nameRu,
   sortOrder: Number(form.sortOrder || 0),
   isActive: form.isActive,
+  imageUrl: form.imageUrl,
+  imageObjectKey: form.imageObjectKey,
   seoTitleRo: form.seoTitleRo,
   seoTitleRu: form.seoTitleRu,
   seoDescriptionRo: form.seoDescriptionRo,
@@ -62,7 +69,7 @@ function CategoryState({ category }) {
   return <span className={`adm-product-state ${category.isActive ? 'active' : 'inactive'}`}>{category.isActive ? 'Activă' : 'Inactivă'}</span>;
 }
 
-function CategoryEditor({ category, nextSortOrder, onClose, onSave, onDelete }) {
+function CategoryEditor({ category, nextSortOrder, onClose, onSave, onDelete, onUpload, onDiscardUpload }) {
   const initial = categoryForm(category, nextSortOrder);
   const [form, setForm] = React.useState(initial);
   const [baseline, setBaseline] = React.useState(() => JSON.stringify(categoryPayload(initial)));
@@ -71,10 +78,18 @@ function CategoryEditor({ category, nextSortOrder, onClose, onSave, onDelete }) 
   const [saveError, setSaveError] = React.useState('');
   const [deleteConfirm, setDeleteConfirm] = React.useState(false);
   const [closeConfirm, setCloseConfirm] = React.useState(false);
+  const [uploading, setUploading] = React.useState(false);
+  const fileRef = React.useRef(null);
+  const pendingUpload = React.useRef('');
   const dirty = React.useMemo(() => JSON.stringify(categoryPayload(form)) !== baseline, [baseline, form]);
   const newCategory = !form.id;
 
-  const discardAndClose = React.useCallback(() => onClose(), [onClose]);
+  const discardAndClose = React.useCallback(async () => {
+    const key = pendingUpload.current;
+    pendingUpload.current = '';
+    if (key) await Promise.allSettled([onDiscardUpload(key)]);
+    onClose();
+  }, [onClose, onDiscardUpload]);
   const requestClose = React.useCallback(() => {
     if (dirty) setCloseConfirm(true);
     else discardAndClose();
@@ -106,11 +121,48 @@ function CategoryEditor({ category, nextSortOrder, onClose, onSave, onDelete }) 
       const next = categoryForm(saved);
       setForm(next);
       setBaseline(JSON.stringify(categoryPayload(next)));
+      pendingUpload.current = '';
       setCloseConfirm(false);
     } catch (error) {
       setSaveError(error.message);
     } finally {
       setSaving(false);
+    }
+  };
+  const uploadImage = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    setUploading(true);
+    setSaveError('');
+    try {
+      const previousPending = pendingUpload.current;
+      const image = await onUpload(file);
+      pendingUpload.current = image.objectKey || '';
+      setForm((current) => ({ ...current, imageUrl: image.url, imageObjectKey: image.objectKey || '' }));
+      if (previousPending && previousPending !== image.objectKey) await onDiscardUpload(previousPending);
+    } catch (error) {
+      setSaveError(error.message);
+    } finally {
+      setUploading(false);
+    }
+  };
+  const removeImage = async () => {
+    const key = pendingUpload.current;
+    pendingUpload.current = '';
+    setForm((current) => ({ ...current, imageUrl: '', imageObjectKey: '' }));
+    if (key) {
+      try { await onDiscardUpload(key); }
+      catch (error) { setSaveError(error.message); }
+    }
+  };
+  const changeImageUrl = async (value) => {
+    const key = pendingUpload.current;
+    pendingUpload.current = '';
+    setForm((current) => ({ ...current, imageUrl: value, imageObjectKey: '' }));
+    if (key) {
+      try { await onDiscardUpload(key); }
+      catch (error) { setSaveError(error.message); }
     }
   };
   const deactivate = async () => {
@@ -148,6 +200,23 @@ function CategoryEditor({ category, nextSortOrder, onClose, onSave, onDelete }) 
                 <label className="wide"><span>Cheie URL</span><input className={!newCategory ? 'readonly' : ''} value={form.slug} onChange={(event) => { setSlugTouched(true); set('slug', slugify(event.target.value)); }} readOnly={!newCategory} required minLength={2} maxLength={80}/></label>
                 <label><span>Ordine</span><input type="number" min="0" max="9999" step="1" value={form.sortOrder} onChange={(event) => set('sortOrder', event.target.value)} required/></label>
                 <label className="adm-check adm-category-active"><input type="checkbox" checked={form.isActive} disabled={form.isActive && form.productCount > 0} onChange={(event) => set('isActive', event.target.checked)}/><span>Activă</span></label>
+              </div>
+            </section>
+            <section className="adm-form-section">
+              <h3>Imagine categorie</h3>
+              <div className="adm-category-image-editor">
+                <div className="adm-category-image-preview">
+                  {form.imageUrl ? <img src={form.imageUrl} alt="Previzualizare categorie"/> : <ImagePlus size={28}/>}
+                </div>
+                <div className="adm-category-image-fields">
+                  <label><span>Link imagine</span><input type="url" value={form.imageUrl} maxLength={2048} placeholder="https://…" onChange={(event) => { void changeImageUrl(event.target.value); }}/></label>
+                  <div>
+                    <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp,image/avif" hidden onChange={uploadImage}/>
+                    <button className="adm-compact-btn" type="button" disabled={uploading} onClick={() => fileRef.current?.click()}>{uploading ? <LoaderCircle className="adm-spin" size={16}/> : <Upload size={16}/>}Încarcă</button>
+                    {form.imageUrl && <button className="adm-danger-btn" type="button" onClick={removeImage}><Trash2 size={16}/>Elimină</button>}
+                  </div>
+                  <small>JPEG, PNG, WebP sau AVIF, maximum 8 MB. Se afișează în catalog și în pagina categoriei.</small>
+                </div>
               </div>
             </section>
             <section className="adm-form-section">
@@ -248,6 +317,25 @@ export default function AdminCategories({ onUnauthorized }) {
       throw requestError;
     }
   };
+  const upload = async (file) => {
+    try {
+      const form = new FormData();
+      form.set('file', file);
+      const response = await adminRequest('/api/admin/uploads', { method: 'POST', body: form });
+      return response.image;
+    } catch (requestError) {
+      if (requestError instanceof AdminApiError && [401, 403].includes(requestError.status)) onUnauthorized();
+      throw requestError;
+    }
+  };
+  const discardUpload = async (objectKey) => {
+    try {
+      await adminRequest(`/api/admin/uploads/${encodeURIComponent(objectKey)}`, { method: 'DELETE', body: {} });
+    } catch (requestError) {
+      if (requestError instanceof AdminApiError && [401, 403].includes(requestError.status)) onUnauthorized();
+      throw requestError;
+    }
+  };
   const nextSortOrder = categories.reduce((maximum, category) => Math.max(maximum, category.sortOrder), -1) + 1;
 
   return (
@@ -280,7 +368,7 @@ export default function AdminCategories({ onUnauthorized }) {
             <tbody>
               {categories.map((category) => (
                 <tr key={category.id} onClick={() => { setCreating(false); setSelected(category); }}>
-                  <td><div className="adm-category-cell"><FolderTree size={18}/><div><b>{category.nameRo}</b><span>{category.nameRu || '—'}</span></div></div></td>
+                  <td><div className="adm-category-cell">{category.imageUrl ? <img src={category.imageUrl} alt=""/> : <FolderTree size={18}/>}<div><b>{category.nameRo}</b><span>{category.nameRu || '—'}</span></div></div></td>
                   <td><code>{category.slug}</code></td>
                   <td><strong>{category.activeProductCount}</strong></td>
                   <td>{category.productCount}</td>
@@ -297,7 +385,7 @@ export default function AdminCategories({ onUnauthorized }) {
         <footer className="adm-pagination"><span>{categories.length} din {counts.total} categorii</span></footer>
       </section>
 
-      {(creating || selected) && <CategoryEditor key={creating ? 'new' : selected.id} category={selected} nextSortOrder={nextSortOrder} onClose={closeEditor} onSave={save} onDelete={remove}/>}
+      {(creating || selected) && <CategoryEditor key={creating ? 'new' : selected.id} category={selected} nextSortOrder={nextSortOrder} onClose={closeEditor} onSave={save} onDelete={remove} onUpload={upload} onDiscardUpload={discardUpload}/>}
     </>
   );
 }

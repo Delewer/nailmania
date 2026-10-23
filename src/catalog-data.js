@@ -1,15 +1,13 @@
 import { I18N, decorateCategory, productGallery } from './data.js';
 import {
-  CATEGORIES_ENDPOINT,
-  PRODUCTS_ENDPOINT,
+  CATALOG_ENDPOINT,
   loadStorefrontCatalog,
 } from './catalog-api.js';
 
 let snapshot;
 try{
   snapshot = await loadStorefrontCatalog({
-    productsEndpoint:(import.meta.env && import.meta.env.VITE_CATALOG_ENDPOINT) || PRODUCTS_ENDPOINT,
-    categoriesEndpoint:(import.meta.env && import.meta.env.VITE_CATEGORIES_ENDPOINT) || CATEGORIES_ENDPOINT,
+    catalogEndpoint:(import.meta.env && import.meta.env.VITE_CATALOG_ENDPOINT) || CATALOG_ENDPOINT,
   });
 }catch(error){
   console.error('D1 storefront catalog is unavailable:', error);
@@ -90,6 +88,7 @@ export function featured(seed, n=8){
 export const SUMMER_PRODUCTS = CATALOG.filter(p=>p.summer);
 export const SALE_PRODUCTS = CATALOG.filter(p=>p.promo || p.old>p.price);
 export const NEW_PRODUCTS = CATALOG.filter(p=>p.isNew);
+export const TREND_PRODUCTS = CATALOG.filter(p=>p.featured);
 // look up by stable identity key (SKU or hash fallback) — used by URLs/cart/favorites
 export const findProduct = (key)=> ALL_PRODUCTS.find(p=>p.key===key);
 

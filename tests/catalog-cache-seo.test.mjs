@@ -85,7 +85,7 @@ test('catalog cache hits, then a D1 revision bump makes the old global key unrea
   const first = await cachedCatalogResponse(requestContext, build);
   assert.equal(await first.text(), 'generation-1');
   assert.equal(first.headers.get('x-catalog-cache'), 'MISS');
-  assert.equal(first.headers.get('cache-control'), 'no-store');
+  assert.equal(first.headers.get('cache-control'), 'public, max-age=60');
   assert.equal(CATALOG_EDGE_TTL_SECONDS, 86_400);
   assert.equal([...cache.entries.values()][0].headers.get('cache-control'), 'public, max-age=86400');
 

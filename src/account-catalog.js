@@ -1,14 +1,12 @@
 import {
-  CATEGORIES_ENDPOINT,
-  PRODUCTS_ENDPOINT,
+  CATALOG_ENDPOINT,
   loadStorefrontCatalog,
 } from "./catalog-api.js";
 import { decorateCategory, productGallery } from "./data.js";
 
 export async function loadFreshStorefrontProducts() {
   const snapshot = await loadStorefrontCatalog({
-    productsEndpoint: (import.meta.env && import.meta.env.VITE_CATALOG_ENDPOINT) || PRODUCTS_ENDPOINT,
-    categoriesEndpoint: (import.meta.env && import.meta.env.VITE_CATEGORIES_ENDPOINT) || CATEGORIES_ENDPOINT,
+    catalogEndpoint: (import.meta.env && import.meta.env.VITE_CATALOG_ENDPOINT) || CATALOG_ENDPOINT,
   });
   const categories = snapshot.categories.map(decorateCategory);
   const categoryMap = Object.fromEntries(categories.map((category) => [category.id, category]));

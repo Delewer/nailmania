@@ -25,6 +25,22 @@ const integer = (value, fallback = 0) => {
   return Number.isInteger(parsed) ? parsed : fallback;
 };
 
+const normalizeImage = (urlValue, objectKeyValue) => {
+  const imageUrl = text(urlValue, 2048);
+  if (!imageUrl) return { imageUrl: '', imageObjectKey: '' };
+  let parsed;
+  try { parsed = new URL(imageUrl); }
+  catch { throw new AdminCategoryError('INVALID_CATEGORY_IMAGE', 'Category image must have a valid URL'); }
+  if (!['http:', 'https:'].includes(parsed.protocol)) {
+    throw new AdminCategoryError('INVALID_CATEGORY_IMAGE', 'Category image URL must use HTTP or HTTPS');
+  }
+  const imageObjectKey = text(objectKeyValue, 512);
+  if (imageObjectKey && !/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(imageObjectKey)) {
+    throw new AdminCategoryError('INVALID_CATEGORY_IMAGE_KEY', 'Category image object key is invalid');
+  }
+  return { imageUrl, imageObjectKey };
+};
+
 export function normalizeAdminCategory(input, options = {}) {
   const current = options.current || null;
   const body = input && typeof input === 'object' ? input : {};
@@ -39,6 +55,10 @@ export function normalizeAdminCategory(input, options = {}) {
   if (sortOrder < 0 || sortOrder > 9999) {
     throw new AdminCategoryError('INVALID_CATEGORY_SORT', 'Category sort order must be between 0 and 9999');
   }
+  const image = normalizeImage(
+    body.imageUrl ?? current?.imageUrl,
+    Object.hasOwn(body, 'imageUrl') ? (body.imageObjectKey ?? '') : current?.imageObjectKey,
+  );
 
   return {
     id: current?.id || requestedSlug,
@@ -47,6 +67,7 @@ export function normalizeAdminCategory(input, options = {}) {
     nameRu: text(body.nameRu ?? current?.nameRu, 180),
     sortOrder,
     isActive: boolean(body.isActive, current?.isActive ?? true),
+    ...image,
     seoTitleRo: text(body.seoTitleRo ?? current?.seoTitleRo, 300),
     seoTitleRu: text(body.seoTitleRu ?? current?.seoTitleRu, 300),
     seoDescriptionRo: text(body.seoDescriptionRo ?? current?.seoDescriptionRo, 1000),
@@ -57,6 +78,7 @@ export function normalizeAdminCategory(input, options = {}) {
 export const ADMIN_CATEGORY_SELECT = `
   SELECT
     c.id, c.slug, c.name_ro, c.name_ru, c.sort_order, c.is_active,
+    c.image_url, c.image_object_key,
     c.seo_title_ro, c.seo_title_ru, c.seo_description_ro, c.seo_description_ru,
     c.source_type, COALESCE(c.admin_revision, '') AS admin_revision,
     c.created_at, c.updated_at,
@@ -75,6 +97,8 @@ export function adminCategory(row) {
     nameRu: row.name_ru,
     sortOrder: Number(row.sort_order || 0),
     isActive: Boolean(row.is_active),
+    imageUrl: row.image_url || '',
+    imageObjectKey: row.image_object_key || '',
     seoTitleRo: row.seo_title_ro,
     seoTitleRu: row.seo_title_ru,
     seoDescriptionRo: row.seo_description_ro,
@@ -104,6 +128,8 @@ export const categorySnapshot = (category) => ({
   nameRu: category.nameRu,
   sortOrder: category.sortOrder,
   isActive: category.isActive,
+  imageUrl: category.imageUrl,
+  imageObjectKey: category.imageObjectKey,
   seoTitleRo: category.seoTitleRo,
   seoTitleRu: category.seoTitleRu,
   seoDescriptionRo: category.seoDescriptionRo,

@@ -4,6 +4,7 @@ import { requireDatabase } from './http.js';
 // key, so a long edge TTL cannot serve an older revision. Keeping each revision
 // for a day prevents unchanged catalog/SEO responses from being rebuilt in D1.
 export const CATALOG_EDGE_TTL_SECONDS = 24 * 60 * 60;
+export const CATALOG_BROWSER_TTL_SECONDS = 60;
 
 export const catalogPrimaryDatabase = (env) => {
   const db = requireDatabase(env);
@@ -43,11 +44,13 @@ export function catalogCacheKey(request, revision, { ignoreSearch = false } = {}
   return new Request(url.toString(), { method: 'GET' });
 }
 
-const outboundResponse = (response, revision, state) => {
+const outboundResponse = (response, revision, state, options = {}) => {
   const headers = new Headers(response.headers);
-  // Browsers must re-enter the Function so the current D1 revision is checked.
-  // A separate clone with an edge TTL is stored explicitly via the Cache API.
-  headers.set('cache-control', 'no-store');
+  // A short browser TTL absorbs repeated navigation/reloads. Mutations still
+  // rotate the revision-backed edge key; clients converge within one minute.
+  headers.set('cache-control', options.browserCache === false
+    ? 'no-store'
+    : `public, max-age=${Math.max(1, Number(options.browserTtlSeconds) || CATALOG_BROWSER_TTL_SECONDS)}`);
   headers.set('x-catalog-cache', state);
   headers.set('x-catalog-revision', String(revision));
   return new Response(response.body, {
@@ -79,7 +82,7 @@ export async function cachedCatalogResponse(context, buildResponse, options = {}
   if (cache) {
     try {
       const hit = await cache.match(key);
-      if (hit) return outboundResponse(hit, revision, 'HIT');
+      if (hit) return outboundResponse(hit, revision, 'HIT', options);
     } catch (error) {
       console.warn('Catalog edge cache read failed; falling back to D1', error);
     }
@@ -95,5 +98,5 @@ export async function cachedCatalogResponse(context, buildResponse, options = {}
     if (typeof context.waitUntil === 'function') context.waitUntil(write);
     else await write;
   }
-  return outboundResponse(response, revision, 'MISS');
+  return outboundResponse(response, revision, 'MISS', options);
 }

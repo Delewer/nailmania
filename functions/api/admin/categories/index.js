@@ -86,11 +86,13 @@ export async function onRequestPost(context) {
       db.prepare(`
         INSERT INTO categories (
           id, slug, name_ro, name_ru, sort_order, is_active,
+          image_url, image_object_key,
           seo_title_ro, seo_title_ru, seo_description_ro, seo_description_ru,
           source_type, admin_revision, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'admin', ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'admin', ?, ?, ?)
       `).bind(
         draft.id, draft.slug, draft.nameRo, draft.nameRu, draft.sortOrder, draft.isActive ? 1 : 0,
+        draft.imageUrl, draft.imageObjectKey,
         draft.seoTitleRo, draft.seoTitleRu, draft.seoDescriptionRo, draft.seoDescriptionRu,
         revision, now, now,
       ),

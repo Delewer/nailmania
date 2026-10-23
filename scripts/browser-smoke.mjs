@@ -524,10 +524,10 @@ async function waitForPage(client, required) {
 
 async function putOneProductInLocalCart(client) {
   const expression = `(async () => {
-    const response = await fetch('/api/products?limit=5000', { headers: { accept: 'application/json' } });
+    const response = await fetch('/api/catalog', { headers: { accept: 'application/json' } });
     if (!response.ok) throw new Error('Product catalog request failed');
     const payload = await response.json();
-    const product = (payload.items || []).find((item) => item && item.key && Number(item.stock) > 0);
+    const product = (payload.products || []).find((item) => item && item.key && Number(item.stock) > 0);
     if (!product) throw new Error('No in-stock product is available for browser smoke');
     localStorage.setItem('nm_cart', JSON.stringify([{ id: String(product.key), q: 1 }]));
     localStorage.setItem('nm_lang', 'ro');

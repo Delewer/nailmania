@@ -33,6 +33,7 @@ export const publicProduct = (row, images = catalogImageUrls(row.images_json)) =
   ...(row.is_new ? { isNew: true } : {}),
   ...(row.is_promo ? { promo: true } : {}),
   ...(row.is_summer ? { summer: true } : {}),
+  ...(row.is_featured ? { featured: true } : {}),
 });
 
 export const PRODUCT_SELECT = `
@@ -40,7 +41,7 @@ export const PRODUCT_SELECT = `
     p.id, p.catalog_key, p.sku, p.category_id, p.brand, p.name_ro, p.name_ru,
     p.description_ro, prices.effective_price AS price,
     prices.effective_old_price AS old_price, p.specs_json,
-    p.is_new, prices.effective_is_promo AS is_promo, p.is_summer,
+    p.is_new, prices.effective_is_promo AS is_promo, p.is_summer, p.is_featured,
     MAX(0, COALESCE(i.on_hand, 0) - COALESCE(i.reserved, 0) + COALESCE((
       SELECT SUM(r.quantity) FROM cart_reservations r
       WHERE r.product_id = p.id AND r.status = 'ACTIVE'

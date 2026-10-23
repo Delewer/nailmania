@@ -5,80 +5,97 @@ import {
   inferProductSpecs,
   parseProductImportRows,
   previewProductImport,
+  productImportPayload,
   suggestImportCategory,
 } from '../src/product-import.js';
 
-const header = [
-  '', 'Код', 'Товар', '', '', '', '', 'Приходная цена', '', '', 'Розничная цена',
-  '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', 'Группа', 'Состояние',
-];
-
-const row = ({ sku, name, cost, price, group = 'GELURI', state = 'Товар доступен' }) => {
-  const cells = Array.from({ length: 29 }, () => '');
-  cells[1] = sku;
-  cells[2] = name;
-  cells[7] = cost;
-  cells[10] = price;
-  cells[27] = group;
-  cells[28] = state;
-  return cells;
-};
-
-test('Excel product parser uses only storefront fields and accepts numeric SKU values', () => {
+test('parses the Microinvest stock report used by the seller', () => {
   const parsed = parseProductImportRows([
-    ['Microinvest export'],
-    [],
-    header,
-    row({ sku: 3407, name: 'Valeri Builder Gel 15ml №01', cost: 83, price: 145 }),
-    row({ sku: 'DNKA-01', name: 'DNKa Liquid Acrygel 12 ml', cost: 92, price: 180, state: 'Товар недоступен' }),
+    ['Отчет Количества товаров'],
+    ['Код', 'Товар', 'Группа', 'Ед. изм.', "Количество 'MAGAZIN'", 'Пересчитано'],
+    [329176, 'Wild-Mild Base Shield Smoothing Base Coat 12ml', 'LACURI SIMPLE', 'шт.', 10, ''],
   ], 'Microinvest');
 
-  assert.equal(parsed.rowCount, 2);
+  assert.equal(parsed.rowCount, 1);
   assert.equal(parsed.errors.length, 0);
+  assert.deepEqual(parsed.availableFields.sort(), ['group', 'name', 'sku', 'stock']);
   assert.deepEqual(parsed.items[0], {
-    sheetRow: 4,
+    sheetRow: 3,
+    sku: '329176',
+    nameRo: 'Wild-Mild Base Shield Smoothing Base Coat 12ml',
+    brand: 'Wild-Mild',
+    brandProvided: false,
+    price: null,
+    priceProvided: false,
+    stock: 10,
+    stockProvided: true,
+    sourceGroup: 'LACURI SIMPLE',
+    isActive: null,
+    stateProvided: false,
+    descriptionRo: '',
+    descriptionProvided: false,
+    imageUrl: '',
+    imageProvided: false,
+    specs: [{ label: 'Cantitate', value: '12 ml' }],
+    categoryId: '',
+  });
+});
+
+test('accepts optional product-card columns and sends them to the import API', () => {
+  const parsed = parseProductImportRows([
+    ['Код', 'Товар', 'Группа', 'Бренд', 'Цена', 'Количество магазина', 'Описание', 'Фото', 'Состояние'],
+    ['3407', 'Valeri Builder Gel 15ml №01', 'GELURI', 'Valeri', 145, 6, 'Gel autonivelant', 'https://images.example/3407.webp', 'Товар доступен'],
+  ]);
+  const preview = previewProductImport(parsed.items, { GELURI: 'alungire' }, []);
+  assert.equal(preview.entries[0].action, 'create');
+  assert.deepEqual(productImportPayload(preview.entries[0]), {
+    sheetRow: 2,
     sku: '3407',
-    nameRo: 'Valeri Builder Gel 15ml №01',
+    categoryId: 'alungire',
     brand: 'Valeri',
+    nameRo: 'Valeri Builder Gel 15ml №01',
     price: 145,
-    sourceGroup: 'GELURI',
+    stock: 6,
     isActive: true,
     specs: [{ label: 'Cantitate', value: '15 ml' }],
+    descriptionRo: 'Gel autonivelant',
+    descriptionProvided: true,
+    imageUrl: 'https://images.example/3407.webp',
+    imageProvided: true,
   });
-  assert.equal(Object.hasOwn(parsed.items[0], 'costPrice'), false);
-  assert.equal(parsed.items[1].brand, "DNK'a");
-  assert.equal(parsed.items[1].isActive, false);
 });
 
-test('parser reports duplicate product codes and invalid retail prices', () => {
+test('editable preview reports duplicate codes and missing prices for new products', () => {
   const parsed = parseProductImportRows([
-    header,
-    row({ sku: 'A-1', name: 'DANNY Gel 15ml', cost: 20, price: 100 }),
-    row({ sku: 'a-1', name: 'DANNY Gel 30ml', cost: 30, price: 120 }),
-    row({ sku: 'A-2', name: 'BeeNails Gel 5ml', cost: 40, price: 12.5 }),
+    ['Код', 'Товар', 'Группа', 'Цена'],
+    ['A-1', 'DANNY Gel 15ml', 'GELURI', 100],
+    ['a-1', 'DANNY Gel 30ml', 'GELURI', 120],
+    ['A-2', 'BeeNails Gel 5ml', 'GELURI', 12.5],
   ]);
-
-  assert.equal(parsed.items.length, 0);
-  assert.equal(parsed.errors.filter((error) => error.message.includes('duplicat')).length, 2);
-  assert.equal(parsed.errors.some((error) => error.field === 'Розничная цена'), true);
+  const preview = previewProductImport(parsed.items, { GELURI: 'alungire' }, []);
+  assert.equal(parsed.items.length, 3);
+  assert.equal(preview.counts.error, 3);
+  assert.equal(preview.entries.filter((entry) => entry.validationErrors.includes('SKU duplicat')).length, 2);
+  assert.equal(preview.entries.some((entry) => entry.validationErrors.includes('Preț invalid')), true);
 });
 
-test('preview maps gel groups and separates create, update and unchanged actions', () => {
+test('preview preserves omitted existing fields and detects stock changes', () => {
   const categories = [{ id: 'alungire', slug: 'alungire', name_ro: 'Alungire' }];
   assert.equal(suggestImportCategory('GEL LICHID', categories), 'alungire');
   assert.equal(inferProductBrand('BeeNails Aurora'), 'BeeNails');
   assert.deepEqual(inferProductSpecs('Produs fără volum'), []);
 
-  const items = [
-    { sheetRow: 4, sku: 'NEW-1', nameRo: 'Valeri Gel', brand: 'Valeri', price: 145, sourceGroup: 'GELURI', isActive: true, specs: [] },
-    { sheetRow: 5, sku: 'OLD-1', nameRo: 'DANNY Gel', brand: 'DANNY', price: 120, sourceGroup: 'GELURI', isActive: true, specs: [] },
-    { sheetRow: 6, sku: 'SAME-1', nameRo: 'BeeNails Gel', brand: 'BeeNails', price: 90, sourceGroup: 'GELURI', isActive: true, specs: [] },
-  ];
-  const products = [
-    { sku: 'OLD-1', categoryId: 'alungire', name: 'DANNY Gel vechi', brand: 'DANNY', price: 100, isActive: true, isDeleted: false },
-    { sku: 'same-1', categoryId: 'alungire', name: 'BeeNails Gel', brand: 'BeeNails', price: 90, isActive: true, isDeleted: false },
-  ];
+  const items = [{
+    sheetRow: 4, sku: 'OLD-1', nameRo: 'DANNY Gel', brand: 'DANNY', price: null,
+    stock: 8, sourceGroup: 'GELURI', isActive: null, specs: [], imageUrl: '',
+    imageProvided: false, descriptionRo: '', descriptionProvided: false, categoryId: '',
+  }];
+  const products = [{
+    sku: 'old-1', categoryId: 'alungire', name: 'DANNY Gel', brand: 'DANNY', price: 120,
+    onHand: 3, isActive: true, isDeleted: false, image: 'https://images.example/old.webp',
+  }];
   const preview = previewProductImport(items, { GELURI: 'alungire' }, products);
-
-  assert.deepEqual(preview.counts, { create: 1, update: 1, unchanged: 1, error: 0 });
+  assert.equal(preview.entries[0].price, 120);
+  assert.equal(preview.entries[0].imageUrl, 'https://images.example/old.webp');
+  assert.deepEqual(preview.counts, { create: 0, update: 1, unchanged: 0, error: 0 });
 });

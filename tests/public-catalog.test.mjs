@@ -5,7 +5,7 @@ import { loadStorefrontCatalog } from '../src/catalog-api.js';
 import { onRequestGet as listProducts } from '../functions/api/products/index.js';
 import { onRequestGet as getProduct } from '../functions/api/products/[key].js';
 import { onRequestGet as getAvailability } from '../functions/api/products/[id]/availability.js';
-import { onRequestGet as listCategories } from '../functions/api/categories.js';
+import { onRequestGet as getCatalog } from '../functions/api/catalog.js';
 import { fullSchema } from './helpers/full-schema.mjs';
 
 const schema = fullSchema;
@@ -30,14 +30,14 @@ test('the public D1 product and category routes satisfy the storefront contract'
   const db = new SqliteD1(schema);
   t.after(() => db.close());
   db.sqlite.exec(`
-    INSERT INTO categories (id, slug, name_ro, name_ru, sort_order)
-    VALUES ('baze', 'baze', 'Baze', 'Базы', 2);
+    INSERT INTO categories (id, slug, name_ro, name_ru, sort_order, image_url)
+    VALUES ('baze', 'baze', 'Baze', 'Базы', 2, 'https://images.example/baze.webp');
     INSERT INTO products (
       id, catalog_key, sku, slug, category_id, brand, name_ro, name_ru,
-      price, old_price, specs_json, is_promo
+      price, old_price, specs_json, is_promo, is_featured
     ) VALUES (
       1, 'T0001', 'SKU-DIRECT', 'baza-rubber', 'baze', 'Nail Mania', 'Bază rubber', 'Каучуковая база',
-      120, 140, '[{"label":"Cantitate","value":"15 ml"}]', 1
+      120, 140, '[{"label":"Cantitate","value":"15 ml"}]', 1, 1
     );
     INSERT INTO inventory (product_id, warehouse_id, on_hand, reserved)
     VALUES (1, 1, 4, 1);
@@ -47,12 +47,7 @@ test('the public D1 product and category routes satisfy the storefront contract'
 
   const fetchImpl = async (path) => {
     const url = new URL(path, 'https://shop.example');
-    if (url.pathname === '/api/products') {
-      return listProducts({ request: new Request(url), env: { DB: db } });
-    }
-    if (url.pathname === '/api/categories') {
-      return listCategories({ env: { DB: db } });
-    }
+    if (url.pathname === '/api/catalog') return getCatalog({ request: new Request(url), env: { DB: db } });
     throw new Error(`Unexpected route: ${url}`);
   };
 
@@ -64,6 +59,7 @@ test('the public D1 product and category routes satisfy the storefront contract'
     name_ro: 'Baze',
     name_ru: 'Базы',
     sort_order: 2,
+    image_url: 'https://images.example/baze.webp',
     seo_title_ro: '',
     seo_title_ru: '',
     seo_description_ro: '',
@@ -74,6 +70,7 @@ test('the public D1 product and category routes satisfy the storefront contract'
   assert.equal(snapshot.products[0].key, 'T0001');
   assert.equal(snapshot.products[0].stock, 3);
   assert.equal(snapshot.products[0].promo, true);
+  assert.equal(snapshot.products[0].featured, true);
   assert.equal(snapshot.products[0].image, 'https://images.example/T0001.webp');
   assert.deepEqual(snapshot.products[0].specs, [{ label: 'Cantitate', value: '15 ml' }]);
 

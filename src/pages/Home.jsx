@@ -11,10 +11,10 @@ export default function Home(){
 
   React.useEffect(()=>{
     let alive = true;
-    import('../catalog-data.js').then(({ featured, SALE_PRODUCTS, SUMMER_PRODUCTS, NEW_PRODUCTS, CATALOG_ERROR })=>{
+    import('../catalog-data.js').then(({ featured, SALE_PRODUCTS, SUMMER_PRODUCTS, NEW_PRODUCTS, TREND_PRODUCTS, CATALOG_ERROR })=>{
       if(!alive || CATALOG_ERROR) return;
       setSections({
-        best: featured(1, 8),
+        best: TREND_PRODUCTS,
         newItems: NEW_PRODUCTS.length ? NEW_PRODUCTS : featured(7, 8),
         sale: SALE_PRODUCTS,
         summer: SUMMER_PRODUCTS,
@@ -37,7 +37,7 @@ export default function Home(){
       {sections && (
         <>
           {sections.summer.length>0 && <ProductSection id="summer" titleKey="secSummer" items={sections.summer} perPage={8}/>}
-          <ProductSection id="best" titleKey="secBest" items={sections.best} perPage={8}/>
+          {sections.best.length>0 && <ProductSection id="best" titleKey="secBest" items={sections.best} perPage={8}/>}
           <ProductSection id="new" titleKey="secNew" items={sections.newItems} perPage={8}/>
           {sections.sale.length>0 && <ProductSection id="sale" titleKey="secSale" items={sections.sale} perPage={8}/>}
         </>

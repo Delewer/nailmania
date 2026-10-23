@@ -21,7 +21,7 @@ const actionLabels = {
   create: 'Nou',
   update: 'Actualizare',
   unchanged: 'Fără schimbări',
-  error: 'Categorie lipsă',
+  error: 'Verificare necesară',
 };
 
 const emptyCounts = () => ({ created: 0, updated: 0, unchanged: 0, failed: 0 });
@@ -45,6 +45,12 @@ export default function AdminProductImport({ categories, products, onClose, onCo
   );
   const importable = preview.entries.filter((entry) => ['create', 'update'].includes(entry.action));
   const blocked = Boolean(parsed?.errors.length || preview.counts.error);
+  const updateItem = React.useCallback((sheetRow, changes) => {
+    setParsed((current) => current ? {
+      ...current,
+      items: current.items.map((item) => item.sheetRow === sheetRow ? { ...item, ...changes } : item),
+    } : current);
+  }, []);
 
   const selectFile = async (event) => {
     const file = event.target.files?.[0];
@@ -123,9 +129,9 @@ export default function AdminProductImport({ categories, products, onClose, onCo
           <section className="adm-import-intro">
             <FileSpreadsheet size={24}/>
             <div>
-              <b>Coloane folosite</b>
-              <p><code>Код</code>, <code>Товар</code>, <code>Розничная цена</code>, <code>Группа</code> și <code>Состояние</code>.</p>
-              <p><strong>„Приходная цена” este ignorată.</strong> La produsele existente nu modificăm stocul, imaginile, descrierile sau prețul de achiziție.</p>
+              <b>Date pentru fișa produsului</b>
+              <p>Codul, denumirea și grupa sunt detectate obligatoriu. Brandul, prețul, stocul magazinului, descrierea, linkul imaginii și starea sunt preluate când există.</p>
+              <p>După selectarea fișierului puteți corecta fiecare câmp înainte de salvare. Câmpurile care lipsesc sunt păstrate la produsele existente.</p>
             </div>
           </section>
 
@@ -148,6 +154,7 @@ export default function AdminProductImport({ categories, products, onClose, onCo
                 <div><span>Noi</span><b>{preview.counts.create}</b></div>
                 <div><span>Actualizări</span><b>{preview.counts.update}</b></div>
                 <div><span>Neschimbate</span><b>{preview.counts.unchanged}</b></div>
+                <div><span>De verificat</span><b>{preview.counts.error}</b></div>
               </section>
 
               <section className="adm-import-mapping">
@@ -172,17 +179,23 @@ export default function AdminProductImport({ categories, products, onClose, onCo
               )}
 
               <section className="adm-import-preview">
-                <div className="adm-section-head"><h3>Previzualizare</h3><span>Identificare după SKU</span></div>
+                <div className="adm-section-head"><h3>Previzualizare editabilă</h3><span>Identificare după SKU · toate câmpurile pot fi modificate</span></div>
                 <div className="adm-import-table-wrap">
                   <table>
-                    <thead><tr><th>Rând</th><th>SKU / produs</th><th>Brand</th><th>Preț</th><th>Acțiune</th></tr></thead>
+                    <thead><tr><th>Rând</th><th>SKU</th><th>Produs</th><th>Brand</th><th>Categorie</th><th>Preț</th><th>Stoc</th><th>Descriere</th><th>Link imagine</th><th>Activ</th><th>Acțiune</th></tr></thead>
                     <tbody>{preview.entries.map((entry) => (
                       <tr key={`${entry.sheetRow}-${entry.sku}`}>
                         <td>{entry.sheetRow}</td>
-                        <td><b>{entry.nameRo}</b><span>{entry.sku} · {entry.sourceGroup}</span></td>
-                        <td>{entry.brand}</td>
-                        <td>{entry.price} lei</td>
-                        <td><span className={`adm-import-action ${entry.action}`}>{actionLabels[entry.action]}</span></td>
+                        <td><input value={entry.sku} maxLength={80} onChange={(event) => updateItem(entry.sheetRow, { sku: event.target.value })} disabled={importing}/><small>{entry.sourceGroup}</small></td>
+                        <td><input value={entry.nameRo} maxLength={300} onChange={(event) => updateItem(entry.sheetRow, { nameRo: event.target.value })} disabled={importing}/></td>
+                        <td><input value={entry.brand} maxLength={180} onChange={(event) => updateItem(entry.sheetRow, { brand: event.target.value, brandProvided: true })} disabled={importing}/></td>
+                        <td><select value={entry.categoryId} onChange={(event) => updateItem(entry.sheetRow, { categoryId: event.target.value })} disabled={importing}><option value="">Selectează</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name_ro}</option>)}</select></td>
+                        <td><input type="number" min="0" step="1" value={entry.price ?? ''} onChange={(event) => updateItem(entry.sheetRow, { price: event.target.value === '' ? null : Number(event.target.value), priceProvided: true })} disabled={importing}/></td>
+                        <td><input type="number" min="0" step="1" value={entry.stock ?? ''} onChange={(event) => updateItem(entry.sheetRow, { stock: event.target.value === '' ? null : Number(event.target.value), stockProvided: true })} disabled={importing}/></td>
+                        <td><textarea value={entry.descriptionRo || ''} maxLength={20000} onChange={(event) => updateItem(entry.sheetRow, { descriptionRo: event.target.value, descriptionProvided: true })} disabled={importing}/></td>
+                        <td><input type="url" value={entry.imageUrl || ''} maxLength={2048} placeholder="https://…" onChange={(event) => updateItem(entry.sheetRow, { imageUrl: event.target.value, imageProvided: true })} disabled={importing}/></td>
+                        <td><input type="checkbox" checked={entry.isActive} onChange={(event) => updateItem(entry.sheetRow, { isActive: event.target.checked, stateProvided: true })} disabled={importing}/></td>
+                        <td><span className={`adm-import-action ${entry.action}`}>{actionLabels[entry.action]}</span>{entry.validationErrors?.length > 0 && <small title={entry.validationErrors.join(', ')}>{entry.validationErrors.join(', ')}</small>}</td>
                       </tr>
                     ))}</tbody>
                   </table>

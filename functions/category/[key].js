@@ -15,7 +15,7 @@ export async function onRequestGet(context) {
       const site = siteOrigin(context.env);
       const shell = await loadSpaShell(context);
       const category = key ? await db.prepare(`
-        SELECT id, slug, name_ro, seo_title_ro, seo_description_ro, updated_at
+        SELECT id, slug, name_ro, image_url, seo_title_ro, seo_description_ro, updated_at
         FROM categories
         WHERE is_active = 1 AND (id = ? OR slug = ?)
         LIMIT 1
@@ -68,7 +68,7 @@ export async function onRequestGet(context) {
         title,
         description,
         canonical,
-        image: `${site}/images/logo-high.png`,
+        image: category.image_url || `${site}/images/logo-high.png`,
         schema,
       }, `<h1>${html(category.name_ro)}</h1><p>${html(description)}</p><ul>${links}</ul>`);
     }, { fallbackUrl: `https://nailmania.md/category/${encodeURIComponent(key)}`, ignoreSearch: true });

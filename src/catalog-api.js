@@ -1,5 +1,6 @@
 export const PRODUCTS_ENDPOINT = "/api/products?limit=5000";
 export const CATEGORIES_ENDPOINT = "/api/categories";
+export const CATALOG_ENDPOINT = "/api/catalog";
 
 export class CatalogApiError extends Error {
   constructor(code, message, { endpoint = "", status = 0, cause } = {}) {
@@ -84,6 +85,33 @@ async function requestCollection(fetchImpl, endpoint, label) {
   return payload.items;
 }
 
+async function requestCatalog(fetchImpl, endpoint) {
+  let response;
+  try {
+    response = await fetchImpl(endpoint, { headers: { accept: "application/json" } });
+  } catch (cause) {
+    throw new CatalogApiError("CATALOG_API_UNAVAILABLE", "Catalog API is unavailable", { endpoint, cause });
+  }
+  if (!response || typeof response.ok !== "boolean") throw invalidResponse(endpoint, "Catalog API did not return a Response");
+  if (!response.ok) {
+    throw new CatalogApiError("CATALOG_API_UNAVAILABLE", `Catalog API returned ${response.status}`, { endpoint, status: response.status });
+  }
+  if (!(response.headers?.get("content-type") || "").toLowerCase().includes("application/json")) {
+    throw invalidResponse(endpoint, "Catalog API did not return JSON");
+  }
+  let payload;
+  try { payload = await response.json(); }
+  catch (cause) {
+    throw new CatalogApiError("CATALOG_API_INVALID_RESPONSE", "Catalog API returned malformed JSON", { endpoint, cause });
+  }
+  requireObject(payload, endpoint, "Catalog payload");
+  if (payload.ok !== true || !Array.isArray(payload.products) || !Array.isArray(payload.categories)) {
+    throw invalidResponse(endpoint, "Catalog payload must contain ok=true, products and categories arrays");
+  }
+  if (!payload.products.length || !payload.categories.length) throw invalidResponse(endpoint, "Catalog API returned an empty collection");
+  return payload;
+}
+
 function validateCategories(items, endpoint) {
   const ids = new Set();
   const slugs = new Set();
@@ -94,6 +122,9 @@ function validateCategories(items, endpoint) {
     requireString(item.name_ro, endpoint, `Category ${index}.name_ro`);
     if (item.name_ru != null && typeof item.name_ru !== "string") {
       throw invalidResponse(endpoint, `Category ${index}.name_ru must be a string`);
+    }
+    if (item.image_url != null && typeof item.image_url !== "string") {
+      throw invalidResponse(endpoint, `Category ${index}.image_url must be a string`);
     }
     for (const field of ["seo_title_ro", "seo_title_ru", "seo_description_ro", "seo_description_ru"]) {
       if (item[field] != null && typeof item[field] !== "string") {
@@ -138,7 +169,7 @@ function validateProducts(items, endpoint, categoryIds) {
         requireString(spec.value, endpoint, `Product ${index}.specs[${specIndex}].value`);
       }
     }
-    for (const flag of ["isNew", "promo", "summer"]) {
+    for (const flag of ["isNew", "promo", "summer", "featured"]) {
       if (item[flag] != null && typeof item[flag] !== "boolean") {
         throw invalidResponse(endpoint, `Product ${index}.${flag} must be a boolean`);
       }
@@ -154,19 +185,32 @@ function validateProducts(items, endpoint, categoryIds) {
 
 export async function loadStorefrontCatalog({
   fetchImpl = globalThis.fetch,
-  productsEndpoint = PRODUCTS_ENDPOINT,
-  categoriesEndpoint = CATEGORIES_ENDPOINT,
+  catalogEndpoint = CATALOG_ENDPOINT,
+  productsEndpoint,
+  categoriesEndpoint,
 } = {}) {
   if (typeof fetchImpl !== "function") {
     throw new CatalogApiError("CATALOG_API_UNAVAILABLE", "Fetch is not available");
   }
 
-  const [rawProducts, rawCategories] = await Promise.all([
-    requestCollection(fetchImpl, productsEndpoint, "Products"),
-    requestCollection(fetchImpl, categoriesEndpoint, "Categories"),
-  ]);
-  const categories = validateCategories(rawCategories, categoriesEndpoint);
+  let rawProducts;
+  let rawCategories;
+  let productSource = catalogEndpoint;
+  let categorySource = catalogEndpoint;
+  if (productsEndpoint || categoriesEndpoint) {
+    productSource = productsEndpoint || PRODUCTS_ENDPOINT;
+    categorySource = categoriesEndpoint || CATEGORIES_ENDPOINT;
+    [rawProducts, rawCategories] = await Promise.all([
+      requestCollection(fetchImpl, productSource, "Products"),
+      requestCollection(fetchImpl, categorySource, "Categories"),
+    ]);
+  } else {
+    const payload = await requestCatalog(fetchImpl, catalogEndpoint);
+    rawProducts = payload.products;
+    rawCategories = payload.categories;
+  }
+  const categories = validateCategories(rawCategories, categorySource);
   const categoryIds = new Set(categories.map((category) => category.id.trim()));
-  const products = validateProducts(rawProducts, productsEndpoint, categoryIds);
+  const products = validateProducts(rawProducts, productSource, categoryIds);
   return { products, categories };
 }

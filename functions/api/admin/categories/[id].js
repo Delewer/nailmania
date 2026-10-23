@@ -44,6 +44,8 @@ export async function onRequestPatch(context) {
     const existing = await getAdminCategory(db, id);
     if (!existing) return apiError('CATEGORY_NOT_FOUND', 'Category not found', 404);
     const draft = normalizeAdminCategory(body, { current: existing });
+    const removedImageKey = existing.imageObjectKey?.startsWith('admin-')
+      && existing.imageObjectKey !== draft.imageObjectKey ? existing.imageObjectKey : '';
     if (!draft.isActive && existing.productCount > 0) {
       return apiError('CATEGORY_IN_USE', 'Move all products before deactivating this category', 409, { productCount: existing.productCount });
     }
@@ -56,11 +58,13 @@ export async function onRequestPatch(context) {
       db.prepare(`
         UPDATE categories SET
           name_ro = ?, name_ru = ?, sort_order = ?, is_active = ?,
+          image_url = ?, image_object_key = ?,
           seo_title_ro = ?, seo_title_ru = ?, seo_description_ro = ?, seo_description_ru = ?,
           source_type = 'admin', admin_revision = ?, updated_at = ?
         WHERE id = ? AND COALESCE(admin_revision, '') = ?
       `).bind(
         draft.nameRo, draft.nameRu, draft.sortOrder, draft.isActive ? 1 : 0,
+        draft.imageUrl, draft.imageObjectKey,
         draft.seoTitleRo, draft.seoTitleRu, draft.seoDescriptionRo, draft.seoDescriptionRu,
         revision, now, existing.id, expectedRevision,
       ),
@@ -82,6 +86,19 @@ export async function onRequestPatch(context) {
     ]);
     if (changedRows(results?.[0]) === 0) {
       return apiError('CATEGORY_REVISION_CONFLICT', 'Category was changed by another administrator', 409);
+    }
+    if (removedImageKey && context.env.PRODUCT_IMAGES) {
+      try {
+        const reference = await db.prepare(`
+          SELECT (
+            (SELECT COUNT(*) FROM product_images WHERE object_key = ?)
+            + (SELECT COUNT(*) FROM categories WHERE image_object_key = ?)
+          ) AS count
+        `).bind(removedImageKey, removedImageKey).first();
+        if (Number(reference?.count || 0) === 0) await context.env.PRODUCT_IMAGES.delete(removedImageKey);
+      } catch (cleanupError) {
+        console.error(cleanupError);
+      }
     }
     return json({ ok: true, category: await getAdminCategory(db, existing.id) }, 200, { 'cache-control': 'no-store' });
   } catch (error) {

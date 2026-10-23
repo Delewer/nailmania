@@ -46,12 +46,17 @@ const importedItem = (overrides = {}) => ({
   brand: 'Valeri',
   nameRo: 'Valeri Builder Gel 15ml №01',
   price: 145,
+  stock: 12,
   isActive: true,
   specs: [{ label: 'Cantitate', value: '15 ml' }],
+  descriptionRo: 'Gel autonivelant pentru construcție.',
+  descriptionProvided: true,
+  imageUrl: 'https://images.example/3407-new.webp',
+  imageProvided: true,
   ...overrides,
 });
 
-test('manager Excel import creates and updates products without touching purchase price, stock or media', async (t) => {
+test('manager Excel import updates storefront fields and stock while preserving purchase price', async (t) => {
   const db = setup();
   t.after(() => db.close());
   db.sqlite.exec(`
@@ -73,7 +78,11 @@ test('manager Excel import creates and updates products without touching purchas
 
   const response = await importProducts(context(db, [
     importedItem(),
-    importedItem({ sheetRow: 5, sku: '3500', nameRo: 'DNKa Liquid Acrygel 12ml', brand: "DNK'a", price: 180, specs: [{ label: 'Cantitate', value: '12 ml' }] }),
+    importedItem({
+      sheetRow: 5, sku: '3500', nameRo: 'DNKa Liquid Acrygel 12ml', brand: "DNK'a", price: 180, stock: 6,
+      specs: [{ label: 'Cantitate', value: '12 ml' }], descriptionRo: 'Acrygel lichid.',
+      imageUrl: 'https://images.example/3500.webp',
+    }),
   ]));
   const payload = await response.json();
 
@@ -85,8 +94,8 @@ test('manager Excel import creates and updates products without touching purchas
   assert.equal(existing.price, 145);
   assert.equal(existing.old_price, 160);
   assert.equal(existing.cost_price, 83);
-  assert.equal(existing.description_ro, 'Descriere păstrată');
-  assert.equal(existing.description_ru, 'Описание сохранено');
+  assert.equal(existing.description_ro, 'Gel autonivelant pentru construcție.');
+  assert.equal(existing.description_ru, 'Gel autonivelant pentru construcție.');
   assert.equal(existing.specs_json, '[{"label":"Culoare","value":"Roz"}]');
   assert.equal(existing.is_featured, 1);
   assert.equal(existing.is_new, 1);
@@ -94,23 +103,47 @@ test('manager Excel import creates and updates products without touching purchas
   assert.equal(existing.is_summer, 1);
   assert.deepEqual(
     { ...db.sqlite.prepare('SELECT on_hand, reserved FROM inventory WHERE product_id = 1').get() },
-    { on_hand: 9, reserved: 2 },
+    { on_hand: 12, reserved: 2 },
   );
   assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS count FROM product_images WHERE product_id = 1').get().count, 1);
+  assert.equal(db.sqlite.prepare('SELECT public_url FROM product_images WHERE product_id = 1').get().public_url, 'https://images.example/3407-new.webp');
 
   const created = db.sqlite.prepare("SELECT * FROM products WHERE sku = '3500'").get();
   assert.equal(created.cost_price, null);
   assert.equal(created.name_ru, 'DNKa Liquid Acrygel 12ml');
-  assert.equal(created.description_ro, '');
+  assert.equal(created.description_ro, 'Acrygel lichid.');
   assert.equal(created.specs_json, '[{"label":"Cantitate","value":"12 ml"}]');
   assert.deepEqual(
     { ...db.sqlite.prepare('SELECT on_hand, reserved FROM inventory WHERE product_id = ?').get(created.id) },
-    { on_hand: 0, reserved: 0 },
+    { on_hand: 6, reserved: 0 },
   );
+  assert.equal(db.sqlite.prepare('SELECT public_url FROM product_images WHERE product_id = ?').get(created.id).public_url, 'https://images.example/3500.webp');
   assert.deepEqual(
     db.sqlite.prepare('SELECT action FROM admin_audit_log ORDER BY action').all().map((row) => row.action),
     ['product.import_create', 'product.import_update'],
   );
+});
+
+test('missing optional spreadsheet fields preserve existing description and image', async (t) => {
+  const db = setup();
+  t.after(() => db.close());
+  db.sqlite.exec(`
+    INSERT INTO products (id, catalog_key, sku, slug, category_id, brand, name_ro, description_ro, price, cost_price, admin_revision)
+    VALUES (1, '3407', '3407', '3407', 'alungire', 'Valeri', 'Valeri Builder Gel', 'Descriere existentă', 145, 83, 'before');
+    INSERT INTO inventory (product_id, warehouse_id, on_hand, reserved, admin_revision) VALUES (1, 1, 4, 0, 'inventory-before');
+    INSERT INTO product_images (product_id, public_url, sort_order, is_primary) VALUES (1, 'https://images.example/original.webp', 0, 1);
+  `);
+  const response = await importProducts(context(db, [importedItem({
+    stock: 10,
+    descriptionRo: '',
+    descriptionProvided: false,
+    imageUrl: '',
+    imageProvided: false,
+  })]));
+  assert.equal(response.status, 200);
+  assert.equal(db.sqlite.prepare('SELECT description_ro FROM products WHERE id = 1').get().description_ro, 'Descriere existentă');
+  assert.equal(db.sqlite.prepare('SELECT public_url FROM product_images WHERE product_id = 1').get().public_url, 'https://images.example/original.webp');
+  assert.equal(db.sqlite.prepare('SELECT cost_price FROM products WHERE id = 1').get().cost_price, 83);
 });
 
 test('Excel import rejects unavailable category mappings before writing products', async (t) => {

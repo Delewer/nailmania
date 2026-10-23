@@ -112,6 +112,7 @@ test('admin mobile navigation and editors retain accessible names and focus hand
   const promos = source('src/pages/AdminPromos.jsx');
   const discounts = source('src/pages/AdminDiscounts.jsx');
   const productScopePicker = source('src/components/AdminProductScopePicker.jsx');
+  const productImport = source('src/components/AdminProductImport.jsx');
   const inventory = source('src/pages/AdminInventoryJournal.jsx');
   const reservations = source('src/pages/AdminReservations.jsx');
   const audit = source('src/pages/AdminAuditLog.jsx');
@@ -138,6 +139,13 @@ test('admin mobile navigation and editors retain accessible names and focus hand
   assert.match(products, /filteredProducts\.slice\(offset, offset \+ PAGE_SIZE\)/);
   assert.match(products, /aria-label=\{`Denumirea specificației/);
   assert.match(products, /aria-label="Adresa imaginii"/);
+  assert.match(products, /\['isFeatured', 'Trendurile sezonului'\]/);
+  assert.match(categories, /Imagine categorie/);
+  assert.match(categories, /onUpload={upload}/);
+  assert.match(productImport, /Previzualizare editabilă/);
+  assert.match(productImport, /descriptionProvided: true/);
+  assert.match(productImport, /imageProvided: true/);
+  assert.doesNotMatch(productImport, /Приходная цена|prețul de achiziție/i);
   assert.match(productScopePicker, /aria-label=\{`Caută produse pentru \$\{label\}`\}/);
   assert.match(productScopePicker, /onUnauthorized/);
   assert.match(productScopePicker, /searchSequence/);

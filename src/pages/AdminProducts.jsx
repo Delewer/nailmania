@@ -340,8 +340,8 @@ function ProductEditor({ product, categories, loading, error, onClose, onSave, o
                           ['isActive', 'Activ'],
                           ['isNew', 'Noutate'],
                           ['isPromo', 'Promoție'],
-                          ['isFeatured', 'Recomandat'],
-                          ['isSummer', 'Colecție vară'],
+                          ['isFeatured', 'Trendurile sezonului'],
+                          ['isSummer', 'Promoții pe pagina principală'],
                         ].map(([key, label]) => <label className="adm-check" key={key}><input type="checkbox" checked={form[key]} onChange={(event) => set(key, event.target.checked)}/><span>{label}</span></label>)}
                       </div>
                     </section>

@@ -1,6 +1,5 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import {
   AdminCategoryError,
   normalizeAdminCategory,
@@ -15,14 +14,7 @@ import {
   onRequestPatch as updateCategory,
 } from '../functions/api/admin/categories/[id].js';
 import { SqliteD1 } from './helpers/sqlite-d1.mjs';
-
-const schema = [
-  readFileSync(new URL('../migrations/0001_initial.sql', import.meta.url), 'utf8'),
-  readFileSync(new URL('../migrations/0002_order_transitions.sql', import.meta.url), 'utf8'),
-  readFileSync(new URL('../migrations/0003_admin_products.sql', import.meta.url), 'utf8'),
-  readFileSync(new URL('../migrations/0004_admin_categories.sql', import.meta.url), 'utf8'),
-  readFileSync(new URL('../migrations/0007_catalog_cache.sql', import.meta.url), 'utf8'),
-].join('\n');
+import { fullSchema as schema } from './helpers/full-schema.mjs';
 
 function setup() {
   const db = new SqliteD1(schema);
@@ -71,6 +63,21 @@ test('normalizes category fields and creates a stable Latin URL key', () => {
   );
 });
 
+test('manager can change a category image', async (t) => {
+  const db = setup();
+  t.after(() => db.close());
+  db.sqlite.prepare("UPDATE users SET role = 'manager' WHERE id = 'admin-1'").run();
+  const response = await updateCategory(context(
+    db,
+    '/api/admin/categories/test',
+    'PATCH',
+    { revision: '', imageUrl: 'https://images.example/category.webp' },
+    { id: 'test' },
+  ));
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).category.imageUrl, 'https://images.example/category.webp');
+});
+
 test('admin category lifecycle uses revisions and records audit entries', async (t) => {
   const db = setup();
   t.after(() => db.close());
@@ -79,12 +86,14 @@ test('admin category lifecycle uses revisions and records audit entries', async 
     nameRo: 'Îngrijire mâini',
     nameRu: 'Уход за руками',
     seoTitleRo: 'Îngrijire profesională',
+    imageUrl: 'https://images.example/category.webp',
   }));
   assert.equal(createResponse.status, 201);
   const created = (await createResponse.json()).category;
   assert.equal(created.id, 'ingrijire-maini');
   assert.equal(created.sortOrder, 1);
   assert.equal(created.sourceType, 'admin');
+  assert.equal(created.imageUrl, 'https://images.example/category.webp');
 
   const listResponse = await listCategories(context(db, '/api/admin/categories?state=active'));
   assert.equal(listResponse.status, 200);
@@ -96,13 +105,14 @@ test('admin category lifecycle uses revisions and records audit entries', async 
     db,
     `/api/admin/categories/${created.id}`,
     'PATCH',
-    { revision: created.revision, nameRo: 'Îngrijire pentru mâini', sortOrder: 3 },
+    { revision: created.revision, nameRo: 'Îngrijire pentru mâini', sortOrder: 3, imageUrl: 'https://images.example/category-new.webp' },
     { id: created.id },
   ));
   assert.equal(updateResponse.status, 200);
   const updated = (await updateResponse.json()).category;
   assert.equal(updated.nameRo, 'Îngrijire pentru mâini');
   assert.equal(updated.slug, created.slug);
+  assert.equal(updated.imageUrl, 'https://images.example/category-new.webp');
   assert.notEqual(updated.revision, created.revision);
 
   const staleResponse = await updateCategory(context(

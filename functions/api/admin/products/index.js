@@ -48,7 +48,7 @@ export async function onRequestGet(context) {
           items,
           pagination: { limit: 5000, offset: 0, total: items.length },
         });
-      }, { ignoreSearch: true });
+      }, { ignoreSearch: true, browserCache: false });
     }
 
     const conditions = [];

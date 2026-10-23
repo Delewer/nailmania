@@ -10,7 +10,12 @@ export async function onRequestDelete(context) {
     if (!bucket) return apiError('R2_NOT_CONFIGURED', 'Product image storage is not configured', 503);
     const key = decodeURIComponent(String(context.params.key || '')).trim();
     if (!/^admin-[A-Za-z0-9._-]{1,230}$/.test(key)) return apiError('INVALID_IMAGE_KEY', 'Only administrator uploads can be deleted', 400);
-    const reference = await db.prepare('SELECT COUNT(*) AS count FROM product_images WHERE object_key = ?').bind(key).first();
+    const reference = await db.prepare(`
+      SELECT (
+        (SELECT COUNT(*) FROM product_images WHERE object_key = ?)
+        + (SELECT COUNT(*) FROM categories WHERE image_object_key = ?)
+      ) AS count
+    `).bind(key, key).first();
     if (Number(reference?.count || 0) > 0) return apiError('IMAGE_IN_USE', 'Image is still attached to a product', 409);
     await bucket.delete(key);
     await db.batch([

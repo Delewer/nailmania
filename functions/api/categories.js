@@ -5,7 +5,7 @@ export async function onRequestGet(context) {
   try {
     return cachedCatalogResponse(context, async ({ db }) => {
       const result = await db.prepare(`
-        SELECT c.id, c.slug, c.name_ro, c.name_ru, c.sort_order,
+        SELECT c.id, c.slug, c.name_ro, c.name_ru, c.sort_order, c.image_url,
                c.seo_title_ro, c.seo_title_ru, c.seo_description_ro, c.seo_description_ru,
                COUNT(p.id) AS product_count
         FROM categories c

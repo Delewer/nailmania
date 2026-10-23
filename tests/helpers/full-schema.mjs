@@ -19,6 +19,8 @@ export const migrationNames = [
   '0016_product_event_daily_rollups.sql',
   '0017_cart_reservations.sql',
   '0018_product_sku_nocase_index.sql',
+  '0019_category_images.sql',
+  '0020_seed_featured_products.sql',
 ];
 
 export const fullSchema = migrationNames.map((name) => readFileSync(

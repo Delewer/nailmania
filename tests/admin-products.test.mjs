@@ -299,13 +299,14 @@ test('admin product lifecycle records metadata, stock movements and audit entrie
     db,
     `/api/admin/products/${created.id}`,
     'PATCH',
-    { revision: created.revision, price: 110, nameRo: 'Produs actualizat' },
+    { revision: created.revision, price: 110, nameRo: 'Produs actualizat', isFeatured: true },
     { id: String(created.id) },
   ));
   assert.equal(updateResponse.status, 200);
   const updated = (await updateResponse.json()).product;
   assert.equal(updated.price, 110);
   assert.equal(updated.nameRo, 'Produs actualizat');
+  assert.equal(updated.isFeatured, true);
   assert.notEqual(updated.revision, created.revision);
 
   const staleResponse = await updateProduct(jsonContext(
@@ -452,6 +453,21 @@ test('image upload accepts verified image bytes and writes to R2', async (t) => 
   assert.match(image.objectKey, /^admin-\d{8}-[a-f0-9-]+\.png$/);
   assert.equal(bucket.objects.has(image.objectKey), true);
   assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM admin_audit_log WHERE action = 'image.upload'").get().count, 1);
+
+  db.sqlite.prepare("UPDATE categories SET image_url = ?, image_object_key = ? WHERE id = 'test'")
+    .run(image.url, image.objectKey);
+  const referencedResponse = await discardImage({
+    env: env(db, { PRODUCT_IMAGES: bucket }),
+    params: { key: image.objectKey },
+    request: new Request(`http://127.0.0.1:8788/api/admin/uploads/${image.objectKey}`, {
+      method: 'DELETE',
+      headers: { authorization: 'Bearer test-secret', origin: 'http://127.0.0.1:8788' },
+    }),
+  });
+  assert.equal(referencedResponse.status, 409);
+  assert.equal((await referencedResponse.json()).error.code, 'IMAGE_IN_USE');
+  assert.equal(bucket.objects.has(image.objectKey), true);
+  db.sqlite.prepare("UPDATE categories SET image_url = '', image_object_key = '' WHERE id = 'test'").run();
 
   const deleteResponse = await discardImage({
     env: env(db, { PRODUCT_IMAGES: bucket }),

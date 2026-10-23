@@ -238,7 +238,7 @@ export function decorateCategory(row){
     sortOrder:Number(row.sort_order || 0),
     g:curated?.g || CAT_PALETTE[_hh(id)%CAT_PALETTE.length],
     icon:curated?.icon || "box",
-    img:categoryImage(id),
+    img:String(row.image_url || '').trim() || categoryImage(id),
   };
 }
 

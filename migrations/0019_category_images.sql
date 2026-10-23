@@ -1,0 +1,2 @@
+ALTER TABLE categories ADD COLUMN image_url TEXT NOT NULL DEFAULT '';
+ALTER TABLE categories ADD COLUMN image_object_key TEXT NOT NULL DEFAULT '';
