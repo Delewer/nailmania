@@ -2,7 +2,7 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
 import { useShop, Icon, Placeholder } from '../shop.jsx'
-import { HERO_IMG } from '../data.js'
+import { HERO_IMG, asset } from '../data.js'
 import { CATS, CATALOG_ERROR } from '../catalog-data.js'
 import { CatalogUnavailable } from './CatalogState.jsx'
 import heroBottle from '../hero/bottle.webp'
@@ -40,13 +40,18 @@ export function Hero(){
             <span className="deco"></span>
           </div>
           <div className="hero-side">
-            <a className="hero-card" href="#new">
-              <Placeholder g={["#1b1b1b","#3a3438"]} ratio="auto" img={HERO_IMG[1]}/>
-              <div className="hc-txt">
-                <b>{t("secNew")}</b>
-                <span style={{color:"#e9dde2"}}>{t("pillNew")}</span>
-              </div>
-            </a>
+            <Link
+              className="hero-card wild-mild-card"
+              to="/brand/Wild-Mild"
+              aria-label="Descoperă colecția Wild-Mild"
+            >
+              <img
+                className="wild-mild-image"
+                src={asset("images/wild-mild-banner.jpg")}
+                alt="Wild-Mild — lacuri simple pentru unghii și îngrijire"
+                loading="eager"
+              />
+            </Link>
             <a className="hero-card sale-card" href="#sale">
               <Placeholder g={["#cfe0df","#eef4f3"]} ratio="auto" img={HERO_IMG[2]}/>
               <div className="hc-txt">

@@ -142,6 +142,8 @@
 .hero-card .hc-txt span{font-size:13px;font-weight:600;color:#f0e6ea;text-shadow:0 1px 8px rgba(0,0,0,.4)}
 .hero-card .pill{position:relative;z-index:4;margin-top:8px;display:inline-flex;align-items:center;gap:7px;
   background:#fff;padding:7px 14px;border-radius:99px;font-size:13px;font-weight:700;box-shadow:var(--shadow)}
+.wild-mild-card{aspect-ratio:16/9;padding:0;background:#f2d7c8}
+.wild-mild-image{display:block;width:100%;height:100%;object-fit:cover;object-position:center}
 .sale-card{align-items:flex-end;gap:18px}
 .sale-card .pill{margin:0 0 1px;color:var(--ink);flex:none}
 
