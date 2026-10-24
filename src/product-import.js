@@ -10,7 +10,7 @@ const HEADER_ALIASES = {
   stock: ["количество 'magazin'", 'количество magazin', 'количество магазина', 'остаток', 'сток', 'stock', 'stoc', 'cantitate', 'quantity'],
   brand: ['бренд', 'brand', 'marca'],
   description: ['описание', 'description', 'descriere'],
-  image: ['фото', 'photo', 'foto', 'imagine', 'image', 'ссылка на фото', 'link foto', 'image url', 'url imagine'],
+  image: ['фото', 'photo', 'foto', 'imagine', 'image', 'ссылка на фото', 'link foto', 'link imagine', 'image url', 'url imagine'],
   state: ['состояние', 'state', 'status', 'stare', 'activ'],
 };
 const REQUIRED_FIELDS = ['sku', 'name', 'group'];

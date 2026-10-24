@@ -65,6 +65,29 @@ test('accepts optional product-card columns and sends them to the import API', (
   });
 });
 
+test('recognizes the Link imagine column used by the Valeri import file', () => {
+  const parsed = parseProductImportRows([
+    ['Sku', 'Produs', 'Categorie', 'Stoc', 'Pret', 'Link imagine', 'Descriere'],
+    [
+      'TT0537',
+      'DANNY Flash Crystal Gel Polish 10ml №49',
+      'Gel Lac',
+      2,
+      110,
+      'https://dannytiny.ua/content/images/50/1280x1280l80mc0/15417039949125.webp',
+      'Gel-lac reflectorizant.',
+    ],
+  ], 'Microinvest');
+
+  assert.equal(parsed.rowCount, 1);
+  assert.equal(parsed.availableFields.includes('image'), true);
+  assert.equal(parsed.items[0].imageProvided, true);
+  assert.equal(
+    parsed.items[0].imageUrl,
+    'https://dannytiny.ua/content/images/50/1280x1280l80mc0/15417039949125.webp',
+  );
+});
+
 test('editable preview reports duplicate codes and missing prices for new products', () => {
   const parsed = parseProductImportRows([
     ['Код', 'Товар', 'Группа', 'Цена'],
