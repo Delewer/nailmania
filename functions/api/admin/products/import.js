@@ -142,7 +142,10 @@ export async function onRequestPost(context) {
       if (collision) return apiError('PRODUCT_IMPORT_CONFLICT', 'A product code already belongs to another product URL', 409, { sheetRow: item.sheetRow, sku: item.draft.sku });
       if (existing && item.stock < Number(existing.reserved || 0)) {
         return apiError('INVALID_PRODUCT_IMPORT_STOCK', 'Imported stock cannot be lower than reserved stock', 409, {
-          sheetRow: item.sheetRow, sku: item.draft.sku, reserved: Number(existing.reserved || 0),
+          sheetRow: item.sheetRow,
+          sku: item.draft.sku,
+          importedStock: item.stock,
+          reserved: Number(existing.reserved || 0),
         });
       }
     }

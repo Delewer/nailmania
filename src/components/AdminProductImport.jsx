@@ -11,6 +11,7 @@ import { AdminApiError, adminRequest } from '../admin-api.js';
 import { useDialogFocus } from '../dialog-a11y.js';
 import {
   PRODUCT_IMPORT_CHUNK_SIZE,
+  formatProductImportError,
   previewProductImport,
   productImportPayload,
   readProductImportFile,
@@ -105,12 +106,14 @@ export default function AdminProductImport({ categories, products, onClose, onCo
       await onComplete();
     } catch (requestError) {
       if (requestError instanceof AdminApiError && [401, 403].includes(requestError.status)) onUnauthorized();
+      const message = formatProductImportError(requestError, preview.entries);
       if (completedRequests) {
         setResult(totals);
         await onComplete();
-        setError(`Import parțial: ${requestError.message}. Produsele din etapele finalizate au fost păstrate.`);
+        const sentence = /[.!?]$/.test(message.trim()) ? message.trim() : `${message.trim()}.`;
+        setError(`Import parțial: ${sentence} Produsele din etapele finalizate au fost păstrate.`);
       } else {
-        setError(requestError.message || 'Importul nu a putut fi finalizat');
+        setError(message);
       }
     } finally {
       setImporting(false);

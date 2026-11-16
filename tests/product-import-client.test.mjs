@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   inferProductBrand,
   inferProductSpecs,
+  formatProductImportError,
   parseProductImportRows,
   previewProductImport,
   productImportPayload,
@@ -121,4 +122,39 @@ test('preview preserves omitted existing fields and detects stock changes', () =
   assert.equal(preview.entries[0].price, 120);
   assert.equal(preview.entries[0].imageUrl, 'https://images.example/old.webp');
   assert.deepEqual(preview.counts, { create: 0, update: 1, unchanged: 0, error: 0 });
+});
+
+test('preview blocks stock below the reserved quantity', () => {
+  const items = [{
+    sheetRow: 52, sku: 'SKU-52', nameRo: 'DANNY Gel', brand: 'DANNY', price: 120,
+    stock: 2, sourceGroup: 'GELURI', isActive: true, specs: [], imageUrl: '',
+    imageProvided: false, descriptionRo: '', descriptionProvided: false, categoryId: '',
+  }];
+  const products = [{
+    sku: 'sku-52', categoryId: 'alungire', name: 'DANNY Gel', brand: 'DANNY', price: 120,
+    onHand: 5, reserved: 3, isActive: true, isDeleted: false, image: '',
+  }];
+
+  const blocked = previewProductImport(items, { GELURI: 'alungire' }, products);
+  assert.equal(blocked.entries[0].action, 'error');
+  assert.deepEqual(blocked.entries[0].validationErrors, [
+    'Stocul importat (2) este mai mic decât stocul rezervat (3)',
+  ]);
+
+  const allowed = previewProductImport([{ ...items[0], stock: 3 }], { GELURI: 'alungire' }, products);
+  assert.equal(allowed.entries[0].action, 'update');
+});
+
+test('formats reserved-stock API errors with the affected spreadsheet row and values', () => {
+  const message = formatProductImportError({
+    code: 'INVALID_PRODUCT_IMPORT_STOCK',
+    message: 'Imported stock cannot be lower than reserved stock',
+    details: { sheetRow: 52, sku: 'SKU-52', reserved: 3 },
+  }, [{ sheetRow: 52, sku: 'SKU-52', stock: 2 }]);
+
+  assert.equal(
+    message,
+    'Rândul 52 · SKU SKU-52: Stocul importat (2) este mai mic decât stocul rezervat (3).',
+  );
+  assert.equal(formatProductImportError({ message: 'Altă eroare' }), 'Altă eroare');
 });

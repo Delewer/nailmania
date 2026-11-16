@@ -23,10 +23,12 @@ function setupExpiredOrder() {
     VALUES ('test', 'test', 'Test', 'Test');
 
     INSERT INTO products (id, catalog_key, sku, slug, category_id, name_ro, price)
-    VALUES (1, 'P1', 'P1', 'p-1', 'test', 'Product 1', 100);
+    VALUES
+      (1, 'P1', 'P1', 'p-1', 'test', 'Product 1', 100),
+      (2, 'P2', 'P2', 'p-2', 'test', 'Product 2', 100);
 
     INSERT INTO inventory (product_id, warehouse_id, on_hand, reserved)
-    VALUES (1, 1, 1, 1);
+    VALUES (1, 1, 1, 1), (2, 1, 3, 1);
 
     INSERT INTO orders (
       id, order_no, status, language, customer_name, customer_phone,
@@ -35,17 +37,31 @@ function setupExpiredOrder() {
     ) VALUES (
       'expired', 'NM-EXPIRED', 'pending', 'ro', 'Test Client', '+37360000000',
       'pickup', 'Pickup', 'cash', 'Cash', 100, 100, '2026-07-15T00:00:00.000Z'
+    ), (
+      'aged-confirmed', 'NM-CONFIRMED', 'confirmed', 'ro', 'Test Client', '+37360000000',
+      'pickup', 'Pickup', 'cash', 'Cash', 100, 100, NULL
     );
+    UPDATE orders
+    SET confirmed_at = '2026-07-15T10:00:00.000Z', updated_at = '2026-07-15T10:00:00.000Z'
+    WHERE id = 'aged-confirmed';
 
     INSERT INTO order_items (
       order_id, product_id, product_key, sku, name,
       unit_price, list_price, quantity, line_total
     ) VALUES ('expired', 1, 'P1', 'P1', 'Product 1', 100, 100, 1, 100);
+    INSERT INTO order_items (
+      order_id, product_id, product_key, sku, name,
+      unit_price, list_price, quantity, line_total
+    ) VALUES ('aged-confirmed', 2, 'P2', 'P2', 'Product 2', 100, 100, 1, 100);
 
     INSERT INTO inventory_movements (
       id, product_id, warehouse_id, movement_type, delta_reserved,
       balance_on_hand, balance_reserved, order_id, reason
     ) VALUES ('reserve:expired:1', 1, 1, 'reservation', 1, 1, 1, 'expired', 'Test');
+    INSERT INTO inventory_movements (
+      id, product_id, warehouse_id, movement_type, delta_reserved,
+      balance_on_hand, balance_reserved, order_id, reason
+    ) VALUES ('reserve:aged-confirmed:2', 2, 1, 'reservation', 1, 3, 1, 'aged-confirmed', 'Test');
 
     INSERT INTO rate_limit_buckets (scope, key_hash, window_start, hits, expires_at)
     VALUES
@@ -77,9 +93,14 @@ test('scheduled worker entrypoint releases an expired reservation', async (t) =>
   }, { DB: db });
 
   assert.equal(db.sqlite.prepare("SELECT status FROM orders WHERE id = 'expired'").get().status, 'cancelled');
+  assert.equal(db.sqlite.prepare("SELECT status FROM orders WHERE id = 'aged-confirmed'").get().status, 'completed');
   assert.deepEqual(
     { ...db.sqlite.prepare('SELECT on_hand, reserved FROM inventory WHERE product_id = 1').get() },
     { on_hand: 1, reserved: 0 },
+  );
+  assert.deepEqual(
+    { ...db.sqlite.prepare('SELECT on_hand, reserved FROM inventory WHERE product_id = 2').get() },
+    { on_hand: 2, reserved: 0 },
   );
   assert.equal(
     db.sqlite.prepare("SELECT COUNT(*) AS count FROM inventory_movements WHERE movement_type = 'reservation_release'").get().count,

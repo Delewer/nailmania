@@ -156,3 +156,36 @@ test('Excel import rejects unavailable category mappings before writing products
   assert.equal(payload.error.code, 'CATEGORY_NOT_FOUND');
   assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS count FROM products').get().count, 0);
 });
+
+test('Excel import reports the row and quantities when stock is below the reserved amount', async (t) => {
+  const db = setup();
+  t.after(() => db.close());
+  db.sqlite.exec(`
+    INSERT INTO products (
+      id, catalog_key, sku, slug, category_id, brand, name_ro, name_ru,
+      price, is_active, admin_revision
+    ) VALUES (
+      1, '3407', '3407', '3407', 'alungire', 'Valeri', 'Produs existent', 'Produs existent',
+      145, 1, 'product:before'
+    );
+    INSERT INTO inventory (product_id, warehouse_id, on_hand, reserved, admin_revision)
+    VALUES (1, 1, 5, 3, 'inventory:before');
+  `);
+
+  const response = await importProducts(context(db, [importedItem({ stock: 2 })]));
+  const payload = await response.json();
+
+  assert.equal(response.status, 409);
+  assert.equal(payload.error.code, 'INVALID_PRODUCT_IMPORT_STOCK');
+  assert.deepEqual(payload.error.details, {
+    sheetRow: 4,
+    sku: '3407',
+    importedStock: 2,
+    reserved: 3,
+  });
+  assert.deepEqual(
+    { ...db.sqlite.prepare('SELECT on_hand, reserved FROM inventory WHERE product_id = 1').get() },
+    { on_hand: 5, reserved: 3 },
+  );
+  assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS count FROM admin_audit_log').get().count, 0);
+});

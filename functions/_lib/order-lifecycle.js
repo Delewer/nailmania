@@ -342,7 +342,7 @@ const lifecycleStatements = (db, action, args) => {
 
 const changedRows = (result) => Number(result?.meta?.changes ?? result?.changes ?? 0);
 
-export async function transitionOrder(db, options) {
+async function transitionOrderInternal(db, options, { allowConfirmedCompletion = false } = {}) {
   const database = typeof db.withSession === 'function' ? db.withSession('first-primary') : db;
   const orderId = safeText(options?.orderId, 120);
   const toStatus = safeText(options?.toStatus, 30);
@@ -357,7 +357,12 @@ export async function transitionOrder(db, options) {
   `).bind(orderId).first();
   if (!order) throw new OrderLifecycleError('ORDER_NOT_FOUND', 'Order not found', 404, { orderId });
 
-  const basePlan = transitionPlan(order.status, toStatus);
+  const directConfirmedCompletion = allowConfirmedCompletion
+    && order.status === 'confirmed'
+    && toStatus === 'completed';
+  const basePlan = directConfirmedCompletion
+    ? { action: 'sale', idempotent: false }
+    : transitionPlan(order.status, toStatus);
   const plan = order.cart_id && !basePlan.idempotent
     ? {
         ...basePlan,
@@ -528,6 +533,54 @@ export async function transitionOrder(db, options) {
     action: plan.action,
     transitionToken: token,
   };
+}
+
+export async function transitionOrder(db, options) {
+  return transitionOrderInternal(db, options);
+}
+
+export async function completeAgedConfirmedOrders(db, options = {}) {
+  const database = typeof db.withSession === 'function' ? db.withSession('first-primary') : db;
+  const now = options.now ? new Date(options.now).toISOString() : new Date().toISOString();
+  const threshold = new Date(Date.parse(now) - 24 * 60 * 60 * 1000).toISOString();
+  const limit = Math.min(250, Math.max(1, Number(options.limit) || 100));
+  const result = await database.prepare(`
+    SELECT id FROM orders
+    WHERE status = 'confirmed'
+      AND COALESCE(confirmed_at, updated_at, created_at) <= ?
+    ORDER BY COALESCE(confirmed_at, updated_at, created_at), id
+    LIMIT ?
+  `).bind(threshold, limit).all();
+  const orders = result.results || [];
+  const summary = {
+    checkedAt: now,
+    threshold,
+    selected: orders.length,
+    completed: 0,
+    skipped: 0,
+    errors: [],
+  };
+
+  for (const order of orders) {
+    try {
+      const transition = await transitionOrderInternal(database, {
+        orderId: order.id,
+        toStatus: 'completed',
+        comment: 'Order completed automatically 24 hours after confirmation',
+        now,
+      }, { allowConfirmedCompletion: true });
+      if (transition.changed) summary.completed += 1;
+      else summary.skipped += 1;
+    } catch (error) {
+      if (error instanceof OrderLifecycleError && error.code === 'ORDER_STATUS_CONFLICT') summary.skipped += 1;
+      else summary.errors.push({
+        orderId: order.id,
+        code: error?.code || 'AUTO_COMPLETION_FAILED',
+        message: error?.message || String(error),
+      });
+    }
+  }
+  return summary;
 }
 
 export async function releaseExpiredReservations(db, options = {}) {

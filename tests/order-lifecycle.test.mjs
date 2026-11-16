@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { SqliteD1 } from './helpers/sqlite-d1.mjs';
 import {
+  completeAgedConfirmedOrders,
   OrderLifecycleError,
   releaseExpiredReservations,
   transitionOrder,
@@ -307,6 +308,77 @@ test('confirmation keeps stock reserved and disables automatic expiry', async (t
     { on_hand: 5, reserved: 2 },
   );
   assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS count FROM inventory_movements').get().count, 1);
+});
+
+test('confirmed orders complete atomically after 24 hours without selling cart orders twice', async (t) => {
+  const db = setup();
+  t.after(() => db.close());
+  const legacy = insertReservedOrder(db, {
+    id: 'legacy-confirmed', productId: 1, status: 'confirmed', quantity: 2, onHand: 5,
+  });
+  const cart = insertReservedOrder(db, {
+    id: 'cart-confirmed', productId: 2, status: 'confirmed', quantity: 1, onHand: 5,
+  });
+  const fresh = insertReservedOrder(db, {
+    id: 'fresh-confirmed', productId: 3, status: 'confirmed', quantity: 1, onHand: 5,
+  });
+  db.sqlite.exec(`
+    UPDATE orders
+    SET confirmed_at = '2026-07-15T10:00:00.000Z', updated_at = '2026-07-15T10:00:00.000Z'
+    WHERE id IN ('legacy-confirmed', 'cart-confirmed');
+    UPDATE orders
+    SET confirmed_at = '2026-07-16T09:00:01.000Z', updated_at = '2026-07-16T09:00:01.000Z'
+    WHERE id = 'fresh-confirmed';
+    UPDATE orders SET cart_id = 'cart-1' WHERE id = 'cart-confirmed';
+    UPDATE order_items SET sold_quantity = quantity WHERE order_id = 'cart-confirmed';
+    UPDATE inventory SET on_hand = 4, reserved = 0 WHERE product_id = 2;
+  `);
+
+  await assert.rejects(
+    transitionOrder(db, {
+      orderId: legacy.id,
+      toStatus: 'completed',
+      now: '2026-07-16T10:00:00.000Z',
+    }),
+    (error) => error instanceof OrderLifecycleError && error.code === 'INVALID_STATUS_TRANSITION',
+  );
+
+  const result = await completeAgedConfirmedOrders(db, {
+    now: '2026-07-16T10:00:00.000Z',
+    limit: 10,
+  });
+
+  assert.deepEqual(result, {
+    checkedAt: '2026-07-16T10:00:00.000Z',
+    threshold: '2026-07-15T10:00:00.000Z',
+    selected: 2,
+    completed: 2,
+    skipped: 0,
+    errors: [],
+  });
+  assert.equal(db.sqlite.prepare('SELECT status FROM orders WHERE id = ?').get(legacy.id).status, 'completed');
+  assert.equal(db.sqlite.prepare('SELECT status FROM orders WHERE id = ?').get(cart.id).status, 'completed');
+  assert.equal(db.sqlite.prepare('SELECT status FROM orders WHERE id = ?').get(fresh.id).status, 'confirmed');
+  assert.deepEqual(
+    { ...db.sqlite.prepare('SELECT on_hand, reserved FROM inventory WHERE product_id = ?').get(legacy.productId) },
+    { on_hand: 3, reserved: 0 },
+  );
+  assert.deepEqual(
+    { ...db.sqlite.prepare('SELECT on_hand, reserved FROM inventory WHERE product_id = ?').get(cart.productId) },
+    { on_hand: 4, reserved: 0 },
+  );
+  assert.equal(
+    db.sqlite.prepare("SELECT COUNT(*) AS count FROM inventory_movements WHERE order_id = ? AND movement_type = 'sale'").get(legacy.id).count,
+    1,
+  );
+  assert.equal(
+    db.sqlite.prepare("SELECT COUNT(*) AS count FROM inventory_movements WHERE order_id = ? AND movement_type = 'sale'").get(cart.id).count,
+    0,
+  );
+  assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS count FROM order_status_history WHERE order_id = ?').get(legacy.id).count, 1);
+  assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS count FROM order_status_history WHERE order_id = ?').get(cart.id).count, 1);
+  assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS count FROM admin_audit_log WHERE entity_id = ?').get(legacy.id).count, 1);
+  assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS count FROM admin_audit_log WHERE entity_id = ?').get(cart.id).count, 1);
 });
 
 test('an inventory mismatch rolls back the complete transition', async (t) => {

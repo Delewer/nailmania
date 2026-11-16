@@ -153,6 +153,37 @@ const validHttpUrl = (value) => {
   catch { return false; }
 };
 
+const displayInteger = (value) => {
+  if (value === null || value === undefined || value === '') return null;
+  const number = Number(value);
+  return Number.isInteger(number) ? number : null;
+};
+
+export function formatProductImportError(error, entries = []) {
+  const fallback = error?.message || 'Importul nu a putut fi finalizat';
+  if (error?.code !== 'INVALID_PRODUCT_IMPORT_STOCK') return fallback;
+
+  const details = error?.details || {};
+  const sheetRow = displayInteger(details.sheetRow);
+  const sku = normalizedText(details.sku);
+  const matchingEntry = (entries || []).find((entry) => (
+    (sheetRow !== null && Number(entry.sheetRow) === sheetRow)
+    || (sku && skuIdentity(entry.sku) === skuIdentity(sku))
+  ));
+  const importedStock = displayInteger(details.importedStock ?? matchingEntry?.stock);
+  const reserved = displayInteger(details.reserved);
+  const location = [
+    sheetRow !== null ? `Rândul ${sheetRow}` : '',
+    sku ? `SKU ${sku}` : '',
+  ].filter(Boolean).join(' · ');
+  const message = importedStock !== null && reserved !== null
+    ? `Stocul importat (${importedStock}) este mai mic decât stocul rezervat (${reserved})`
+    : reserved !== null
+      ? `Stocul importat nu poate fi mai mic decât stocul rezervat (${reserved})`
+      : 'Stocul importat nu poate fi mai mic decât stocul rezervat';
+  return `${location ? `${location}: ` : ''}${message}.`;
+}
+
 export function previewProductImport(items, categoryMappings, products) {
   const existingBySku = new Map((products || []).map((product) => [skuIdentity(product.sku), product]));
   const duplicateSkus = new Map();
@@ -180,6 +211,9 @@ export function previewProductImport(items, categoryMappings, products) {
     if (!resolved.categoryId) validationErrors.push('Categorie lipsă');
     if (resolved.price === null || resolved.price === '' || !Number.isInteger(Number(resolved.price)) || Number(resolved.price) < 0) validationErrors.push('Preț invalid');
     if (!Number.isInteger(Number(resolved.stock)) || Number(resolved.stock) < 0) validationErrors.push('Stoc invalid');
+    if (existing && Number.isInteger(Number(resolved.stock)) && Number(resolved.stock) < Number(existing.reserved || 0)) {
+      validationErrors.push(`Stocul importat (${resolved.stock}) este mai mic decât stocul rezervat (${Number(existing.reserved || 0)})`);
+    }
     if (!validHttpUrl(resolved.imageUrl)) validationErrors.push('Link imagine invalid');
     if (validationErrors.length) return { ...resolved, validationErrors, action: 'error' };
     if (!existing) return { ...resolved, validationErrors, action: 'create' };
