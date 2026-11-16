@@ -164,7 +164,8 @@ test('admin mobile navigation and editors retain accessible names and focus hand
   assert.match(inventory, /aria-label="Caută în jurnalul de stoc"/);
   assert.match(reservations, /setInterval\(\(\) => \{/);
   assert.match(reservations, /}, 5000\)/);
-  assert.match(reservations, /Rezervări și comenzi noi/);
+  assert.match(reservations, /Rezervări din comenzi/);
+  assert.doesNotMatch(reservations, /timeLeft|Rezervat până la|adm-reservation-countdown/);
   assert.match(audit, /aria-label="Caută în jurnalul de audit"/);
   assert.match(promos, /adm-summary-metric/);
 });

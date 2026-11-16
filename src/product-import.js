@@ -147,6 +147,21 @@ export function suggestImportCategory(sourceGroup, categories) {
   return '';
 }
 
+export function removeProductImportRow(parsed, sheetRow) {
+  if (!parsed || !Array.isArray(parsed.items)) return parsed;
+  const row = Number(sheetRow);
+  const items = parsed.items.filter((item) => Number(item.sheetRow) !== row);
+  if (items.length === parsed.items.length) return parsed;
+  return {
+    ...parsed,
+    items,
+    errors: (parsed.errors || []).filter((error) => Number(error.row) !== row),
+    groups: [...new Set(items.map((item) => item.sourceGroup).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b)),
+    rowCount: items.length,
+  };
+}
+
 const validHttpUrl = (value) => {
   if (!normalizedText(value)) return true;
   try { return ['http:', 'https:'].includes(new URL(value).protocol); }

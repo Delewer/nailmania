@@ -67,14 +67,15 @@ test('store, product page, and checkout wire the shared stock limit into add and
   const menus = source('src/components/Menus.jsx');
   const data = source('src/data.js');
 
-  assert.match(shop, /synchronizeReservation\(\{/);
-  assert.match(shop, /const limit = cartLineLimit\(product,current\)/);
-  assert.match(shop, /const quantity = clampCartQuantity\(q,product,current\)/);
+  assert.doesNotMatch(shop, /synchronizeReservation|reservationQueue|ReservationTimer/);
+  assert.match(shop, /const limit = cartLineLimit\(product\)/);
+  assert.match(shop, /const quantity = clampCartQuantity\(q,product\)/);
+  assert.match(shop, /submitOrderRequest\(\{/);
   assert.match(shop, /keepUnresolved:!catalogLoaded \|\| Boolean\(catalogError\)/);
   assert.match(productPage, /disabled=\{qty>=maxSelectable\}/);
   assert.match(productPage, /disabled=\{atCartLimit\}/);
   assert.match(checkout, /disabled=\{atLineLimit\}/);
-  assert.match(menus, /const atLineLimit = item\.q>=cartLineLimit\(p,item\.q\)/);
+  assert.match(menus, /const atLineLimit = item\.q>=cartLineLimit\(p\)/);
   assert.match(menus, /disabled=\{atLineLimit\}/);
   assert.match(data, /stockLimitReached:/);
 });

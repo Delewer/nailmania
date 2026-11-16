@@ -5,7 +5,6 @@ import { submitOrderRequest } from './order-api.js'
 import { loadFreshStorefrontProducts } from './account-catalog.js'
 import { trackProductEvent } from './product-analytics.js'
 import { completeOrderAttemptKey, purgeLegacyGuestOrderHistory } from './order-attempt.js'
-import { loadCartReservations, synchronizeReservation } from './reservation-api.js'
 import { readStoredList, readStoredValue, writeStoredValue } from './storage.js'
 import {
   cartLineLimit,
@@ -119,8 +118,6 @@ export function ShopProvider({children}){
       ? stored.toLowerCase()
       : newCartId();
   });
-  const [reservationsReady,setReservationsReady] = React.useState(false);
-  const [reservationExpiries,setReservationExpiries] = React.useState({});
   const [favs, setFavs] = React.useState(()=>readStoredList("nm_favs"));
   const [drawer, setDrawer] = React.useState(null); // 'cart' | 'fav' | 'menu' | 'catalog'
   const [toast, setToast] = React.useState(null);
@@ -131,15 +128,12 @@ export function ShopProvider({children}){
   const [catalogError, setCatalogError] = React.useState(null);
   const toastT = React.useRef(0);
   const cartRef = React.useRef(cart);
-  const reservationQueue = React.useRef(Promise.resolve());
   const hasDrawer = Boolean(drawer);
 
   const applyCart = React.useCallback((updater)=>{
-    setCart(current=>{
-      const next = typeof updater === "function" ? updater(current) : updater;
-      cartRef.current = next;
-      return next;
-    });
+    const next = typeof updater === "function" ? updater(cartRef.current) : updater;
+    cartRef.current = next;
+    setCart(next);
   },[]);
 
   React.useEffect(()=>{
@@ -155,66 +149,6 @@ export function ShopProvider({children}){
   // Older builds persisted the complete guest order response, including contact
   // fields. Guest history has no UI consumer; purge that legacy PII copy.
   React.useEffect(()=>purgeLegacyGuestOrderHistory(),[]);
-  React.useEffect(()=>{
-    let disposed = false;
-    const localCart = cartRef.current;
-    const hydrate = async ()=>{
-      try{
-        const active = await loadCartReservations(cartId);
-        let next = active.map(item=>({id:item.productKey,q:item.quantity}));
-        const expiries = Object.fromEntries(active.map(item=>[item.productKey,item.expiresAt]));
-        // Carts created by the previous storefront build have no server-side
-        // reservation yet. Try to reserve them once during the upgrade.
-        if(!active.length && localCart.length){
-          next = [];
-          for(const item of localCart){
-            try{
-              const reservation = await synchronizeReservation({
-                cartId,productKey:item.id,quantity:item.q,
-              });
-              if(reservation.quantity>0){
-                next.push({id:item.id,q:reservation.quantity});
-                expiries[item.id]=reservation.expiresAt;
-              }
-            }catch{/* Unavailable legacy lines are removed instead of shown as reserved. */}
-          }
-        }
-        if(!disposed){
-          setReservationExpiries(expiries);
-          applyCart(next);
-        }
-      }catch{/* Keep the local cart visible; every later mutation still fails closed server-side. */}
-      finally{if(!disposed) setReservationsReady(true);}
-    };
-    const queued = reservationQueue.current.catch(()=>{}).then(hydrate);
-    reservationQueue.current = queued.catch(()=>{});
-    return ()=>{disposed=true;};
-  },[applyCart,cartId]);
-
-  const cartReservationExpiresAt = React.useMemo(()=>{
-    const deadlines = cart
-      .map(item=>reservationExpiries[item.id])
-      .filter(value=>Number.isFinite(Date.parse(value)))
-      .sort();
-    return deadlines[0] || null;
-  },[cart,reservationExpiries]);
-
-  React.useEffect(()=>{
-    if(!cartReservationExpiresAt) return undefined;
-    const delay = Math.max(0,Date.parse(cartReservationExpiresAt)-Date.now()+100);
-    const timer = setTimeout(()=>{
-      const refresh = reservationQueue.current.catch(()=>{}).then(async()=>{
-        try{
-          const active = await loadCartReservations(cartId);
-          setReservationExpiries(Object.fromEntries(active.map(item=>[item.productKey,item.expiresAt])));
-          applyCart(active.map(item=>({id:item.productKey,q:item.quantity})));
-        }catch{/* The next cart mutation and checkout still validate the reservation server-side. */}
-      });
-      reservationQueue.current = refresh.catch(()=>{});
-    },Math.min(delay,2_147_483_647));
-    return ()=>clearTimeout(timer);
-  },[applyCart,cartId,cartReservationExpiresAt]);
-
   React.useEffect(()=>{
     if(!hasDrawer) return;
     const y = window.scrollY || window.pageYOffset || 0;
@@ -302,14 +236,8 @@ export function ShopProvider({children}){
   // catalog is loaded, removed products are dropped. Stock zero removes a line
   // and reduced stock clamps it without weakening the server-side stock check.
   React.useEffect(()=>{
-    if(!reservationsReady) return;
     applyCart(current=>{
-      const quantities = new Map(current.map(item=>[item.id,item.q]));
-      const next = reconcileCartItems(current,key=>{
-        const product = find(key);
-        if(!product || typeof product.stock!=="number") return product;
-        return {...product,stock:product.stock+(quantities.get(key)||0)};
-      },{
+      const next = reconcileCartItems(current,find,{
         keepUnresolved:!catalogLoaded || Boolean(catalogError),
       });
       const unchanged = next.length===current.length
@@ -319,42 +247,21 @@ export function ShopProvider({children}){
     if(catalogLoaded && !catalogError){
       setFavs(f=>{ const g=f.filter(k=>find(k)); return g.length===f.length ? f : g; });
     }
-  },[catalogError, catalogLoaded, find, reservationsReady]);
+  },[catalogError, catalogLoaded, find]);
 
   const showToast = (msg)=>{
     setToast(msg); clearTimeout(toastT.current);
     toastT.current = setTimeout(()=>setToast(null), 2200);
   };
-  const queueReservationChange = (productKey, desiredQuantity)=>{
-    const run = reservationQueue.current.catch(()=>{}).then(async()=>{
-      const current = cartRef.current.find(item=>item.id===productKey)?.q || 0;
-      const desired = typeof desiredQuantity === "function"
-        ? desiredQuantity(current)
-        : desiredQuantity;
-      try{
-        const reservation = await synchronizeReservation({
-          cartId,productKey,quantity:Math.max(0,Math.min(99,Math.floor(Number(desired)||0))),
-        });
-        applyCart(items=>{
-          const without = items.filter(item=>item.id!==productKey);
-          return reservation.quantity>0
-            ? [...without,{id:productKey,q:reservation.quantity}]
-            : without;
-        });
-        setReservationExpiries(current=>{
-          const next={...current};
-          if(reservation.quantity>0) next[productKey]=reservation.expiresAt;
-          else delete next[productKey];
-          return next;
-        });
-        return {previous:current,quantity:reservation.quantity};
-      }catch(error){
-        showToast(error?.code==="INSUFFICIENT_STOCK" ? t("stockLimitReached") : t("catalogUnavailableText"));
-        return {previous:current,quantity:current,error};
-      }
+  const changeCartQuantity = (productKey, desiredQuantity)=>{
+    const previous = cartRef.current.find(item=>item.id===productKey)?.q || 0;
+    const desired = typeof desiredQuantity === "function" ? desiredQuantity(previous) : desiredQuantity;
+    const quantity = clampCartQuantity(desired,find(productKey));
+    applyCart(items=>{
+      const without = items.filter(item=>item.id!==productKey);
+      return quantity>0 ? [...without,{id:productKey,q:quantity}] : without;
     });
-    reservationQueue.current = run.then(()=>undefined,()=>undefined);
-    return run;
+    return {previous,quantity};
   };
 
   const addToCart = async (p, options={})=>{
@@ -362,12 +269,11 @@ export function ShopProvider({children}){
     const product = find(p.key) || p;
     const quantity = normalizeCartIncrement(options.quantity,1);
     rememberProduct(product);
-    const result = await queueReservationChange(p.key,current=>{
-      const limit = cartLineLimit(product,current);
+    const result = changeCartQuantity(p.key,current=>{
+      const limit = cartLineLimit(product);
       return Math.min(limit,current+quantity);
     });
     const addedQuantity = Math.max(0,result.quantity-result.previous);
-    if(result.error) return 0;
     if(addedQuantity>0){
       trackProductEvent('add_to_cart',{
         productKey:p.key,quantity:addedQuantity,language:lang,source:options.source||'product_card',
@@ -388,16 +294,13 @@ export function ShopProvider({children}){
     }
     return added;
   };
-  const setQty=async(id,q)=>{
+  const setQty=(id,q)=>{
     const product = find(id);
-    const current = cartRef.current.find(item=>item.id===id)?.q || 0;
-    const quantity = clampCartQuantity(q,product,current);
-    return queueReservationChange(id,quantity);
+    const quantity = clampCartQuantity(q,product);
+    return changeCartQuantity(id,quantity);
   };
-  const removeFromCart=(id)=>queueReservationChange(id,0);
-  const clearCart=async()=>{
-    for(const item of [...cartRef.current]) await queueReservationChange(item.id,0);
-  };
+  const removeFromCart=(id)=>changeCartQuantity(id,0);
+  const clearCart=()=>applyCart([]);
   const toggleFav=(id)=>{ if(!find(id)) ensureCatalog(); setFavs(f=> f.includes(id)? f.filter(x=>x!==id): [...f,id]); };
 
   const cartCount = cart.reduce((s,i)=>s+i.q,0);
@@ -406,7 +309,6 @@ export function ShopProvider({children}){
   // D1 is the only order authority: the server owns prices, totals and stock
   // reservation. The cart is cleared only after the API confirms the order.
   const submitOrder = async (details)=>{
-    await reservationQueue.current;
     const submittedCart = cartRef.current;
     const savedOrder = await submitOrderRequest({
       cartId,
@@ -421,8 +323,6 @@ export function ShopProvider({children}){
       lang,
     });
     applyCart([]);
-    setReservationExpiries({});
-    setReservationsReady(false);
     setCartId(newCartId());
     completeOrderAttemptKey(details.idempotencyKey);
     return savedOrder;
@@ -430,7 +330,7 @@ export function ShopProvider({children}){
 
   const value = {
     lang,setLang,t,name,
-    cart,addToCart,addItemsToCart,setQty,removeFromCart,clearCart,cartCount,cartTotal,cartReservationExpiresAt,
+    cart,addToCart,addItemsToCart,setQty,removeFromCart,clearCart,cartCount,cartTotal,
     submitOrder,
     favs,toggleFav,
     drawer,setDrawer,

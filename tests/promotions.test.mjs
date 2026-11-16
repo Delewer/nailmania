@@ -48,6 +48,7 @@ const migrationNames = [
   '0014_catalog_discounts_and_promo_brands.sql',
   '0015_cancelled_order_reopening.sql',
   '0017_cart_reservations.sql',
+  '0021_order_reservations_without_cart_timer.sql',
 ];
 const schema = migrationNames.map((name) => readFileSync(new URL(`../migrations/${name}`, import.meta.url), 'utf8')).join('\n');
 
@@ -358,7 +359,7 @@ test('the final redemption trigger also serializes the per-account limit', async
   assert.equal(db.sqlite.prepare('SELECT reserved FROM inventory WHERE product_id = 1').get().reserved, 1);
 });
 
-test('cancellation and reservation expiry release a use so a limited promo can be redeemed again', async (t) => {
+test('explicit cancellation releases a use so a limited promo can be redeemed again', async (t) => {
   const db = setup();
   t.after(() => db.close());
   insertPromo(db, { code: 'REUSABLE', discountType: 'fixed', discountValue: 20, totalUseLimit: 1 });
@@ -372,10 +373,12 @@ test('cancellation and reservation expiry release a use so a limited promo can b
   const secondResponse = await createOrder(orderContext(db, orderBody({ promoCode: 'REUSABLE' })));
   assert.equal(secondResponse.status, 201);
   const second = (await secondResponse.json()).order;
-  db.sqlite.prepare("UPDATE orders SET reservation_expires_at = '2026-01-01T00:00:00.000Z' WHERE id = ?").run(second.id);
-  const { releaseExpiredReservations } = await import('../functions/_lib/order-lifecycle.js');
-  const summary = await releaseExpiredReservations(db, { now: '2026-07-17T00:00:00.000Z' });
-  assert.equal(summary.released, 1);
+  await transitionOrder(db, {
+    orderId: second.id,
+    toStatus: 'cancelled',
+    comment: 'Client cancelled second order',
+    now: '2026-07-17T00:00:00.000Z',
+  });
   assert.ok(db.sqlite.prepare('SELECT released_at FROM promo_redemptions WHERE order_id = ?').get(second.id).released_at);
   const thirdResponse = await createOrder(orderContext(db, orderBody({ promoCode: 'REUSABLE' })));
   assert.equal(thirdResponse.status, 201);

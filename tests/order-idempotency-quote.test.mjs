@@ -5,7 +5,6 @@ import test from 'node:test';
 import { newSessionRecord } from '../functions/_lib/customer-auth.js';
 import { fingerprintOrderRequest } from '../functions/_lib/order-idempotency.js';
 import { normalizeOrderRequest } from '../functions/_lib/order-core.js';
-import { synchronizeCartReservation } from '../functions/_lib/cart-reservations.js';
 import { onRequestPost as createOrder } from '../functions/api/orders.js';
 import { submitOrderRequest } from '../src/order-api.js';
 import { SqliteD1 } from './helpers/sqlite-d1.mjs';
@@ -27,6 +26,7 @@ const migrations = [
   '0013_order_commercial_snapshot_guard.sql',
   '0014_catalog_discounts_and_promo_brands.sql',
   '0017_cart_reservations.sql',
+  '0021_order_reservations_without_cart_timer.sql',
 ];
 const schema = migrations.map((name) => readFileSync(
   new URL(`../migrations/${name}`, import.meta.url),
@@ -247,9 +247,6 @@ test('committed replay precedes Turnstile, but still enforces same-origin and ex
     },
   };
   const cartId = '11111111-1111-4111-8111-111111111111';
-  await synchronizeCartReservation(db, { cartId, productKey: 'P1', quantity: 1 }, {
-    env: { RESERVATION_TTL_MINUTES: '60' },
-  });
   const body = withOrderContract(db, baseBody({ cartId }));
   const first = await endpointRequest(db, body, { env });
   assert.equal(first.status, 201);
@@ -297,7 +294,7 @@ test('account identity is part of the persisted request fingerprint', async (t) 
   assert.equal(db.sqlite.prepare('SELECT user_id FROM orders').get().user_id, 'customer-1');
 });
 
-test('changed price returns a safe quote, preserves the cart reservation, and accepts reviewed resubmission', async (t) => {
+test('changed price returns a safe quote without reserving the cart and accepts reviewed resubmission', async (t) => {
   const db = setup();
   t.after(() => db.close());
   const body = withOrderContract(db, baseBody());

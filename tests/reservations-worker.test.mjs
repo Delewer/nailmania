@@ -14,6 +14,7 @@ const schema = [
   readFileSync(new URL('../migrations/0008_rate_limits.sql', import.meta.url), 'utf8'),
   readFileSync(new URL('../migrations/0009_promotions.sql', import.meta.url), 'utf8'),
   readFileSync(new URL('../migrations/0017_cart_reservations.sql', import.meta.url), 'utf8'),
+  readFileSync(new URL('../migrations/0021_order_reservations_without_cart_timer.sql', import.meta.url), 'utf8'),
 ].join('\n');
 
 function setupExpiredOrder() {
@@ -83,7 +84,7 @@ function setupExpiredOrder() {
   return db;
 }
 
-test('scheduled worker entrypoint releases an expired reservation', async (t) => {
+test('scheduled worker completes aged confirmed orders without expiring pending reservations', async (t) => {
   const db = setupExpiredOrder();
   t.after(() => db.close());
 
@@ -92,11 +93,11 @@ test('scheduled worker entrypoint releases an expired reservation', async (t) =>
     scheduledTime: Date.parse('2026-07-16T10:00:00.000Z'),
   }, { DB: db });
 
-  assert.equal(db.sqlite.prepare("SELECT status FROM orders WHERE id = 'expired'").get().status, 'cancelled');
+  assert.equal(db.sqlite.prepare("SELECT status FROM orders WHERE id = 'expired'").get().status, 'pending');
   assert.equal(db.sqlite.prepare("SELECT status FROM orders WHERE id = 'aged-confirmed'").get().status, 'completed');
   assert.deepEqual(
     { ...db.sqlite.prepare('SELECT on_hand, reserved FROM inventory WHERE product_id = 1').get() },
-    { on_hand: 1, reserved: 0 },
+    { on_hand: 1, reserved: 1 },
   );
   assert.deepEqual(
     { ...db.sqlite.prepare('SELECT on_hand, reserved FROM inventory WHERE product_id = 2').get() },
@@ -104,7 +105,7 @@ test('scheduled worker entrypoint releases an expired reservation', async (t) =>
   );
   assert.equal(
     db.sqlite.prepare("SELECT COUNT(*) AS count FROM inventory_movements WHERE movement_type = 'reservation_release'").get().count,
-    1,
+    0,
   );
   assert.deepEqual(
     db.sqlite.prepare('SELECT scope FROM rate_limit_buckets ORDER BY scope').all().map((row) => row.scope),

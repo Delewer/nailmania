@@ -7,6 +7,7 @@ import {
   parseProductImportRows,
   previewProductImport,
   productImportPayload,
+  removeProductImportRow,
   suggestImportCategory,
 } from '../src/product-import.js';
 
@@ -157,4 +158,20 @@ test('formats reserved-stock API errors with the affected spreadsheet row and va
     'Rândul 52 · SKU SKU-52: Stocul importat (2) este mai mic decât stocul rezervat (3).',
   );
   assert.equal(formatProductImportError({ message: 'Altă eroare' }), 'Altă eroare');
+});
+
+test('a row removed from the editable preview is excluded from the import and its summary', () => {
+  const parsed = parseProductImportRows([
+    ['Код', 'Товар', 'Группа', 'Цена'],
+    ['A-1', 'DANNY Gel 15ml', 'GELURI', 100],
+    ['B-1', 'BeeNails Base 10ml', 'BAZE', 120],
+  ], 'Microinvest');
+
+  const next = removeProductImportRow(parsed, 2);
+
+  assert.equal(next.rowCount, 1);
+  assert.deepEqual(next.items.map((item) => item.sku), ['B-1']);
+  assert.deepEqual(next.groups, ['BAZE']);
+  assert.equal(previewProductImport(next.items, { BAZE: 'baze' }, []).entries.length, 1);
+  assert.equal(removeProductImportRow(next, 999), next);
 });

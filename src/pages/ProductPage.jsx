@@ -24,7 +24,7 @@ export default function ProductPage(){
   const p = findProduct(id);
   const liveProduct = p ? (find(p.key) || p) : null;
   const cartQuantity = p ? (cart.find(item=>item.id===p.key)?.q || 0) : 0;
-  const remainingQuantity = p ? Math.max(0,cartLineLimit(liveProduct,cartQuantity)-cartQuantity) : 0;
+  const remainingQuantity = p ? Math.max(0,cartLineLimit(liveProduct)-cartQuantity) : 0;
   const maxSelectable = Math.max(1,remainingQuantity);
   const atCartLimit = Boolean(p) && remainingQuantity<=0;
   React.useEffect(()=>{ if(p) rememberProduct(p); },[p, rememberProduct]);

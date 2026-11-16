@@ -11,7 +11,6 @@ import { trackProductEvent } from '../product-analytics.js'
 import { getOrCreateOrderAttemptKey, startNewOrderAttemptKey } from '../order-attempt.js'
 import { createOrderQuote, normalizeExpectedOrderQuote } from '../../shared/order-quote.js'
 import { cartLineLimit } from '../cart-quantity.js'
-import { ReservationTimer } from '../components/ReservationTimer.jsx'
 import {
   MOLDOVA_COUNTRY_CODE,
   moldovaLocalPhone,
@@ -44,7 +43,7 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function Checkout(){
   const navigate = useNavigate();
-  const { lang, t, name, cart, find, cartTotal, cartReservationExpiresAt, submitOrder, setQty, removeFromCart, allProducts, ensureCatalog, catalogLoading, catalogLoaded, catalogError } = useShop();
+  const { lang, t, name, cart, find, cartTotal, submitOrder, setQty, removeFromCart, allProducts, ensureCatalog, catalogLoading, catalogLoaded, catalogError } = useShop();
   const { user, defaultAddress } = useAuth();
 
   const [delivery, setDelivery] = React.useState("");
@@ -461,10 +460,9 @@ export default function Checkout(){
         {/* order summary */}
         <aside className="co-sum">
           <h3>{t("yourOrder")}</h3>
-          <ReservationTimer expiresAt={cartReservationExpiresAt}/>
           <div className="lines nm-scroll">
             {lines.map(l=>{
-              const atLineLimit = l.q>=cartLineLimit(l.p,l.q);
+              const atLineLimit = l.q>=cartLineLimit(l.p);
               return <div className="sline" key={l.id}>
                 <Placeholder g={l.p.g} icon="bottle" radius={10} img={l.p.img} label={name(l.p)}/>
                 <div className="sn">

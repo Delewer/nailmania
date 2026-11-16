@@ -1,5 +1,9 @@
 # Architecture audit: cart and inventory reservations
 
+> Historical note: the expiring cart-reservation design described below was
+> retired by migration `0021_order_reservations_without_cart_timer.sql`.
+> Current behavior is documented in [docs/CART_RESERVATIONS.md](docs/CART_RESERVATIONS.md).
+
 ## Existing architecture
 
 - Runtime: React 18 + Vite storefront, Cloudflare Pages Functions, Scheduled Worker and Cloudflare D1 (SQLite semantics).

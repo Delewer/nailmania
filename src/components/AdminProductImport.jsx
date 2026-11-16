@@ -4,6 +4,7 @@ import {
   CheckCircle2,
   FileSpreadsheet,
   LoaderCircle,
+  Trash2,
   Upload,
   X,
 } from 'lucide-react';
@@ -15,6 +16,7 @@ import {
   previewProductImport,
   productImportPayload,
   readProductImportFile,
+  removeProductImportRow,
   suggestImportCategory,
 } from '../product-import.js';
 
@@ -51,6 +53,11 @@ export default function AdminProductImport({ categories, products, onClose, onCo
       ...current,
       items: current.items.map((item) => item.sheetRow === sheetRow ? { ...item, ...changes } : item),
     } : current);
+  }, []);
+  const removeItem = React.useCallback((sheetRow) => {
+    setParsed((current) => removeProductImportRow(current, sheetRow));
+    setError('');
+    setResult(null);
   }, []);
 
   const selectFile = async (event) => {
@@ -198,7 +205,11 @@ export default function AdminProductImport({ categories, products, onClose, onCo
                         <td><textarea value={entry.descriptionRo || ''} maxLength={20000} onChange={(event) => updateItem(entry.sheetRow, { descriptionRo: event.target.value, descriptionProvided: true })} disabled={importing}/></td>
                         <td><input type="url" value={entry.imageUrl || ''} maxLength={2048} placeholder="https://…" onChange={(event) => updateItem(entry.sheetRow, { imageUrl: event.target.value, imageProvided: true })} disabled={importing}/></td>
                         <td><input type="checkbox" checked={entry.isActive} onChange={(event) => updateItem(entry.sheetRow, { isActive: event.target.checked, stateProvided: true })} disabled={importing}/></td>
-                        <td><span className={`adm-import-action ${entry.action}`}>{actionLabels[entry.action]}</span>{entry.validationErrors?.length > 0 && <small title={entry.validationErrors.join(', ')}>{entry.validationErrors.join(', ')}</small>}</td>
+                        <td>
+                          <span className={`adm-import-action ${entry.action}`}>{actionLabels[entry.action]}</span>
+                          {entry.validationErrors?.length > 0 && <small title={entry.validationErrors.join(', ')}>{entry.validationErrors.join(', ')}</small>}
+                          <button className="adm-import-remove" type="button" onClick={() => removeItem(entry.sheetRow)} disabled={importing} aria-label={`Elimină rândul ${entry.sheetRow} din import`}><Trash2 size={13}/><span>Elimină</span></button>
+                        </td>
                       </tr>
                     ))}</tbody>
                   </table>

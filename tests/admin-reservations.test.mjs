@@ -16,37 +16,21 @@ function setup() {
       id, catalog_key, sku, slug, category_id, brand, name_ro, name_ru, price
     ) VALUES (1, 'P1', 'SKU-1', 'p1', 'test', 'Brand', 'Produs rezervat', 'Reserved product', 100);
     INSERT INTO inventory (product_id, warehouse_id, on_hand, reserved)
-    VALUES (1, 1, 5, 3);
+    VALUES (1, 1, 5, 2);
     INSERT INTO orders (
       id, order_no, cart_id, status, language, customer_name, customer_phone,
       delivery_method, delivery_label, payment_method, payment_label,
-      items_subtotal, catalog_discount, promo_discount, total_amount
+      items_subtotal, catalog_discount, promo_discount, total_amount,
+      reservation_expires_at, inventory_mode
     ) VALUES (
       'order-1', 'NM-NEW-1', '33333333-3333-4333-8333-333333333333', 'pending', 'ro',
-      'Client Nou', '+37368000000', 'pickup', 'Ridicare', 'cash', 'Numerar', 100, 0, 0, 100
+      'Client Nou', '+37368000000', 'pickup', 'Ridicare', 'cash', 'Numerar',
+      200, 0, 0, 200, NULL, 'reservation'
     );
-    INSERT INTO cart_reservations (
-      id, cart_id, product_id, quantity, status, expires_at, created_at, updated_at
-    ) VALUES (
-      '11111111-1111-4111-8111-111111111111',
-      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 1, 2, 'ACTIVE',
-      '2099-01-01T00:15:00.000Z', '2099-01-01T00:00:00.000Z', '2099-01-01T00:00:00.000Z'
-    );
-    INSERT INTO cart_reservations (
-      id, cart_id, product_id, quantity, status, expires_at, created_at, updated_at
-    ) VALUES (
-      '22222222-2222-4222-8222-222222222222',
-      'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 1, 1, 'ACTIVE',
-      '2020-01-01T00:15:00.000Z', '2020-01-01T00:00:00.000Z', '2020-01-01T00:00:00.000Z'
-    );
-    INSERT INTO cart_reservations (
-      id, cart_id, product_id, quantity, status, expires_at, order_id, created_at, updated_at
-    ) VALUES (
-      '33333333-3333-4333-8333-333333333333',
-      '33333333-3333-4333-8333-333333333333', 1, 1, 'CONVERTED',
-      '2099-01-01T00:15:00.000Z', 'order-1',
-      strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-    );
+    INSERT INTO order_items (
+      order_id, product_id, product_key, sku, brand, name,
+      unit_price, list_price, quantity, sold_quantity, line_total
+    ) VALUES ('order-1', 1, 'P1', 'SKU-1', 'Brand', 'Produs rezervat', 100, 100, 2, 0, 200);
   `);
   return db;
 }
@@ -65,44 +49,31 @@ function context(db, query = '') {
   };
 }
 
-test('seller reservation page lists active carts and open orders but excludes expired holds and cancelled orders', async (t) => {
+test('seller reservation page lists only stock reserved by open orders and has no countdown', async (t) => {
   const db = setup();
   t.after(() => db.close());
 
   const response = await listReservations(context(db));
   const payload = await response.json();
   assert.equal(response.status, 200);
-  assert.deepEqual(payload.summary, {
-    activeReservations: 1,
-    activeUnits: 2,
-    recentOrders: 1,
-    recentOrderedUnits: 1,
-  });
-  assert.equal(payload.items.length, 2);
-  const active = payload.items.find((item) => item.state === 'active');
-  const ordered = payload.items.find((item) => item.state === 'ordered');
-  assert.equal(active.quantity, 2);
-  assert.deepEqual(active.inventory, { onHand: 5, reserved: 2, available: 3 });
-  assert.equal(ordered.order.no, 'NM-NEW-1');
-  assert.equal(ordered.order.customerName, 'Client Nou');
-  assert.ok(ordered.order.updatedAt);
+  assert.equal(payload.summary.openOrders, 1);
+  assert.equal(payload.summary.reservedUnits, 2);
+  assert.equal(payload.summary.activeReservations, 0);
+  assert.equal(payload.items.length, 1);
+  assert.equal(payload.items[0].state, 'ordered');
+  assert.equal(payload.items[0].expiresAt, null);
+  assert.equal(payload.items[0].quantity, 2);
+  assert.deepEqual(payload.items[0].inventory, { onHand: 5, reserved: 2, available: 3 });
+  assert.equal(payload.items[0].order.no, 'NM-NEW-1');
+  assert.equal(payload.items[0].order.customerName, 'Client Nou');
 
-  const orderedResponse = await listReservations(context(db, '?state=ordered&q=NM-NEW'));
-  const orderedPayload = await orderedResponse.json();
-  assert.equal(orderedResponse.status, 200);
-  assert.equal(orderedPayload.items.length, 1);
-  assert.equal(orderedPayload.items[0].state, 'ordered');
+  const activeResponse = await listReservations(context(db, '?state=active'));
+  assert.equal((await activeResponse.json()).items.length, 0);
 
-  db.sqlite.exec(`
-    UPDATE orders
-    SET status = 'cancelled', updated_at = '2099-01-01T00:05:00.000Z'
-    WHERE id = 'order-1';
-  `);
+  db.sqlite.exec("UPDATE orders SET status = 'cancelled' WHERE id = 'order-1'");
   const cancelledResponse = await listReservations(context(db));
   const cancelledPayload = await cancelledResponse.json();
-  assert.equal(cancelledResponse.status, 200);
-  assert.equal(cancelledPayload.summary.recentOrders, 0);
-  assert.equal(cancelledPayload.summary.recentOrderedUnits, 0);
-  assert.equal(cancelledPayload.items.length, 1);
-  assert.equal(cancelledPayload.items[0].state, 'active');
+  assert.equal(cancelledPayload.summary.openOrders, 0);
+  assert.equal(cancelledPayload.summary.reservedUnits, 0);
+  assert.equal(cancelledPayload.items.length, 0);
 });

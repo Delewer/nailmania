@@ -18,6 +18,7 @@ const schema = [
   readFileSync(new URL('../migrations/0013_order_commercial_snapshot_guard.sql', import.meta.url), 'utf8'),
   readFileSync(new URL('../migrations/0014_catalog_discounts_and_promo_brands.sql', import.meta.url), 'utf8'),
   readFileSync(new URL('../migrations/0017_cart_reservations.sql', import.meta.url), 'utf8'),
+  readFileSync(new URL('../migrations/0021_order_reservations_without_cart_timer.sql', import.meta.url), 'utf8'),
 ].join('\n');
 
 function setup() {

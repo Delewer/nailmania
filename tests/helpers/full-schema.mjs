@@ -21,6 +21,7 @@ export const migrationNames = [
   '0018_product_sku_nocase_index.sql',
   '0019_category_images.sql',
   '0020_seed_featured_products.sql',
+  '0021_order_reservations_without_cart_timer.sql',
 ];
 
 export const fullSchema = migrationNames.map((name) => readFileSync(

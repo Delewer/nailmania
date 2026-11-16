@@ -352,7 +352,7 @@ async function transitionOrderInternal(db, options, { allowConfirmedCompletion =
   if (!orderId || !toStatus) throw new OrderLifecycleError('INVALID_TRANSITION_REQUEST', 'Order id and target status are required', 400);
 
   const order = await database.prepare(`
-    SELECT id, order_no, cart_id, status, reservation_expires_at
+    SELECT id, order_no, cart_id, status, reservation_expires_at, inventory_mode
     FROM orders WHERE id = ?
   `).bind(orderId).first();
   if (!order) throw new OrderLifecycleError('ORDER_NOT_FOUND', 'Order not found', 404, { orderId });
@@ -363,7 +363,7 @@ async function transitionOrderInternal(db, options, { allowConfirmedCompletion =
   const basePlan = directConfirmedCompletion
     ? { action: 'sale', idempotent: false }
     : transitionPlan(order.status, toStatus);
-  const plan = order.cart_id && !basePlan.idempotent
+  const plan = order.inventory_mode === 'sold_at_creation' && !basePlan.idempotent
     ? {
         ...basePlan,
         action: order.status === 'cancelled' && toStatus === 'confirmed'
@@ -381,12 +381,12 @@ async function transitionOrderInternal(db, options, { allowConfirmedCompletion =
 
   const token = crypto.randomUUID();
   const reason = comment || ({
-    reserve: 'Cancelled legacy order reopened and stock reserved',
-    release: 'Legacy order reservation released',
+    reserve: 'Cancelled order reopened and stock reserved',
+    release: 'Order reservation released',
     restore: 'Cancelled order restored to stock',
     sale: order.status === 'cancelled'
       ? 'Cancelled order reopened and stock committed'
-      : 'Legacy reservation converted to a sale',
+      : 'Order reservation converted to a sale',
     return: 'Full order return',
   }[plan.action] || `Order status changed to ${toStatus}`);
   const reopenGuard = order.status === 'cancelled' && ['reserve', 'sale'].includes(plan.action) ? `
@@ -578,39 +578,6 @@ export async function completeAgedConfirmedOrders(db, options = {}) {
         code: error?.code || 'AUTO_COMPLETION_FAILED',
         message: error?.message || String(error),
       });
-    }
-  }
-  return summary;
-}
-
-export async function releaseExpiredReservations(db, options = {}) {
-  const database = typeof db.withSession === 'function' ? db.withSession('first-primary') : db;
-  const now = options.now ? new Date(options.now).toISOString() : new Date().toISOString();
-  const limit = Math.min(250, Math.max(1, Number(options.limit) || 100));
-  const result = await database.prepare(`
-    SELECT id FROM orders
-    WHERE status = 'pending'
-      AND reservation_expires_at IS NOT NULL
-      AND reservation_expires_at <= ?
-    ORDER BY reservation_expires_at, id
-    LIMIT ?
-  `).bind(now, limit).all();
-  const orders = result.results || [];
-  const summary = { checkedAt: now, selected: orders.length, released: 0, skipped: 0, errors: [] };
-
-  for (const order of orders) {
-    try {
-      const transition = await transitionOrder(database, {
-        orderId: order.id,
-        toStatus: 'cancelled',
-        comment: 'Reservation expired automatically',
-        now,
-      });
-      if (transition.changed) summary.released += 1;
-      else summary.skipped += 1;
-    } catch (error) {
-      if (error instanceof OrderLifecycleError && error.code === 'ORDER_STATUS_CONFLICT') summary.skipped += 1;
-      else summary.errors.push({ orderId: order.id, code: error?.code || 'RELEASE_FAILED', message: error?.message || String(error) });
     }
   }
   return summary;

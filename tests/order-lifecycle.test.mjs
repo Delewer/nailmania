@@ -5,7 +5,6 @@ import { SqliteD1 } from './helpers/sqlite-d1.mjs';
 import {
   completeAgedConfirmedOrders,
   OrderLifecycleError,
-  releaseExpiredReservations,
   transitionOrder,
   transitionPlan,
 } from '../functions/_lib/order-lifecycle.js';
@@ -19,6 +18,7 @@ const schema = [
   readFileSync(new URL('../migrations/0009_promotions.sql', import.meta.url), 'utf8'),
   readFileSync(new URL('../migrations/0015_cancelled_order_reopening.sql', import.meta.url), 'utf8'),
   readFileSync(new URL('../migrations/0017_cart_reservations.sql', import.meta.url), 'utf8'),
+  readFileSync(new URL('../migrations/0021_order_reservations_without_cart_timer.sql', import.meta.url), 'utf8'),
 ].join('\n');
 
 function setup() {
@@ -329,7 +329,9 @@ test('confirmed orders complete atomically after 24 hours without selling cart o
     UPDATE orders
     SET confirmed_at = '2026-07-16T09:00:01.000Z', updated_at = '2026-07-16T09:00:01.000Z'
     WHERE id = 'fresh-confirmed';
-    UPDATE orders SET cart_id = 'cart-1' WHERE id = 'cart-confirmed';
+    UPDATE orders
+    SET cart_id = 'cart-1', inventory_mode = 'sold_at_creation'
+    WHERE id = 'cart-confirmed';
     UPDATE order_items SET sold_quantity = quantity WHERE order_id = 'cart-confirmed';
     UPDATE inventory SET on_hand = 4, reserved = 0 WHERE product_id = 2;
   `);
@@ -453,29 +455,17 @@ test('completion sells reserved stock and a full return restores it', async (t) 
   );
 });
 
-test('expired cleanup cancels only expired pending orders', async (t) => {
+test('pending order reservations are not cancelled by a timer', async (t) => {
   const db = setup();
   t.after(() => db.close());
   insertReservedOrder(db, { id: 'expired', productId: 1, quantity: 1, expiresAt: '2026-07-15T00:00:00.000Z' });
-  insertReservedOrder(db, { id: 'future', productId: 2, quantity: 1, expiresAt: '2026-07-18T00:00:00.000Z' });
-  insertReservedOrder(db, { id: 'confirmed', productId: 3, quantity: 1, status: 'confirmed', expiresAt: '2026-07-15T00:00:00.000Z' });
 
-  const result = await releaseExpiredReservations(db, {
+  const result = await completeAgedConfirmedOrders(db, {
     now: '2026-07-16T10:00:00.000Z',
     limit: 10,
   });
 
-  assert.deepEqual(result, {
-    checkedAt: '2026-07-16T10:00:00.000Z',
-    selected: 1,
-    released: 1,
-    skipped: 0,
-    errors: [],
-  });
-  assert.equal(db.sqlite.prepare("SELECT status FROM orders WHERE id = 'expired'").get().status, 'cancelled');
-  assert.equal(db.sqlite.prepare("SELECT status FROM orders WHERE id = 'future'").get().status, 'pending');
-  assert.equal(db.sqlite.prepare("SELECT status FROM orders WHERE id = 'confirmed'").get().status, 'confirmed');
-  assert.equal(db.sqlite.prepare('SELECT reserved FROM inventory WHERE product_id = 1').get().reserved, 0);
-  assert.equal(db.sqlite.prepare('SELECT reserved FROM inventory WHERE product_id = 2').get().reserved, 1);
-  assert.equal(db.sqlite.prepare('SELECT reserved FROM inventory WHERE product_id = 3').get().reserved, 1);
+  assert.equal(result.selected, 0);
+  assert.equal(db.sqlite.prepare("SELECT status FROM orders WHERE id = 'expired'").get().status, 'pending');
+  assert.equal(db.sqlite.prepare('SELECT reserved FROM inventory WHERE product_id = 1').get().reserved, 1);
 });

@@ -4,8 +4,7 @@
   "compatibility_date": "2026-07-16",
   "pages_build_output_dir": "./dist",
   "vars": {
-    "ENVIRONMENT": "local",
-    "RESERVATION_TTL_MINUTES": "60"
+    "ENVIRONMENT": "local"
   },
   "d1_databases": [
     {
