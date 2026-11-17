@@ -137,6 +137,11 @@
 .co-phone-input:focus-within{border-color:var(--mauve-deep);box-shadow:0 0 0 4px rgba(199,154,176,.16)}
 .field.err .co-phone-input{border-color:var(--rose)}
 .field.err .co-phone-input input{border-color:transparent}
+.co-saved-address{margin-top:18px;display:flex;flex-direction:column;gap:7px}
+.co-saved-address label{font-size:13px;font-weight:700;color:var(--ink-2)}
+.co-saved-address select{width:100%;min-height:48px;padding:0 42px 0 16px;border:1.5px solid var(--line-2);border-radius:var(--r);background:#fff;color:var(--ink);font:inherit}
+.co-saved-address select:focus{outline:none;border-color:var(--mauve-deep);box-shadow:0 0 0 4px rgba(199,154,176,.16)}
+.co-saved-address small{color:var(--gray);font-size:12px;line-height:1.4}
 
 /* order summary (sticky) */
 .co-sum{position:sticky;top:96px;background:#fff;border:1px solid var(--line);border-radius:var(--r-lg);padding:26px 28px}
@@ -200,6 +205,7 @@
   padding-top:10px;border-top:1px solid var(--line)}
 .co-receipt .rrow.disc b{color:var(--rose-deep)}
 .co-receipt .rrow.grand{font-size:17px;color:var(--ink);font-weight:700;margin-top:2px}
+.co-done-actions{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:10px}
 
 @media(max-width:980px){
   .pd{grid-template-columns:1fr;gap:28px}
@@ -209,6 +215,7 @@
 @media(max-width:600px){
   .co-fields{grid-template-columns:1fr}
   .co-card,.co-sum{padding:20px}
+  .co-done-actions .btn{width:100%;justify-content:center}
   .co-receipt .rline .rn{min-width:0;overflow-wrap:anywhere}
   /* product page: keep the buy row on one line inside the viewport
      (the add-to-cart button shrinks instead of pushing the fav off-screen) */

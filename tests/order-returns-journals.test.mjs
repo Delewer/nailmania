@@ -16,6 +16,7 @@ const schema = [
   readFileSync(new URL('../migrations/0009_promotions.sql', import.meta.url), 'utf8'),
   readFileSync(new URL('../migrations/0010_statistics_and_analytics.sql', import.meta.url), 'utf8'),
   readFileSync(new URL('../migrations/0011_notifications_and_order_operations.sql', import.meta.url), 'utf8'),
+  readFileSync(new URL('../migrations/0023_order_customer_email_events.sql', import.meta.url), 'utf8'),
 ].join('\n');
 
 function setup() {
@@ -50,10 +51,10 @@ function setup() {
 function insertCompletedOrder(db, id = 'order-1', productIds = [1, 2]) {
   db.sqlite.prepare(`
     INSERT INTO orders (
-      id, order_no, status, language, customer_name, customer_phone,
+      id, order_no, status, language, customer_name, customer_phone, customer_email,
       delivery_method, delivery_label, payment_method, payment_label,
       items_subtotal, catalog_discount, promo_discount, total_amount, completed_at
-    ) VALUES (?, ?, 'completed', 'ro', 'Test Client', '+37360000000',
+    ) VALUES (?, ?, 'completed', 'ro', 'Test Client', '+37360000000', 'buyer@example.test',
               'pickup', 'Pickup', 'cash', 'Cash', 500, 0, 0, 500, '2026-07-09T12:00:00.000Z')
   `).run(id, `NM-${id}`);
   return productIds.map((productId, index) => {
@@ -84,11 +85,12 @@ function insertProductsThrough(db, count) {
   }
 }
 
-const environment = (db, email) => ({
+const environment = (db, email, customerEmailSend) => ({
   DB: db,
   ENVIRONMENT: 'local',
   ADMIN_DEV_TOKEN: 'test-secret',
   ADMIN_DEV_EMAIL: email,
+  ...(customerEmailSend ? { CUSTOMER_EMAIL_SEND: customerEmailSend } : {}),
 });
 
 function context(db, path, options = {}) {
@@ -97,13 +99,14 @@ function context(db, path, options = {}) {
   if (options.body !== undefined) headers.set('content-type', 'application/json');
   if (options.idempotencyKey) headers.set('idempotency-key', options.idempotencyKey);
   return {
-    env: environment(db, options.email || 'manager@example.test'),
+    env: environment(db, options.email || 'manager@example.test', options.customerEmailSend),
     params: options.params || {},
     request: new Request(`http://127.0.0.1:8788${path}`, {
       method: options.method || 'GET',
       headers,
       body: options.body === undefined ? undefined : JSON.stringify(options.body),
     }),
+    waitUntil: options.waitUntil,
   };
 }
 
@@ -128,11 +131,15 @@ test('a partial return is immutable and applied exactly once for an idempotency 
   const db = setup();
   t.after(() => db.close());
   const [itemId] = insertCompletedOrder(db);
+  const delivered = [];
+  const pending = [];
   const request = {
     method: 'POST',
     params: { id: 'order-1' },
     idempotencyKey: 'return-request-0001',
     body: { reason: 'Client return', items: [{ orderItemId: itemId, quantity: 1 }] },
+    customerEmailSend: async (message) => delivered.push(message),
+    waitUntil: (promise) => pending.push(promise),
   };
 
   const first = await returnOrder(context(db, '/api/admin/orders/order-1/returns', request));
@@ -142,6 +149,10 @@ test('a partial return is immutable and applied exactly once for an idempotency 
   assert.equal((await first.json()).created, true);
   assert.equal(second.status, 200);
   assert.equal((await second.json()).created, false);
+  await Promise.all(pending);
+  assert.equal(delivered.length, 1);
+  assert.equal(delivered[0].eventType, 'order_returned');
+  assert.equal(delivered[0].order.return.refundAmount, 100);
   assert.deepEqual(
     { ...db.sqlite.prepare('SELECT sold_quantity, returned_quantity FROM order_items WHERE id = ?').get(itemId) },
     { sold_quantity: 3, returned_quantity: 1 },

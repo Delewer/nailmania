@@ -4,7 +4,7 @@
 
 All reporting endpoints require canonical UTC instants (`YYYY-MM-DDTHH:mm:ss.sssZ`) and use the half-open interval `[from, to)`. Offsets such as `+03:00`, date-only values and reversed bounds are rejected instead of being silently converted.
 
-The operational `orderFlow` uses `orders.created_at` and reports orders received in the selected period, their current status, ordered value, active value and cancelled value. A sale is recognized separately at `orders.completed_at` only while the current status is `completed` or `returned`. Pending, confirmed, processing, ready, shipped and cancelled orders never contribute a sale. A refund is recognized independently at immutable `order_returns.created_at`; therefore a refund made today for an older sale decreases today's revenue.
+The operational `orderFlow` uses `orders.created_at` and reports orders received in the selected period, their current status, ordered value and cancelled value. The seller-facing workflow has four states: new (`pending`), confirmed (internally `completed`), cancelled and return (`returned`). A sale is recognized at `orders.completed_at` only while the current status is `completed` or `returned`. Legacy `confirmed`, `processing`, `ready` and `shipped` rows remain readable during rollout but never contribute a sale until they are safely completed. A refund is recognized independently at immutable `order_returns.created_at`; therefore a refund made today for an older sale decreases today's revenue.
 
 Money remains in whole Moldovan lei, matching the order schema. The dashboard formulas are:
 
@@ -22,7 +22,7 @@ Money remains in whole Moldovan lei, matching the order schema. The dashboard fo
 - `currentInventoryCost = Σ(products.cost_price × inventory.on_hand)`. Units with no current purchase price are reported separately and never treated as zero-cost stock.
 - `inventory.costCoveragePercent` is the share of current on-hand units that have a purchase cost. The UI shows `—` when no on-hand unit has a known cost.
 
-The daily report keeps received orders and ordered value separate from completed sales, refunds and net revenue. A confirmed order therefore appears in the operational columns immediately, but does not inflate revenue before completion.
+The daily report keeps received orders and ordered value separate from confirmed sales, refunds and net revenue. Confirmation and internal completion now happen atomically, so the sale appears at the same instant the seller confirms the order.
 
 Migration `0010_statistics_and_analytics.sql` adds immutable category ID/name and purchase-cost snapshots to `order_items`. Existing lines receive only a best-effort backfill from the catalogue state at migration time. Every new order stores the catalogue values at checkout; later product/category edits cannot change historical report dimensions.
 

@@ -16,11 +16,14 @@
 - `TURNSTILE_SECRET_KEY` — production Turnstile secret; frontend отдельно получает соответствующий `VITE_TURNSTILE_SITE_KEY` во время build.
 - `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` и `TELEGRAM_SECONDARY_CHAT_ID` — параметры Telegram delivery для основного и дополнительного получателя. Для приватности все три следует задавать через Cloudflare Secrets, а не хранить в репозитории. ID получателей должны отличаться.
 - `CUSTOMER_PASSWORD_RESET_URL` — HTTPS URL страницы сброса пароля.
+- `CUSTOMER_EMAIL_REPLY_TO` — необязательный контролируемый адрес для ответов покупателей; не задавать несуществующий mailbox.
 - Один email transport: service binding `CUSTOMER_EMAIL_SERVICE`, HTTPS `CUSTOMER_EMAIL_ENDPOINT` или поддерживаемый runtime sender. Для HTTP provider при необходимости задаётся `CUSTOMER_EMAIL_API_TOKEN` как Secret. Для встроенной интеграции Resend используются endpoint `https://api.resend.com/emails`, подтверждённый sender в `CUSTOMER_EMAIL_FROM` и отдельный `CUSTOMER_EMAIL_API_TOKEN` для preview/production.
 
 Preview получает собственные D1/R2 и тестовые provider credentials. Production secrets не копируются в preview автоматически. Если владелец явно одобрил общий Telegram bot/chats для acceptance, все три значения повторно вводятся как Preview Secrets; каждая первичная, повторная и recovery-отправка при `ENVIRONMENT=preview` начинается с `🧪 ТЕСТОВЫЙ ЗАКАЗ — НЕ ОБРАБАТЫВАТЬ`, чтобы тестовые заказы нельзя было принять за реальные.
 
-Для Resend подтверждается почтовый поддомен `mail.nailmania.md` через выданные провайдером SPF/DKIM DNS records. Sender приложения — `Nail Mania <no-reply@mail.nailmania.md>`. API key создаётся только с правом `Sending access`, ограничивается доменом `mail.nailmania.md` и добавляется как encrypted Secret `CUSTOMER_EMAIL_API_TOKEN`; он не хранится в `wrangler.toml`, Git, логах или D1. Один transport обслуживает password-reset и подтверждения заказов. Preview и production используют разные API keys, чтобы их можно было отзывать независимо.
+Для Resend подтверждается почтовый поддомен `mail.nailmania.md` через выданные провайдером SPF/DKIM DNS records. Sender приложения — `Nail Mania <no-reply@mail.nailmania.md>`. API key создаётся только с правом `Sending access`, ограничивается доменом `mail.nailmania.md` и добавляется как encrypted Secret `CUSTOMER_EMAIL_API_TOKEN`; он не хранится в `wrangler.toml`, Git, логах или D1. Один transport обслуживает password-reset и письма о получении, подтверждении, отмене и возврате заказа. Preview и production используют разные API keys, чтобы их можно было отзывать независимо.
+
+На Resend Free действует общий лимит 3 000 transactional emails в месяц и 100 в день. Обычный заказ с письмом «получен» и последующим «подтверждён/отменён» расходует два письма; безопасный операционный ориентир — не более 40 таких заказов в пиковый день, оставляя запас для возвратов и сбросов пароля. Контролировать дневное и месячное использование следует в dashboard либо отдельным ops-мониторингом `GET /usage` с предупреждениями на 70% и 90%. Этот endpoint требует Full access key: такой ключ нельзя передавать Pages runtime, где остаётся только domain-scoped Sending key. Точное время сброса берётся из `resets_at`, а не зашивается в приложение.
 
 Pages Functions работают с R2 только через `PRODUCT_IMAGES`. S3 management credentials `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ACCOUNT_ID` и `R2_BUCKET` не нужны в Pages runtime и не должны быть доступны приложению; они используются только из отдельного локального maintenance-окружения для guarded R2-утилит. После maintenance удалить их из Pages secrets.
 
@@ -51,7 +54,7 @@ Preview Access настроен на тестовый `*.pages.dev`, поэто�
 
 ## Уведомления и инциденты
 
-- Заказ сначала фиксируется в D1 вместе с резервом. Оба Telegram-уведомления и подтверждение покупателю по email выполняются после commit, поэтому сбой provider не отменяет заказ. Письмо отправляется, если покупатель указал email при оформлении.
+- Заказ сначала фиксируется в D1 вместе с резервом. Оба Telegram-уведомления и письма покупателю по email выполняются после commit, поэтому сбой provider не отменяет заказ. Письма отправляются, если покупатель указал email при оформлении; внутренние комментарии менеджера и причины операций в них не попадают.
 - Для каждого Telegram-получателя ведётся независимая idempotent-попытка: сбой доставки одному человеку не вызывает повторное сообщение другому. Email-подтверждение также не дублируется при повторе заказа с тем же idempotency key.
 - Каждая Telegram/email попытка и её итог записываются append-only в `notification_attempts` и `notification_attempt_statuses`. Записи защищены от `UPDATE`/`DELETE`; scheduled cleanup их не удаляет.
 - Журнал не содержит customer payload, email address, phone, reset token, Telegram token/chat ID или provider response body. В нём остаются технические идентификаторы, безопасный failure code, HTTP status и request ID.

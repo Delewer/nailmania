@@ -5,6 +5,7 @@ import { SqliteD1 } from './helpers/sqlite-d1.mjs';
 import { rateLimitRule } from '../functions/_lib/rate-limit.js';
 import { cleanupCustomerAuthRecords } from '../functions/_lib/customer-maintenance.js';
 import {
+  deliverOrderCustomerNotification,
   deliverOrderConfirmationNotification,
   deliverTelegramNotification,
 } from '../functions/_lib/notifications.js';
@@ -14,7 +15,7 @@ import { onRequestPost as resendTelegram } from '../functions/api/admin/orders/[
 import { onRequestPatch as updateInternalComment } from '../functions/api/admin/orders/[id]/internal-comment.js';
 import { onRequestGet as readiness } from '../functions/api/admin/health/readiness.js';
 
-const schema = [
+const legacyNotificationSchema = [
   '0001_initial.sql',
   '0002_order_transitions.sql',
   '0003_admin_products.sql',
@@ -27,6 +28,11 @@ const schema = [
   '0010_statistics_and_analytics.sql',
   '0011_notifications_and_order_operations.sql',
 ].map((name) => readFileSync(new URL(`../migrations/${name}`, import.meta.url), 'utf8')).join('\n');
+const orderEmailEventsMigration = readFileSync(
+  new URL('../migrations/0023_order_customer_email_events.sql', import.meta.url),
+  'utf8',
+);
+const schema = `${legacyNotificationSchema}\n${orderEmailEventsMigration}`;
 
 function setup() {
   const db = new SqliteD1(schema);
@@ -69,6 +75,52 @@ const telegramOrder = {
   deliveryFee: 0,
   total: 100,
 };
+
+test('order email event migration preserves the immutable notification history', (t) => {
+  const db = new SqliteD1(legacyNotificationSchema);
+  t.after(() => db.close());
+  db.sqlite.exec(`
+    INSERT INTO users (id, email, name, role, status)
+    VALUES ('manager-1', 'manager@example.test', 'Manager', 'manager', 'active');
+    INSERT INTO orders (
+      id, order_no, status, language, customer_name, customer_phone, customer_email,
+      city, address, customer_comment, delivery_method, delivery_label,
+      payment_method, payment_label, items_subtotal, catalog_discount,
+      promo_discount, delivery_fee, total_amount
+    ) VALUES (
+      'order-1', 'NM-MIGRATION-1', 'pending', 'ro', 'Ana', '+37360000000',
+      'ana@example.test', 'Chisinau', 'Strada 1', '', 'pickup', 'Ridicare',
+      'cash', 'Numerar', 100, 0, 0, 0, 100
+    );
+    INSERT INTO notification_attempts (
+      id, channel, event_type, entity_type, entity_id, order_id, request_key,
+      actor_user_id, request_id, created_at
+    ) VALUES (
+      'legacy-attempt', 'email', 'order_created', 'order', 'order-1', 'order-1',
+      'order-created:order-1', NULL, 'legacy-request', '2026-01-01T00:00:00.000Z'
+    );
+    INSERT INTO notification_attempt_statuses (
+      id, attempt_id, phase, status, failure_code, provider_status, created_at
+    ) VALUES (
+      'legacy-outcome', 'legacy-attempt', 'outcome', 'sent', '', 200,
+      '2026-01-01T00:00:01.000Z'
+    );
+  `);
+
+  db.sqlite.exec(orderEmailEventsMigration);
+  assert.equal(db.sqlite.prepare("SELECT event_type FROM notification_attempts WHERE id = 'legacy-attempt'").get().event_type, 'order_created');
+  assert.equal(db.sqlite.prepare("SELECT status FROM notification_attempt_statuses WHERE id = 'legacy-outcome'").get().status, 'sent');
+  db.sqlite.prepare(`
+    INSERT INTO notification_attempts (
+      id, channel, event_type, entity_type, entity_id, order_id, request_key,
+      actor_user_id, request_id
+    ) VALUES (?, 'email', 'order_confirmed', 'order', 'order-1', 'order-1', ?, 'manager-1', '')
+  `).run('confirmed-attempt', 'order-confirmed:token-1');
+  assert.throws(
+    () => db.sqlite.prepare("UPDATE notification_attempts SET request_id = 'changed' WHERE id = 'confirmed-attempt'").run(),
+    /immutable/i,
+  );
+});
 
 async function captureTelegramPayload(environment) {
   let payload = null;
@@ -494,6 +546,39 @@ test('order confirmation delivery is idempotent and persists no customer content
     `).all(),
   });
   assert.doesNotMatch(persisted, /ana@example\.test|Ana Secret|\+37360000000|NM-TEST-1/);
+});
+
+test('order status email events are distinct, idempotent and keep PII out of the journal', async (t) => {
+  const db = setup();
+  t.after(() => db.close());
+  const delivered = [];
+  const order = {
+    ...telegramOrder,
+    lang: 'ru',
+    internalComment: 'private manager note',
+    return: { id: 'return-1', refundAmount: 50, items: [] },
+  };
+
+  for (const eventType of ['order_confirmed', 'order_cancelled', 'order_returned']) {
+    const options = {
+      db,
+      env: { CUSTOMER_EMAIL_SEND: async (message) => delivered.push(message) },
+      order,
+      eventType,
+      requestKey: `${eventType}:business-event-1`,
+      requestId: 'req-order-status-email',
+      actorUserId: 'manager-1',
+    };
+    await deliverOrderCustomerNotification(options);
+    await deliverOrderCustomerNotification(options);
+  }
+
+  assert.deepEqual(delivered.map((message) => message.eventType), [
+    'order_confirmed', 'order_cancelled', 'order_returned',
+  ]);
+  assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM notification_attempts WHERE channel = 'email'").get().count, 3);
+  const persisted = JSON.stringify(db.sqlite.prepare("SELECT * FROM notification_attempts WHERE channel = 'email'").all());
+  assert.doesNotMatch(persisted, /ana@example\.test|Ana Secret|private manager note|\+37360000000/);
 });
 
 test('internal manager comment uses a separate optimistic revision and immutable audit entry', async (t) => {

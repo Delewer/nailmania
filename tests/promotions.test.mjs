@@ -49,6 +49,8 @@ const migrationNames = [
   '0015_cancelled_order_reopening.sql',
   '0017_cart_reservations.sql',
   '0021_order_reservations_without_cart_timer.sql',
+  '0022_simplified_order_workflow.sql',
+  '0023_order_customer_email_events.sql',
 ];
 const schema = migrationNames.map((name) => readFileSync(new URL(`../migrations/${name}`, import.meta.url), 'utf8')).join('\n');
 
@@ -176,6 +178,7 @@ function promoValidationContext(db, body) {
 }
 function adminContext(db, path, {
   method = 'GET', body, params = {}, email = 'admin@example.test',
+  customerEmailSend, waitUntil,
 } = {}) {
   const headers = new Headers({ authorization: 'Bearer promo-admin-token' });
   if (method !== 'GET') headers.set('origin', 'http://127.0.0.1:8788');
@@ -186,6 +189,7 @@ function adminContext(db, path, {
       ENVIRONMENT: 'local',
       ADMIN_DEV_TOKEN: 'promo-admin-token',
       ADMIN_DEV_EMAIL: email,
+      ...(customerEmailSend ? { CUSTOMER_EMAIL_SEND: customerEmailSend } : {}),
     },
     params,
     request: new Request(`http://127.0.0.1:8788${path}`, {
@@ -193,6 +197,7 @@ function adminContext(db, path, {
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
     }),
+    waitUntil,
   };
 }
 
@@ -399,7 +404,7 @@ test('reopening a cancelled order restores its promo redemption and advertised t
     now: '2026-07-17T10:00:00.000Z',
   });
   const cancelled = await getAdminOrder(db, order.id);
-  assert.deepEqual(cancelled.allowedTransitions, ['confirmed']);
+  assert.deepEqual(cancelled.allowedTransitions, ['completed']);
   assert.ok(db.sqlite.prepare('SELECT released_at FROM promo_redemptions WHERE order_id = ?').get(order.id).released_at);
   assert.equal(db.sqlite.prepare('SELECT reserved FROM inventory WHERE product_id = 1').get().reserved, 0);
   assert.throws(
@@ -411,16 +416,21 @@ test('reopening a cancelled order restores its promo redemption and advertised t
 
   const reopened = await transitionOrder(db, {
     orderId: order.id,
-    toStatus: 'confirmed',
+    toStatus: 'completed',
     actorUserId: 'manager-1',
     comment: 'Order restored',
     now: '2026-07-17T11:00:00.000Z',
   });
 
-  assert.equal(reopened.action, 'reserve');
+  assert.equal(reopened.action, 'sale');
   assert.deepEqual(
-    { ...db.sqlite.prepare('SELECT status, confirmed_at, cancelled_at FROM orders WHERE id = ?').get(order.id) },
-    { status: 'confirmed', confirmed_at: '2026-07-17T11:00:00.000Z', cancelled_at: null },
+    { ...db.sqlite.prepare('SELECT status, confirmed_at, completed_at, cancelled_at FROM orders WHERE id = ?').get(order.id) },
+    {
+      status: 'completed',
+      confirmed_at: '2026-07-17T11:00:00.000Z',
+      completed_at: '2026-07-17T11:00:00.000Z',
+      cancelled_at: null,
+    },
   );
   assert.deepEqual(
     { ...db.sqlite.prepare('SELECT released_at, release_reason FROM promo_redemptions WHERE order_id = ?').get(order.id) },
@@ -430,7 +440,10 @@ test('reopening a cancelled order restores its promo redemption and advertised t
     () => db.sqlite.prepare('UPDATE promo_redemptions SET discount_amount = discount_amount + 1 WHERE order_id = ?').run(order.id),
     /promo redemption records are immutable/i,
   );
-  assert.equal(db.sqlite.prepare('SELECT reserved FROM inventory WHERE product_id = 1').get().reserved, 1);
+  assert.deepEqual(
+    { ...db.sqlite.prepare('SELECT on_hand, reserved FROM inventory WHERE product_id = 1').get() },
+    { on_hand: 19, reserved: 0 },
+  );
 });
 
 test('reopening fails atomically when another order consumed the promo total-use slot', async (t) => {
@@ -445,7 +458,7 @@ test('reopening fails atomically when another order consumed the promo total-use
   const reservedBefore = db.sqlite.prepare('SELECT reserved FROM inventory WHERE product_id = 1').get().reserved;
 
   await assert.rejects(
-    transitionOrder(db, { orderId: first.id, toStatus: 'confirmed' }),
+    transitionOrder(db, { orderId: first.id, toStatus: 'completed' }),
     (error) => error.code === 'ORDER_REOPEN_PROMO_CONFLICT' && error.status === 409,
   );
 
@@ -468,7 +481,7 @@ test('reopening fails atomically when the same customer consumed the promo per-u
   const reservedBefore = db.sqlite.prepare('SELECT reserved FROM inventory WHERE product_id = 1').get().reserved;
 
   await assert.rejects(
-    transitionOrder(db, { orderId: first.id, toStatus: 'confirmed' }),
+    transitionOrder(db, { orderId: first.id, toStatus: 'completed' }),
     (error) => error.code === 'ORDER_REOPEN_PROMO_CONFLICT' && error.status === 409,
   );
 
@@ -505,9 +518,7 @@ test('delivery threshold is evaluated before promo and returns reverse the exact
     promoCode: 'RETURN137',
   })));
   const order = (await response.json()).order;
-  for (const status of ['confirmed', 'processing', 'ready', 'completed']) {
-    await transitionOrder(db, { orderId: order.id, toStatus: status, actorUserId: 'admin-1' });
-  }
+  await transitionOrder(db, { orderId: order.id, toStatus: 'completed', actorUserId: 'admin-1' });
   const allocations = db.sqlite.prepare(`
     SELECT id, product_id, quantity, promo_discount_allocation
     FROM order_items WHERE order_id = ? ORDER BY product_id
@@ -580,7 +591,10 @@ test('manager order list, detail and transition responses redact exact promo ide
   const db = setup();
   t.after(() => db.close());
   const promo = insertPromo(db, { code: 'ORDER10' });
-  const orderResponse = await createOrder(orderContext(db, orderBody({ promoCode: promo.code })));
+  const orderResponse = await createOrder(orderContext(db, orderBody({
+    promoCode: promo.code,
+    customer: { name: 'Ana Promo', phone: '+37368000000', email: 'buyer@example.test' },
+  })));
   assert.equal(orderResponse.status, 201);
   const order = (await orderResponse.json()).order;
   const manager = { email: 'manager@example.test' };
@@ -592,8 +606,14 @@ test('manager order list, detail and transition responses redact exact promo ide
 
   const listResponse = await listAdminOrders(adminContext(db, '/api/admin/orders?limit=30', manager));
   assert.equal(listResponse.status, 200);
-  const listItem = (await listResponse.json()).items.find((item) => item.id === order.id);
+  const listPayload = await listResponse.json();
+  const listItem = listPayload.items.find((item) => item.id === order.id);
   assertManagerOrder(listItem);
+  assert.deepEqual(listPayload.latestPending, {
+    id: order.id,
+    no: order.no,
+    createdAt: listItem.createdAt,
+  });
 
   const detailResponse = await getAdminOrderEndpoint(adminContext(db, `/api/admin/orders/${order.id}`, {
     ...manager,
@@ -602,14 +622,62 @@ test('manager order list, detail and transition responses redact exact promo ide
   assert.equal(detailResponse.status, 200);
   assertManagerOrder((await detailResponse.json()).order);
 
+  const delivered = [];
+  const pendingNotifications = [];
   const transitionResponse = await updateAdminOrderEndpoint(adminContext(db, `/api/admin/orders/${order.id}`, {
     ...manager,
     method: 'PATCH',
     params: { id: order.id },
+    // A tab opened before the workflow rollout still posts `confirmed`.
     body: { status: 'confirmed', comment: 'Confirmed by seller' },
+    customerEmailSend: async (message) => delivered.push(message),
+    waitUntil: (promise) => pendingNotifications.push(promise),
   }));
   assert.equal(transitionResponse.status, 200);
-  assertManagerOrder((await transitionResponse.json()).order);
+  const transitionedOrder = (await transitionResponse.json()).order;
+  assertManagerOrder(transitionedOrder);
+  assert.equal(transitionedOrder.status, 'completed');
+  await Promise.all(pendingNotifications);
+  assert.equal(delivered.length, 1);
+  assert.equal(delivered[0].eventType, 'order_confirmed');
+  const repeatTransition = await updateAdminOrderEndpoint(adminContext(db, `/api/admin/orders/${order.id}`, {
+    ...manager,
+    method: 'PATCH',
+    params: { id: order.id },
+    body: { status: 'completed' },
+    customerEmailSend: async (message) => delivered.push(message),
+    waitUntil: (promise) => pendingNotifications.push(promise),
+  }));
+  assert.equal(repeatTransition.status, 200);
+  assert.equal((await repeatTransition.json()).transition.changed, false);
+  assert.equal(delivered.length, 1);
+
+  const confirmedListResponse = await listAdminOrders(adminContext(
+    db,
+    '/api/admin/orders?status=completed&limit=30',
+    manager,
+  ));
+  assert.equal(confirmedListResponse.status, 200);
+  const confirmedList = await confirmedListResponse.json();
+  assert.deepEqual(Object.keys(confirmedList.counts), ['pending', 'completed', 'cancelled', 'returned']);
+  assert.equal(confirmedList.counts.completed, 1);
+  assert.equal(confirmedList.latestPending, null);
+  assert.deepEqual(confirmedList.items.map((item) => item.id), [order.id]);
+
+  const legacyFilterResponse = await listAdminOrders(adminContext(
+    db,
+    '/api/admin/orders?status=confirmed',
+    manager,
+  ));
+  assert.equal(legacyFilterResponse.status, 200);
+  assert.deepEqual((await legacyFilterResponse.json()).items.map((item) => item.id), [order.id]);
+  const invalidFilterResponse = await listAdminOrders(adminContext(
+    db,
+    '/api/admin/orders?status=unknown',
+    manager,
+  ));
+  assert.equal(invalidFilterResponse.status, 400);
+  assert.equal((await invalidFilterResponse.json()).error.code, 'INVALID_STATUS');
 
   const adminDetailResponse = await getAdminOrderEndpoint(adminContext(db, `/api/admin/orders/${order.id}`, {
     params: { id: order.id },

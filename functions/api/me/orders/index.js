@@ -2,7 +2,10 @@ import { CustomerAuthError, resolveCustomer } from '../../../_lib/customer-auth.
 import { customerOrderSummary } from '../../../_lib/customer-account.js';
 import { customerApiError } from '../../../_lib/customer-http.js';
 import { json } from '../../../_lib/http.js';
-import { ORDER_TRANSITIONS } from '../../../_lib/order-lifecycle.js';
+import {
+  normalizePublicOrderStatus,
+  ORDER_STATUSES,
+} from '../../../_lib/order-lifecycle.js';
 
 export async function onRequestGet(context) {
   try {
@@ -10,12 +13,17 @@ export async function onRequestGet(context) {
     const url = new URL(context.request.url);
     const limit = Math.min(100, Math.max(1, Number.parseInt(url.searchParams.get('limit') || '30', 10) || 30));
     const offset = Math.max(0, Number.parseInt(url.searchParams.get('offset') || '0', 10) || 0);
-    const status = String(url.searchParams.get('status') || '').trim();
-    if (status && !Object.hasOwn(ORDER_TRANSITIONS, status)) {
+    const requestedStatus = String(url.searchParams.get('status') || '').trim();
+    const status = normalizePublicOrderStatus(requestedStatus);
+    if (status && !ORDER_STATUSES.includes(status)) {
       throw new CustomerAuthError('INVALID_ORDER_STATUS', 'Unknown order status');
     }
-    const statusClause = status ? 'AND o.status = ?' : '';
-    const bindings = status ? [auth.user.id, status] : [auth.user.id];
+    const statusClause = status === 'completed'
+      ? "AND o.status IN ('completed', 'confirmed', 'processing', 'ready', 'shipped')"
+      : status ? 'AND o.status = ?' : '';
+    const bindings = status && status !== 'completed'
+      ? [auth.user.id, status]
+      : [auth.user.id];
     const [ordersResult, countRow] = await Promise.all([
       auth.db.prepare(`
         SELECT o.*,

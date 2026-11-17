@@ -7,9 +7,13 @@ import { AdminApiError, adminRequest } from '../admin-api.js';
 
 const PAGE_SIZE = 50;
 const ORDER_STATUS = {
-  pending: 'Nouă', confirmed: 'Confirmată', processing: 'În lucru', ready: 'Pregătită',
-  shipped: 'Expediată', completed: 'Finalizată', cancelled: 'Anulată', returned: 'Returnată',
+  pending: 'Nouă', completed: 'Confirmată', cancelled: 'Anulată', returned: 'Retur',
 };
+const orderStatusLabel = (status) => (
+  ['confirmed', 'processing', 'ready', 'shipped'].includes(status)
+    ? ORDER_STATUS.completed
+    : ORDER_STATUS[status] || status
+);
 const dateTime = (value) => value
   ? new Intl.DateTimeFormat('ro-MD', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
   : '—';
@@ -85,7 +89,7 @@ export default function AdminReservations({ onUnauthorized }) {
                 <td><strong>{item.quantity}</strong></td>
                 <td><b>Disponibil {item.inventory.available}</b><span>Fizic {item.inventory.onHand} · rezervat {item.inventory.reserved}</span></td>
                 <td>{item.order
-                  ? <Link className="adm-order-link" to={`/admin/orders?open=${encodeURIComponent(item.order.id)}`}><b>{item.order.no}</b><span>{ORDER_STATUS[item.order.status] || item.order.status} · {item.order.customerName}</span></Link>
+                  ? <Link className="adm-order-link" to={`/admin/orders?open=${encodeURIComponent(item.order.id)}`}><b>{item.order.no}</b><span>{orderStatusLabel(item.order.status)} · {item.order.customerName}</span></Link>
                   : null}</td>
                 <td>{dateTime(item.order?.updatedAt || item.order?.createdAt || item.updatedAt)}</td>
               </tr>

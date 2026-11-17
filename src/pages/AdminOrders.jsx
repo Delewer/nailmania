@@ -25,6 +25,8 @@ import {
   Store,
   TicketPercent,
   UserRound,
+  Volume2,
+  VolumeX,
   X,
 } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
@@ -34,6 +36,13 @@ import {
   clearAdminDevToken,
   saveAdminDevToken,
 } from '../admin-api.js';
+import {
+  initialPendingOrderSnapshot,
+  nextPendingOrderSnapshot,
+  playOrderChime,
+  unlockOrderAudio,
+} from '../admin-order-alerts.js';
+import { readStoredValue, writeStoredValue } from '../storage.js';
 import AdminProducts from './AdminProducts.jsx';
 import AdminCategories from './AdminCategories.jsx';
 import AdminInventoryJournal from './AdminInventoryJournal.jsx';
@@ -46,16 +55,21 @@ import { handleTabListKeyDown, useDialogFocus } from '../dialog-a11y.js';
 import '../admin.css';
 
 const PAGE_SIZE = 30;
+const ORDER_REFRESH_INTERVAL_MS = 5_000;
+const ORDER_SOUND_KEY = 'nm_admin_order_sound';
 const ORDER_TABS = ['details', 'history', 'stock', 'returns', 'notifications'];
 const STATUS = {
   pending: { label: 'Nouă', tone: 'rose' },
-  confirmed: { label: 'Confirmată', tone: 'blue' },
-  processing: { label: 'În lucru', tone: 'violet' },
-  ready: { label: 'Pregătită', tone: 'amber' },
-  shipped: { label: 'Expediată', tone: 'cyan' },
-  completed: { label: 'Finalizată', tone: 'green' },
+  completed: { label: 'Confirmată', tone: 'green' },
   cancelled: { label: 'Anulată', tone: 'gray' },
-  returned: { label: 'Returnată', tone: 'red' },
+  returned: { label: 'Retur', tone: 'red' },
+};
+const LEGACY_CONFIRMED_STATUSES = new Set(['confirmed', 'processing', 'ready', 'shipped']);
+const EMAIL_EVENT_LABELS = {
+  order_created: 'Comandă primită',
+  order_confirmed: 'Comandă confirmată',
+  order_cancelled: 'Comandă anulată',
+  order_returned: 'Retur înregistrat',
 };
 const MOVEMENT = {
   reservation: 'Rezervare',
@@ -72,7 +86,11 @@ const money = (value) => `${new Intl.NumberFormat('ro-MD').format(Number(value |
 const dateTime = (value) => value
   ? new Intl.DateTimeFormat('ro-MD', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
   : '—';
-const statusMeta = (status) => STATUS[status] || { label: status, tone: 'gray' };
+const statusMeta = (status) => (
+  LEGACY_CONFIRMED_STATUSES.has(status)
+    ? STATUS.completed
+    : STATUS[status] || { label: status, tone: 'gray' }
+);
 
 function StatusBadge({ status }) {
   const meta = statusMeta(status);
@@ -505,7 +523,7 @@ function OrderDrawer({
                     {[...emailNotifications].reverse().map((entry) => (
                       <article key={entry.id}>
                         <header>
-                          <b>Confirmare comandă</b>
+                          <b>{EMAIL_EVENT_LABELS[entry.eventType] || 'Notificare comandă'}</b>
                           <strong className={`adm-notification-${entry.status}`}>
                             {entry.status === 'sent' ? 'Trimis' : entry.status === 'failed' ? 'Eroare' : 'În așteptare'}
                           </strong>
@@ -552,13 +570,22 @@ export default function AdminOrders() {
   const [detail, setDetail] = React.useState(null);
   const [detailLoading, setDetailLoading] = React.useState(false);
   const [detailError, setDetailError] = React.useState('');
+  const [rowAction, setRowAction] = React.useState('');
+  const [soundEnabled, setSoundEnabled] = React.useState(() => readStoredValue(ORDER_SOUND_KEY, '1') !== '0');
+  const orderRequestSequence = React.useRef(0);
+  const blockingOrderRequest = React.useRef(0);
+  const pendingOrderSnapshot = React.useRef(initialPendingOrderSnapshot);
+  const orderAudioContext = React.useRef(null);
 
   React.useEffect(() => {
     const title = productsMode ? 'Produse' : categoriesMode ? 'Categorii' : reservationsMode ? 'Rezervări' : discountsMode ? 'Reduceri' : inventoryMode ? 'Jurnal de stoc' : promosMode ? 'Coduri promo' : statisticsMode ? 'Statistică' : auditMode ? 'Audit' : 'Comenzi';
-    document.title = `${title} · Nail Mania Admin`;
+    const pendingPrefix = ordersMode && Number(counts.pending || 0) > 0 ? `(${counts.pending}) ` : '';
+    document.title = `${pendingPrefix}${title} · Nail Mania Admin`;
+  }, [auditMode, categoriesMode, counts.pending, discountsMode, inventoryMode, ordersMode, productsMode, promosMode, reservationsMode, statisticsMode]);
+  React.useEffect(() => {
     document.body.classList.add('adm-body-active');
     return () => document.body.classList.remove('adm-body-active');
-  }, [auditMode, categoriesMode, discountsMode, inventoryMode, productsMode, promosMode, reservationsMode, statisticsMode]);
+  }, []);
 
   const checkSession = React.useCallback(async () => {
     try {
@@ -578,26 +605,85 @@ export default function AdminOrders() {
     return () => clearTimeout(timer);
   }, [search]);
 
-  const loadOrders = React.useCallback(async (nextOffset = pagination.offset) => {
+  const loadOrders = React.useCallback(async (nextOffset = pagination.offset, { silent = false } = {}) => {
     if (!session) return;
-    setLoading(true);
-    setListError('');
+    const requestId = orderRequestSequence.current + 1;
+    orderRequestSequence.current = requestId;
+    if (!silent) {
+      blockingOrderRequest.current = requestId;
+      setLoading(true);
+      setListError('');
+    }
     try {
       const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(nextOffset) });
       if (status) params.set('status', status);
       if (query) params.set('q', query);
       const payload = await adminRequest(`/api/admin/orders?${params}`);
+      if (requestId !== orderRequestSequence.current) return;
+      const pendingUpdate = nextPendingOrderSnapshot(pendingOrderSnapshot.current, payload);
+      pendingOrderSnapshot.current = pendingUpdate.snapshot;
+      if (pendingUpdate.shouldNotify && soundEnabled) void playOrderChime(orderAudioContext);
       setOrders(payload.items);
       setCounts(payload.counts);
       setPagination(payload.pagination);
+      setListError('');
     } catch (error) {
+      if (requestId !== orderRequestSequence.current) return;
       setListError(error.message);
       if (error instanceof AdminApiError && [401, 403].includes(error.status)) setSession(null);
     } finally {
-      setLoading(false);
+      if (!silent && blockingOrderRequest.current === requestId) {
+        blockingOrderRequest.current = 0;
+        setLoading(false);
+      }
     }
-  }, [pagination.offset, query, session, status]);
+  }, [pagination.offset, query, session, soundEnabled, status]);
   React.useEffect(() => { if (session && ordersMode) loadOrders(0); }, [session, status, query, ordersMode]); // eslint-disable-line react-hooks/exhaustive-deps
+  React.useEffect(() => {
+    if (session) return;
+    orderRequestSequence.current += 1;
+    pendingOrderSnapshot.current = initialPendingOrderSnapshot;
+  }, [session]);
+  React.useEffect(() => {
+    if (!session || !ordersMode) return undefined;
+    const refreshVisibleOrders = () => {
+      if (document.visibilityState === 'visible' && !loading) {
+        void loadOrders(pagination.offset, { silent: true });
+      }
+    };
+    const timer = window.setInterval(refreshVisibleOrders, ORDER_REFRESH_INTERVAL_MS);
+    document.addEventListener('visibilitychange', refreshVisibleOrders);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', refreshVisibleOrders);
+    };
+  }, [loadOrders, loading, ordersMode, pagination.offset, session]);
+  React.useEffect(() => {
+    if (!session || !soundEnabled) return undefined;
+    const unlock = () => {
+      void unlockOrderAudio(orderAudioContext);
+      document.removeEventListener('pointerdown', unlock);
+      document.removeEventListener('keydown', unlock);
+    };
+    document.addEventListener('pointerdown', unlock);
+    document.addEventListener('keydown', unlock);
+    return () => {
+      document.removeEventListener('pointerdown', unlock);
+      document.removeEventListener('keydown', unlock);
+    };
+  }, [session, soundEnabled]);
+  React.useEffect(() => () => {
+    const context = orderAudioContext.current;
+    orderAudioContext.current = null;
+    if (context && context.state !== 'closed') {
+      try {
+        const closing = context.close();
+        if (closing?.catch) closing.catch(() => {});
+      } catch {
+        // Audio cleanup is best-effort only.
+      }
+    }
+  }, []);
 
   const openOrder = React.useCallback(async (id) => {
     setSelectedId(id);
@@ -626,6 +712,32 @@ export default function AdminOrders() {
     setDetail(payload.order);
     await loadOrders(pagination.offset);
   }, [loadOrders, pagination.offset]);
+  const quickTransition = React.useCallback(async (event, order, nextStatus) => {
+    event.stopPropagation();
+    if (rowAction) return;
+    if (nextStatus === 'cancelled' && !window.confirm(`Anulezi comanda ${order.no}?`)) return;
+
+    const actionKey = `${order.id}:${nextStatus}`;
+    setRowAction(actionKey);
+    setListError('');
+    try {
+      const payload = await adminRequest(`/api/admin/orders/${encodeURIComponent(order.id)}`, {
+        method: 'PATCH',
+        body: { status: nextStatus },
+      });
+      if (selectedId === order.id) setDetail(payload.order);
+      const leavesCurrentFilter = Boolean(status && status !== nextStatus);
+      const nextOffset = leavesCurrentFilter && orders.length === 1
+        ? Math.max(0, pagination.offset - PAGE_SIZE)
+        : pagination.offset;
+      await loadOrders(nextOffset, { silent: true });
+    } catch (error) {
+      setListError(error.message);
+      if (error instanceof AdminApiError && [401, 403].includes(error.status)) setSession(null);
+    } finally {
+      setRowAction('');
+    }
+  }, [loadOrders, orders.length, pagination.offset, rowAction, selectedId, status]);
   const createReturn = React.useCallback(async (id, body, requestKey) => {
     const payload = await adminRequest(`/api/admin/orders/${encodeURIComponent(id)}/returns`, {
       method: 'POST',
@@ -658,6 +770,14 @@ export default function AdminOrders() {
     setAuthChecked(true);
   };
   const invalidateSession = React.useCallback(() => setSession(null), []);
+  const toggleOrderSound = React.useCallback(() => {
+    setSoundEnabled((current) => {
+      const next = !current;
+      writeStoredValue(ORDER_SOUND_KEY, next ? '1' : '0');
+      if (next) void playOrderChime(orderAudioContext);
+      return next;
+    });
+  }, []);
 
   if (!authChecked) return <div className="adm-boot" role="status" aria-label="Se verifică accesul"><LoaderCircle className="adm-spin" size={26}/></div>;
   if (!session) return <AdminLogin initialError={authError} onAuthenticated={(payload) => { setSession(payload); setAuthError(''); }}/>;
@@ -702,7 +822,19 @@ export default function AdminOrders() {
           <>
             <header className="adm-topbar">
               <div><span>Vânzări</span><h1>Comenzi</h1></div>
-              <button className="adm-icon-btn" type="button" onClick={() => loadOrders(pagination.offset)} title="Actualizează"><RefreshCw className={loading ? 'adm-spin' : ''} size={19}/></button>
+              <div className="adm-topbar-actions">
+                <button
+                  className={`adm-icon-btn${soundEnabled ? ' active' : ''}`}
+                  type="button"
+                  aria-label={soundEnabled ? 'Oprește sunetul comenzilor noi' : 'Pornește sunetul comenzilor noi'}
+                  aria-pressed={soundEnabled}
+                  onClick={toggleOrderSound}
+                  title={soundEnabled ? 'Sunet comenzi noi: pornit' : 'Sunet comenzi noi: oprit'}
+                >
+                  {soundEnabled ? <Volume2 size={19}/> : <VolumeX size={19}/>}
+                </button>
+                <button className="adm-icon-btn" type="button" onClick={() => loadOrders(pagination.offset)} title="Actualizează"><RefreshCw className={loading ? 'adm-spin' : ''} size={19}/></button>
+              </div>
             </header>
 
             <section className="adm-summary adm-order-summary" aria-label="Sumar comenzi">
@@ -726,8 +858,8 @@ export default function AdminOrders() {
               {listError && <div className="adm-list-message adm-error" role="alert"><AlertTriangle size={18}/>{listError}</div>}
               {!listError && !loading && orders.length === 0 && <div className="adm-list-message"><ShoppingBag size={24}/>Nu sunt comenzi</div>}
               <div className="adm-table-wrap">
-                <table className="adm-table">
-                  <thead><tr><th>Comandă</th><th>Client</th><th>Produse</th><th>Livrare</th><th>Total</th><th>Statut</th><th aria-label="Acțiune"/></tr></thead>
+                <table className="adm-table adm-orders-table">
+                  <thead><tr><th>Comandă</th><th>Client</th><th>Produse</th><th>Livrare</th><th>Total</th><th>Statut</th><th>Acțiuni</th></tr></thead>
                   <tbody>
                     {orders.map((order) => (
                       <tr key={order.id} onClick={() => openOrder(order.id)}>
@@ -737,7 +869,35 @@ export default function AdminOrders() {
                         <td>{order.deliveryLabel}</td>
                         <td><strong>{money(order.total)}</strong></td>
                         <td><StatusBadge status={order.status}/></td>
-                        <td><button className="adm-row-open" type="button" title="Deschide" onClick={(event) => { event.stopPropagation(); openOrder(order.id); }}><ChevronRight size={18}/></button></td>
+                        <td className="adm-row-actions-cell">
+                          <div className="adm-row-actions">
+                            {order.status === 'pending' && (
+                              <>
+                                <button
+                                  className="adm-order-quick adm-order-confirm"
+                                  type="button"
+                                  aria-label={`Confirmă comanda ${order.no}`}
+                                  disabled={Boolean(rowAction)}
+                                  onClick={(event) => quickTransition(event, order, 'completed')}
+                                >
+                                  {rowAction === `${order.id}:completed` ? <LoaderCircle className="adm-spin" size={14}/> : <CheckCircle2 size={14}/>}
+                                  Confirmă
+                                </button>
+                                <button
+                                  className="adm-order-quick adm-order-cancel"
+                                  type="button"
+                                  aria-label={`Anulează comanda ${order.no}`}
+                                  disabled={Boolean(rowAction)}
+                                  onClick={(event) => quickTransition(event, order, 'cancelled')}
+                                >
+                                  {rowAction === `${order.id}:cancelled` ? <LoaderCircle className="adm-spin" size={14}/> : <X size={14}/>}
+                                  Anulează
+                                </button>
+                              </>
+                            )}
+                            <button className="adm-row-open" type="button" title="Deschide" aria-label={`Deschide comanda ${order.no}`} onClick={(event) => { event.stopPropagation(); openOrder(order.id); }}><ChevronRight size={18}/></button>
+                          </div>
+                        </td>
                       </tr>
                     ))}
                   </tbody>

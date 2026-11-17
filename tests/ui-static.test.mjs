@@ -17,7 +17,7 @@ test('storefront RO and RU dictionaries have identical UI coverage', () => {
   const ro = [...Object.keys(context.I18N.ro)].sort();
   const ru = [...Object.keys(context.I18N.ru)].sort();
   assert.deepEqual(ro, ru);
-  for (const key of ['close', 'removeItem', 'increaseQty', 'decreaseQty', 'orderQuoteChanged', 'orderAttemptConflict', 'newOrderAttempt']) {
+  for (const key of ['close', 'removeItem', 'increaseQty', 'decreaseQty', 'orderQuoteChanged', 'orderAttemptConflict', 'newOrderAttempt', 'savedAddressLabel', 'manualAddressOption', 'viewOrder']) {
     assert.ok(context.I18N.ro[key], `missing RO ${key}`);
     assert.ok(context.I18N.ru[key], `missing RU ${key}`);
   }
@@ -40,6 +40,9 @@ test('checkout keeps authoritative quote UX and exposes native accessible contro
   assert.match(checkout, /pattern="\[1-9\]\[0-9\]\{7\}"/);
   assert.match(checkout, /IDEMPOTENCY_KEY_REUSED/);
   assert.match(checkout, /window\.confirm\(t\("newOrderAttemptConfirm"\)\)/);
+  assert.match(checkout, /id="checkout-saved-address"/);
+  assert.match(checkout, /setSelectedAddressId\(MANUAL_ADDRESS_VALUE\)/);
+  assert.match(checkout, /to=\{`\/account\/orders\/\$\{encodeURIComponent\(done\.id\)\}`\}/);
   assert.doesNotMatch(checkout, /href="#"/);
   assert.doesNotMatch(checkout, /agreeLink|co-agree-term/);
 });
@@ -168,6 +171,33 @@ test('admin mobile navigation and editors retain accessible names and focus hand
   assert.doesNotMatch(reservations, /timeLeft|Rezervat până la|adm-reservation-countdown/);
   assert.match(audit, /aria-label="Caută în jurnalul de audit"/);
   assert.match(promos, /adm-summary-metric/);
+});
+
+test('order interfaces expose only the simplified four-state workflow', () => {
+  const adminOrders = source('src/pages/AdminOrders.jsx');
+  const accountPage = source('src/pages/AccountPage.jsx');
+  const accountCopy = source('src/account-copy.js');
+  const statusBlock = adminOrders.slice(
+    adminOrders.indexOf('const STATUS = {'),
+    adminOrders.indexOf('const LEGACY_CONFIRMED_STATUSES'),
+  );
+
+  for (const status of ['pending', 'completed', 'cancelled', 'returned']) {
+    assert.match(statusBlock, new RegExp(`\\b${status}:`));
+  }
+  assert.doesNotMatch(statusBlock, /\b(?:confirmed|processing|ready|shipped):/);
+  assert.match(statusBlock, /completed: \{ label: 'Confirmată'/);
+  assert.match(statusBlock, /returned: \{ label: 'Retur'/);
+  assert.match(accountPage, /const ORDER_STATUSES = \["pending", "completed", "cancelled", "returned"\]/);
+  assert.match(accountCopy, /status_completed: "Подтверждён"/);
+  assert.match(accountCopy, /status_returned: "Возврат"/);
+  assert.match(adminOrders, /const ORDER_REFRESH_INTERVAL_MS = 5_000/);
+  assert.match(adminOrders, /document\.visibilityState === 'visible'/);
+  assert.match(adminOrders, /nextPendingOrderSnapshot\(pendingOrderSnapshot\.current, payload\)/);
+  assert.match(adminOrders, /aria-pressed=\{soundEnabled\}/);
+  assert.match(adminOrders, /quickTransition\(event, order, 'completed'\)/);
+  assert.match(adminOrders, /quickTransition\(event, order, 'cancelled'\)/);
+  assert.match(adminOrders, /window\.confirm\(`/);
 });
 
 test('checkout and admin include narrow-screen layouts without hiding named navigation', () => {

@@ -2,6 +2,7 @@ import { requireAdmin, requireSameOrigin } from '../../../../_lib/admin-auth.js'
 import { adminOrderForRole, getAdminOrder } from '../../../../_lib/admin-orders.js';
 import { apiError, handleApiError, json } from '../../../../_lib/http.js';
 import { createOrderReturn, OrderReturnError } from '../../../../_lib/order-returns.js';
+import { queueOrderCustomerNotification } from '../../../../_lib/order-customer-notifications.js';
 
 const orderId = (params) => decodeURIComponent(String(params.id || '')).trim().slice(0, 120);
 
@@ -23,6 +24,17 @@ export async function onRequestPost(context) {
       items: body?.items,
     });
     const order = await getAdminOrder(db, id);
+    if (result.created) {
+      await queueOrderCustomerNotification(context, {
+        db,
+        orderId: id,
+        orderNo: order?.no,
+        eventType: 'order_returned',
+        requestKey: `order_returned:${result.return.id}`,
+        returnId: result.return.id,
+        actorUserId: user.id,
+      });
+    }
     return json(
       {
         ok: true,

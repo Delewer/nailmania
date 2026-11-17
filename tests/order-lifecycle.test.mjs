@@ -3,8 +3,9 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { SqliteD1 } from './helpers/sqlite-d1.mjs';
 import {
-  completeAgedConfirmedOrders,
+  completeLegacyOpenOrders,
   OrderLifecycleError,
+  ORDER_STATUSES,
   transitionOrder,
   transitionPlan,
 } from '../functions/_lib/order-lifecycle.js';
@@ -19,6 +20,7 @@ const schema = [
   readFileSync(new URL('../migrations/0015_cancelled_order_reopening.sql', import.meta.url), 'utf8'),
   readFileSync(new URL('../migrations/0017_cart_reservations.sql', import.meta.url), 'utf8'),
   readFileSync(new URL('../migrations/0021_order_reservations_without_cart_timer.sql', import.meta.url), 'utf8'),
+  readFileSync(new URL('../migrations/0022_simplified_order_workflow.sql', import.meta.url), 'utf8'),
 ].join('\n');
 
 function setup() {
@@ -86,12 +88,15 @@ function insertReservedOrder(db, options = {}) {
 }
 
 test('maps allowed status transitions to inventory actions', () => {
-  assert.deepEqual(transitionPlan('pending', 'confirmed'), { action: 'none', idempotent: false });
-  assert.deepEqual(transitionPlan('cancelled', 'confirmed'), { action: 'reserve', idempotent: false });
-  assert.deepEqual(transitionPlan('ready', 'completed'), { action: 'sale', idempotent: false });
+  assert.deepEqual(ORDER_STATUSES, ['pending', 'completed', 'cancelled', 'returned']);
+  assert.deepEqual(transitionPlan('pending', 'completed'), { action: 'sale', idempotent: false });
+  assert.deepEqual(transitionPlan('cancelled', 'completed'), { action: 'sale', idempotent: false });
+  for (const status of ['confirmed', 'processing', 'ready', 'shipped']) {
+    assert.deepEqual(transitionPlan(status, 'completed'), { action: 'sale', idempotent: false });
+  }
   assert.deepEqual(transitionPlan('completed', 'returned'), { action: 'return', idempotent: false });
   assert.throws(
-    () => transitionPlan('pending', 'completed'),
+    () => transitionPlan('pending', 'confirmed'),
     (error) => error instanceof OrderLifecycleError && error.code === 'INVALID_STATUS_TRANSITION',
   );
 });
@@ -134,74 +139,90 @@ test('cancellation releases a reservation exactly once', async (t) => {
   );
 });
 
-test('a cancelled order reopens as confirmed and repeated cycles preserve exact stock journals', async (t) => {
+test('a cancelled order can be confirmed as a completed sale without reserving stock again', async (t) => {
   const db = setup();
   t.after(() => db.close());
   const order = insertReservedOrder(db);
 
-  const firstCancellation = await transitionOrder(db, {
+  const cancellation = await transitionOrder(db, {
     orderId: order.id,
     toStatus: 'cancelled',
-    comment: 'Cancelled once',
+    comment: 'Cancelled by customer',
     now: '2026-07-16T10:00:00.000Z',
   });
-  const firstReopen = await transitionOrder(db, {
+  const reopened = await transitionOrder(db, {
     orderId: order.id,
-    toStatus: 'confirmed',
-    comment: 'Reopened once',
+    toStatus: 'completed',
+    comment: 'Confirmed after cancellation',
     now: '2026-07-16T11:00:00.000Z',
   });
-  const secondCancellation = await transitionOrder(db, {
-    orderId: order.id,
-    toStatus: 'cancelled',
-    comment: 'Cancelled twice',
-    now: '2026-07-16T12:00:00.000Z',
-  });
-  const secondReopen = await transitionOrder(db, {
-    orderId: order.id,
-    toStatus: 'confirmed',
-    comment: 'Reopened twice',
-    now: '2026-07-16T13:00:00.000Z',
-  });
 
-  assert.equal(firstReopen.action, 'reserve');
-  assert.equal(secondReopen.action, 'reserve');
+  assert.equal(reopened.action, 'sale');
   assert.deepEqual(
     { ...db.sqlite.prepare(`
-      SELECT status, reservation_expires_at, confirmed_at, cancelled_at
+      SELECT status, reservation_expires_at, confirmed_at, completed_at, cancelled_at
       FROM orders WHERE id = ?
     `).get(order.id) },
     {
-      status: 'confirmed',
+      status: 'completed',
       reservation_expires_at: null,
-      confirmed_at: '2026-07-16T13:00:00.000Z',
+      confirmed_at: '2026-07-16T11:00:00.000Z',
+      completed_at: '2026-07-16T11:00:00.000Z',
       cancelled_at: null,
     },
   );
   assert.deepEqual(
     { ...db.sqlite.prepare('SELECT on_hand, reserved FROM inventory WHERE product_id = ?').get(order.productId) },
-    { on_hand: 5, reserved: 2 },
+    { on_hand: 3, reserved: 0 },
   );
   assert.deepEqual(
     db.sqlite.prepare(`
-      SELECT id, movement_type, delta_reserved
+      SELECT id, movement_type, delta_on_hand, delta_reserved
       FROM inventory_movements
-      WHERE order_id = ? AND movement_type IN ('reservation', 'reservation_release')
+      WHERE order_id = ?
       ORDER BY id
     `).all(order.id).map((row) => ({ ...row })),
     [
-      { id: `release:${firstCancellation.transitionToken}:${order.productId}`, movement_type: 'reservation_release', delta_reserved: -2 },
-      { id: `release:${secondCancellation.transitionToken}:${order.productId}`, movement_type: 'reservation_release', delta_reserved: -2 },
-      { id: `reserve:${firstReopen.transitionToken}:${order.productId}`, movement_type: 'reservation', delta_reserved: 2 },
-      { id: `reserve:${order.id}:${order.productId}`, movement_type: 'reservation', delta_reserved: 2 },
-      { id: `reserve:${secondReopen.transitionToken}:${order.productId}`, movement_type: 'reservation', delta_reserved: 2 },
+      { id: `release:${cancellation.transitionToken}:${order.productId}`, movement_type: 'reservation_release', delta_on_hand: 0, delta_reserved: -2 },
+      { id: `reserve:${order.id}:${order.productId}`, movement_type: 'reservation', delta_on_hand: 0, delta_reserved: 2 },
+      { id: `sale:${reopened.transitionToken}:${order.productId}`, movement_type: 'sale', delta_on_hand: -2, delta_reserved: 0 },
     ].sort((left, right) => left.id.localeCompare(right.id)),
   );
-  assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS count FROM order_status_history WHERE order_id = ?').get(order.id).count, 4);
-  assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS count FROM admin_audit_log WHERE entity_id = ?').get(order.id).count, 4);
+  assert.equal(db.sqlite.prepare('SELECT sold_quantity FROM order_items WHERE order_id = ?').get(order.id).sold_quantity, 2);
+  assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS count FROM order_status_history WHERE order_id = ?').get(order.id).count, 2);
+  assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS count FROM admin_audit_log WHERE entity_id = ?').get(order.id).count, 2);
   assert.equal(
     db.sqlite.prepare('SELECT admin_revision FROM inventory WHERE product_id = ?').get(order.productId).admin_revision,
-    `order:${secondReopen.transitionToken}:reserve`,
+    `order:${reopened.transitionToken}:sale`,
+  );
+});
+
+test('reconfirming a cancelled legacy order records the latest confirmation time', async (t) => {
+  const db = setup();
+  t.after(() => db.close());
+  const order = insertReservedOrder(db, { status: 'confirmed' });
+  db.sqlite.prepare('UPDATE orders SET confirmed_at = ? WHERE id = ?').run(
+    '2026-07-15T09:00:00.000Z',
+    order.id,
+  );
+
+  await transitionOrder(db, {
+    orderId: order.id,
+    toStatus: 'cancelled',
+    now: '2026-07-16T10:00:00.000Z',
+  });
+  await transitionOrder(db, {
+    orderId: order.id,
+    toStatus: 'completed',
+    now: '2026-07-16T11:00:00.000Z',
+  });
+
+  assert.deepEqual(
+    { ...db.sqlite.prepare('SELECT confirmed_at, completed_at FROM orders WHERE id = ?').get(order.id) },
+    {
+      confirmed_at: '2026-07-16T11:00:00.000Z',
+      completed_at: '2026-07-16T11:00:00.000Z',
+    },
   );
 });
 
@@ -221,7 +242,7 @@ test('reopening a cancelled order fails atomically when stock is no longer avail
   await assert.rejects(
     transitionOrder(db, {
       orderId: order.id,
-      toStatus: 'confirmed',
+      toStatus: 'completed',
       now: '2026-07-16T11:00:00.000Z',
     }),
     (error) => error instanceof OrderLifecycleError
@@ -247,14 +268,57 @@ test('reopening a cancelled order fails safely when an inventory row is missing'
   db.sqlite.prepare('DELETE FROM inventory WHERE product_id = ?').run(order.productId);
 
   await assert.rejects(
-    transitionOrder(db, { orderId: order.id, toStatus: 'confirmed' }),
+    transitionOrder(db, { orderId: order.id, toStatus: 'completed' }),
     (error) => error instanceof OrderLifecycleError && error.code === 'ORDER_REOPEN_INVENTORY_UNAVAILABLE',
   );
   assert.equal(db.sqlite.prepare('SELECT status FROM orders WHERE id = ?').get(order.id).status, 'cancelled');
   assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS count FROM order_status_history WHERE order_id = ?').get(order.id).count, 1);
 });
 
-test('concurrent duplicate reopen reserves stock only once', async (t) => {
+test('a sold-at-creation order is restored on cancellation and sold once when confirmed again', async (t) => {
+  const db = setup();
+  t.after(() => db.close());
+  const order = insertReservedOrder(db);
+  db.sqlite.prepare(`
+    UPDATE orders SET cart_id = 'legacy-cart', inventory_mode = 'sold_at_creation'
+    WHERE id = ?
+  `).run(order.id);
+  db.sqlite.prepare('UPDATE order_items SET sold_quantity = quantity WHERE order_id = ?').run(order.id);
+  db.sqlite.prepare('UPDATE inventory SET on_hand = ?, reserved = 0 WHERE product_id = ?').run(
+    order.onHand - order.quantity,
+    order.productId,
+  );
+
+  await transitionOrder(db, {
+    orderId: order.id,
+    toStatus: 'cancelled',
+    now: '2026-07-16T10:00:00.000Z',
+  });
+  assert.deepEqual(
+    { ...db.sqlite.prepare('SELECT on_hand, reserved FROM inventory WHERE product_id = ?').get(order.productId) },
+    { on_hand: 5, reserved: 0 },
+  );
+
+  await transitionOrder(db, {
+    orderId: order.id,
+    toStatus: 'completed',
+    now: '2026-07-16T11:00:00.000Z',
+  });
+  assert.deepEqual(
+    { ...db.sqlite.prepare('SELECT on_hand, reserved FROM inventory WHERE product_id = ?').get(order.productId) },
+    { on_hand: 3, reserved: 0 },
+  );
+  assert.equal(db.sqlite.prepare('SELECT sold_quantity FROM order_items WHERE order_id = ?').get(order.id).sold_quantity, 2);
+  assert.deepEqual(
+    { ...db.sqlite.prepare(`
+      SELECT delta_on_hand, delta_reserved FROM inventory_movements
+      WHERE order_id = ? AND movement_type = 'sale'
+    `).get(order.id) },
+    { delta_on_hand: -2, delta_reserved: 0 },
+  );
+});
+
+test('concurrent duplicate reopen sells stock only once', async (t) => {
   const db = setup();
   t.after(() => db.close());
   const order = insertReservedOrder(db);
@@ -264,105 +328,112 @@ test('concurrent duplicate reopen reserves stock only once', async (t) => {
   const racingDb = new BeforeFirstBatchD1(db, async () => {
     winningTransition = await transitionOrder(db, {
       orderId: order.id,
-      toStatus: 'confirmed',
+      toStatus: 'completed',
       now: '2026-07-16T11:00:00.000Z',
     });
   });
   const losingTransition = await transitionOrder(racingDb, {
     orderId: order.id,
-    toStatus: 'confirmed',
+    toStatus: 'completed',
     now: '2026-07-16T11:00:01.000Z',
   });
 
   assert.equal(winningTransition.changed, true);
   assert.equal(losingTransition.changed, false);
-  assert.equal(db.sqlite.prepare('SELECT reserved FROM inventory WHERE product_id = ?').get(order.productId).reserved, 2);
+  assert.deepEqual(
+    { ...db.sqlite.prepare('SELECT on_hand, reserved FROM inventory WHERE product_id = ?').get(order.productId) },
+    { on_hand: 3, reserved: 0 },
+  );
   assert.equal(
     db.sqlite.prepare("SELECT COUNT(*) AS count FROM inventory_movements WHERE movement_type = 'reservation'").get().count,
-    2,
+    1,
+  );
+  assert.equal(
+    db.sqlite.prepare("SELECT COUNT(*) AS count FROM inventory_movements WHERE movement_type = 'sale'").get().count,
+    1,
   );
   assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS count FROM order_status_history WHERE order_id = ?').get(order.id).count, 2);
   assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS count FROM admin_audit_log WHERE entity_id = ?').get(order.id).count, 2);
 });
 
-test('confirmation keeps stock reserved and disables automatic expiry', async (t) => {
+test('confirmation immediately completes the sale and releases its reservation', async (t) => {
   const db = setup();
   t.after(() => db.close());
   const order = insertReservedOrder(db);
 
-  await transitionOrder(db, {
+  const confirmation = await transitionOrder(db, {
     orderId: order.id,
-    toStatus: 'confirmed',
+    toStatus: 'completed',
     now: '2026-07-16T10:00:00.000Z',
   });
+  const repeatedConfirmation = await transitionOrder(db, {
+    orderId: order.id,
+    toStatus: 'completed',
+    now: '2026-07-16T10:01:00.000Z',
+  });
 
+  assert.equal(confirmation.changed, true);
+  assert.equal(repeatedConfirmation.changed, false);
   assert.deepEqual(
     { ...db.sqlite.prepare(`
-      SELECT status, reservation_expires_at, confirmed_at
+      SELECT status, reservation_expires_at, confirmed_at, completed_at
       FROM orders WHERE id = ?
     `).get(order.id) },
-    { status: 'confirmed', reservation_expires_at: null, confirmed_at: '2026-07-16T10:00:00.000Z' },
+    {
+      status: 'completed',
+      reservation_expires_at: null,
+      confirmed_at: '2026-07-16T10:00:00.000Z',
+      completed_at: '2026-07-16T10:00:00.000Z',
+    },
   );
   assert.deepEqual(
     { ...db.sqlite.prepare('SELECT on_hand, reserved FROM inventory WHERE product_id = ?').get(order.productId) },
-    { on_hand: 5, reserved: 2 },
+    { on_hand: 3, reserved: 0 },
   );
-  assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS count FROM inventory_movements').get().count, 1);
+  assert.equal(db.sqlite.prepare('SELECT sold_quantity FROM order_items WHERE order_id = ?').get(order.id).sold_quantity, 2);
+  assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM inventory_movements WHERE movement_type = 'sale'").get().count, 1);
 });
 
-test('confirmed orders complete atomically after 24 hours without selling cart orders twice', async (t) => {
+test('legacy workflow states complete immediately without selling historical cart orders twice', async (t) => {
   const db = setup();
   t.after(() => db.close());
-  const legacy = insertReservedOrder(db, {
-    id: 'legacy-confirmed', productId: 1, status: 'confirmed', quantity: 2, onHand: 5,
-  });
+  const legacy = ['confirmed', 'processing', 'ready', 'shipped'].map((status, index) => insertReservedOrder(db, {
+    id: `legacy-${status}`, productId: index + 1, status, quantity: status === 'confirmed' ? 2 : 1, onHand: 5,
+  }));
   const cart = insertReservedOrder(db, {
-    id: 'cart-confirmed', productId: 2, status: 'confirmed', quantity: 1, onHand: 5,
-  });
-  const fresh = insertReservedOrder(db, {
-    id: 'fresh-confirmed', productId: 3, status: 'confirmed', quantity: 1, onHand: 5,
+    id: 'cart-confirmed', productId: 5, status: 'confirmed', quantity: 1, onHand: 5,
   });
   db.sqlite.exec(`
     UPDATE orders
-    SET confirmed_at = '2026-07-15T10:00:00.000Z', updated_at = '2026-07-15T10:00:00.000Z'
-    WHERE id IN ('legacy-confirmed', 'cart-confirmed');
-    UPDATE orders
-    SET confirmed_at = '2026-07-16T09:00:01.000Z', updated_at = '2026-07-16T09:00:01.000Z'
-    WHERE id = 'fresh-confirmed';
-    UPDATE orders
-    SET cart_id = 'cart-1', inventory_mode = 'sold_at_creation'
+    SET confirmed_at = '2026-07-16T10:00:00.000Z', updated_at = '2026-07-16T10:00:00.000Z';
+    UPDATE orders SET cart_id = 'cart-1', inventory_mode = 'sold_at_creation'
     WHERE id = 'cart-confirmed';
     UPDATE order_items SET sold_quantity = quantity WHERE order_id = 'cart-confirmed';
-    UPDATE inventory SET on_hand = 4, reserved = 0 WHERE product_id = 2;
+    UPDATE inventory SET on_hand = 4, reserved = 0 WHERE product_id = 5;
   `);
 
-  await assert.rejects(
-    transitionOrder(db, {
-      orderId: legacy.id,
-      toStatus: 'completed',
-      now: '2026-07-16T10:00:00.000Z',
-    }),
-    (error) => error instanceof OrderLifecycleError && error.code === 'INVALID_STATUS_TRANSITION',
-  );
-
-  const result = await completeAgedConfirmedOrders(db, {
+  const result = await completeLegacyOpenOrders(db, {
     now: '2026-07-16T10:00:00.000Z',
     limit: 10,
   });
 
   assert.deepEqual(result, {
     checkedAt: '2026-07-16T10:00:00.000Z',
-    threshold: '2026-07-15T10:00:00.000Z',
-    selected: 2,
-    completed: 2,
+    selected: 5,
+    completed: 5,
     skipped: 0,
     errors: [],
   });
-  assert.equal(db.sqlite.prepare('SELECT status FROM orders WHERE id = ?').get(legacy.id).status, 'completed');
+  for (const order of legacy) {
+    assert.equal(db.sqlite.prepare('SELECT status FROM orders WHERE id = ?').get(order.id).status, 'completed');
+    assert.equal(
+      db.sqlite.prepare("SELECT COUNT(*) AS count FROM inventory_movements WHERE order_id = ? AND movement_type = 'sale'").get(order.id).count,
+      1,
+    );
+  }
   assert.equal(db.sqlite.prepare('SELECT status FROM orders WHERE id = ?').get(cart.id).status, 'completed');
-  assert.equal(db.sqlite.prepare('SELECT status FROM orders WHERE id = ?').get(fresh.id).status, 'confirmed');
   assert.deepEqual(
-    { ...db.sqlite.prepare('SELECT on_hand, reserved FROM inventory WHERE product_id = ?').get(legacy.productId) },
+    { ...db.sqlite.prepare('SELECT on_hand, reserved FROM inventory WHERE product_id = ?').get(legacy[0].productId) },
     { on_hand: 3, reserved: 0 },
   );
   assert.deepEqual(
@@ -370,17 +441,11 @@ test('confirmed orders complete atomically after 24 hours without selling cart o
     { on_hand: 4, reserved: 0 },
   );
   assert.equal(
-    db.sqlite.prepare("SELECT COUNT(*) AS count FROM inventory_movements WHERE order_id = ? AND movement_type = 'sale'").get(legacy.id).count,
-    1,
-  );
-  assert.equal(
     db.sqlite.prepare("SELECT COUNT(*) AS count FROM inventory_movements WHERE order_id = ? AND movement_type = 'sale'").get(cart.id).count,
     0,
   );
-  assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS count FROM order_status_history WHERE order_id = ?').get(legacy.id).count, 1);
-  assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS count FROM order_status_history WHERE order_id = ?').get(cart.id).count, 1);
-  assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS count FROM admin_audit_log WHERE entity_id = ?').get(legacy.id).count, 1);
-  assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS count FROM admin_audit_log WHERE entity_id = ?').get(cart.id).count, 1);
+  assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS count FROM order_status_history').get().count, 5);
+  assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS count FROM admin_audit_log').get().count, 5);
 });
 
 test('an inventory mismatch rolls back the complete transition', async (t) => {
@@ -460,7 +525,7 @@ test('pending order reservations are not cancelled by a timer', async (t) => {
   t.after(() => db.close());
   insertReservedOrder(db, { id: 'expired', productId: 1, quantity: 1, expiresAt: '2026-07-15T00:00:00.000Z' });
 
-  const result = await completeAgedConfirmedOrders(db, {
+  const result = await completeLegacyOpenOrders(db, {
     now: '2026-07-16T10:00:00.000Z',
     limit: 10,
   });

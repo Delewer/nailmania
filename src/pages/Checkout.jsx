@@ -12,6 +12,11 @@ import { getOrCreateOrderAttemptKey, startNewOrderAttemptKey } from '../order-at
 import { createOrderQuote, normalizeExpectedOrderQuote } from '../../shared/order-quote.js'
 import { cartLineLimit } from '../cart-quantity.js'
 import {
+  MANUAL_ADDRESS_VALUE,
+  SAVED_ADDRESS_FORM_FIELDS,
+  savedAddressCheckoutFields,
+} from '../checkout-address.js'
+import {
   MOLDOVA_COUNTRY_CODE,
   moldovaLocalPhone,
   normalizeMoldovaPhone,
@@ -44,11 +49,14 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export default function Checkout(){
   const navigate = useNavigate();
   const { lang, t, name, cart, find, cartTotal, submitOrder, setQty, removeFromCart, allProducts, ensureCatalog, catalogLoading, catalogLoaded, catalogError } = useShop();
-  const { user, defaultAddress } = useAuth();
+  const {
+    user, addresses, defaultAddress, addressesLoading, addressesError,
+  } = useAuth();
 
   const [delivery, setDelivery] = React.useState("");
   const [payment, setPayment]   = React.useState("");
   const [form, setForm] = React.useState({ name:"", phone:"", email:"", city:"", address:"", comment:"" });
+  const [selectedAddressId, setSelectedAddressId] = React.useState(null);
   const [agree, setAgree] = React.useState(false);
   const [errors, setErrors] = React.useState({});
   const [done, setDone] = React.useState(null); // order number when placed
@@ -92,6 +100,10 @@ export default function Checkout(){
       return changed ? next : current;
     });
   },[defaultAddress,user]);
+  React.useEffect(()=>{
+    if(!selectedAddressId || selectedAddressId===MANUAL_ADDRESS_VALUE) return;
+    if(!addresses.some(address=>address.id===selectedAddressId)) setSelectedAddressId(MANUAL_ADDRESS_VALUE);
+  },[addresses,selectedAddressId]);
 
   const lines = cart.map(i=>({ ...i, p: find(i.id) })).filter(x=>x.p);
   const localDiscount = lines.reduce((s,l)=> s + (l.p.old>l.p.price ? (l.p.old-l.p.price)*l.q : 0), 0);
@@ -157,12 +169,14 @@ export default function Checkout(){
   },[cartSignature,delivery,linePriceSignature,appliedPromo?.code]);
 
   const set = (k)=> (e)=>{
+    if(SAVED_ADDRESS_FORM_FIELDS.includes(k)) setSelectedAddressId(MANUAL_ADDRESS_VALUE);
     dirtyFields.current.add(k);
     autofilledFields.current.delete(k);
     setForm(f=>({ ...f, [k]: e.target.value }));
     setErrors(current=> current[k] ? {...current,[k]:undefined} : current);
   };
   const setPhone = (event)=>{
+    setSelectedAddressId(MANUAL_ADDRESS_VALUE);
     dirtyFields.current.add('phone');
     autofilledFields.current.delete('phone');
     setForm(current=>({...current,phone:sanitizeMoldovaPhoneInput(event.target.value)}));
@@ -171,6 +185,24 @@ export default function Checkout(){
   const selectOption = (setter,key,value)=>{
     setter(value);
     setErrors(current=> current[key] ? {...current,[key]:undefined} : current);
+  };
+  const selectSavedAddress = (event)=>{
+    const id = event.target.value;
+    setSelectedAddressId(id);
+    if(id===MANUAL_ADDRESS_VALUE) return;
+    const address = addresses.find(entry=>entry.id===id);
+    if(!address) return;
+    const values = savedAddressCheckoutFields(address);
+    for(const key of SAVED_ADDRESS_FORM_FIELDS){
+      dirtyFields.current.add(key);
+      autofilledFields.current.delete(key);
+    }
+    setForm(current=>({...current,...values}));
+    setErrors(current=>{
+      const next={...current};
+      for(const key of SAVED_ADDRESS_FORM_FIELDS) delete next[key];
+      return next;
+    });
   };
 
   const promoMessage = React.useCallback((error)=>{
@@ -311,7 +343,10 @@ export default function Checkout(){
             <div className="rrow grand"><span>{t("total")}</span><b>{done.total} {t("lei")}</b></div>
           </div>
 
-          <div><Link className="btn btn-dark" to="/">{t("continueShopping")}</Link></div>
+          <div className="co-done-actions">
+            {user && done.id && <Link className="btn btn-dark" to={`/account/orders/${encodeURIComponent(done.id)}`}>{t("viewOrder")}</Link>}
+            <Link className={`btn ${user && done.id ? "btn-ghost" : "btn-dark"}`} to="/">{t("continueShopping")}</Link>
+          </div>
         </div>
       </div>
     );
@@ -411,10 +446,32 @@ export default function Checkout(){
             </div>
             {errors.delivery && <span className="errmsg" id="checkout-delivery-error" role="alert" style={{marginTop:10,display:"block"}}>{errors.delivery}</span>}
             {needsAddress && (
-              <div className="co-fields" style={{marginTop:18}}>
-                {field("cityLabel","city")}
-                {field("addressLabel","address")}
-              </div>
+              <>
+                {user && (addresses.length>0 || addressesLoading || addressesError) && (
+                  <div className="co-saved-address">
+                    {addresses.length>0 && <>
+                      <label htmlFor="checkout-saved-address">{t("savedAddressLabel")}</label>
+                      <select
+                        id="checkout-saved-address"
+                        value={selectedAddressId ?? defaultAddress?.id ?? MANUAL_ADDRESS_VALUE}
+                        onChange={selectSavedAddress}
+                        aria-describedby={addressesError ? "checkout-saved-address-note" : undefined}
+                      >
+                        {addresses.map(address=><option value={address.id} key={address.id}>
+                          {address.recipientName} · {address.city}, {address.address}{address.isDefault ? ` · ${t("defaultAddressOption")}` : ""}
+                        </option>)}
+                        <option value={MANUAL_ADDRESS_VALUE}>{t("manualAddressOption")}</option>
+                      </select>
+                    </>}
+                    {addressesLoading && !addresses.length && <small role="status">{t("savedAddressesLoading")}</small>}
+                    {addressesError && <small id="checkout-saved-address-note" role="status">{t("savedAddressesUnavailable")}</small>}
+                  </div>
+                )}
+                <div className="co-fields" style={{marginTop:18}}>
+                  {field("cityLabel","city")}
+                  {field("addressLabel","address")}
+                </div>
+              </>
             )}
           </fieldset>
 

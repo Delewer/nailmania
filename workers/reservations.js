@@ -1,4 +1,4 @@
-import { completeAgedConfirmedOrders } from '../functions/_lib/order-lifecycle.js';
+import { completeLegacyOpenOrders } from '../functions/_lib/order-lifecycle.js';
 import { cleanupExpiredRateLimits } from '../functions/_lib/rate-limit.js';
 import { cleanupCustomerAuthRecords } from '../functions/_lib/customer-maintenance.js';
 
@@ -8,7 +8,7 @@ export default {
   async scheduled(controller, env) {
     if (!env?.DB) throw new Error('D1 binding DB is not configured');
     const now = new Date(controller.scheduledTime || Date.now()).toISOString();
-    const completedOrders = await completeAgedConfirmedOrders(env.DB, {
+    const completedOrders = await completeLegacyOpenOrders(env.DB, {
       now,
       limit: AUTO_COMPLETION_LIMIT,
     });

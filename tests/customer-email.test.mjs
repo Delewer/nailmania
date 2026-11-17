@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   customerEmailDeliveryConfigured,
+  sendOrderCustomerEmail,
   sendOrderConfirmationEmail,
   sendPasswordResetEmail,
 } from '../functions/_lib/customer-email.js';
@@ -106,4 +107,60 @@ test('Resend order confirmation includes the order lines, total, and idempotency
   assert.match(body.text, /Итого: 230 lei/);
   assert.match(body.html, /Gel polish &lt;Red&gt;/);
   assert.doesNotMatch(body.html, /Gel polish <Red>/);
+});
+
+test('order lifecycle emails use branded localized templates without internal data', async () => {
+  const requests = [];
+  const env = {
+    ENVIRONMENT: 'production',
+    SITE_URL: 'https://nailmania.md',
+    CUSTOMER_EMAIL_ENDPOINT: 'https://api.resend.com/emails',
+    CUSTOMER_EMAIL_FROM: 'Nail Mania <no-reply@mail.nailmania.md>',
+    CUSTOMER_EMAIL_REPLY_TO: 'support@nailmania.md',
+    CUSTOMER_EMAIL_API_TOKEN: 're_order_events',
+    CUSTOMER_EMAIL_FETCH: async (request) => {
+      requests.push(request);
+      return Response.json({ id: `email-${requests.length}` });
+    },
+  };
+  const order = {
+    id: 'order-account-1',
+    no: 'NM-EVENT-1',
+    userId: 'customer-1',
+    customer: { name: 'Ana <Test>', city: 'Chișinău', address: 'Strada 1' },
+    items: [{ name: 'Gel <Rose>', quantity: 1, lineTotal: 100 }],
+    discount: 10,
+    deliveryFee: 0,
+    total: 90,
+    deliveryLabel: 'Curier',
+    paymentLabel: 'Numerar',
+    internalComment: 'NEVER INCLUDE MANAGER SECRET',
+    return: {
+      id: 'return-1',
+      refundAmount: 45,
+      reason: 'NEVER INCLUDE RETURN REASON',
+      items: [{ name: 'Gel <Rose>', quantity: 1, lineTotal: 45 }],
+    },
+  };
+
+  for (const eventType of ['order_confirmed', 'order_cancelled', 'order_returned']) {
+    await sendOrderCustomerEmail(env, {
+      email: 'buyer@example.test', locale: 'ro', order, eventType,
+      idempotencyKey: `event/${eventType}`,
+    });
+  }
+
+  assert.equal(requests.length, 3);
+  const bodies = await Promise.all(requests.map((request) => request.clone().json()));
+  assert.match(bodies[0].subject, /confirmată/);
+  assert.match(bodies[1].subject, /anulată/);
+  assert.match(bodies[2].subject, /Returul/);
+  assert.match(bodies[0].html, /images\/logo-high\.png/);
+  assert.match(bodies[0].html, /Ana &lt;Test&gt;/);
+  assert.match(bodies[0].html, /account\/orders\/order-account-1/);
+  assert.match(bodies[2].text, /Suma returului: 45 lei/);
+  assert.doesNotMatch(JSON.stringify(bodies), /NEVER INCLUDE/);
+  assert.equal(bodies[0].reply_to, 'support@nailmania.md');
+  assert.equal(requests[0].headers.get('user-agent'), 'nailmania-order-notification/1.0');
+  assert.equal(requests[2].headers.get('idempotency-key'), 'event/order_returned');
 });

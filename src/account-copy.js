@@ -95,9 +95,9 @@ const COPY = {
     status_processing: "În procesare",
     status_ready: "Pregătită",
     status_shipped: "Expediată",
-    status_completed: "Finalizată",
+    status_completed: "Confirmată",
     status_cancelled: "Anulată",
-    status_returned: "Returnată",
+    status_returned: "Retur",
     status_expired: "Expirată",
     itemsCount: "{count} produse",
     fromStatus: "de la {from}",
@@ -198,9 +198,9 @@ const COPY = {
     status_processing: "В обработке",
     status_ready: "Готов к выдаче",
     status_shipped: "Отправлен",
-    status_completed: "Завершён",
+    status_completed: "Подтверждён",
     status_cancelled: "Отменён",
-    status_returned: "Возвращён",
+    status_returned: "Возврат",
     status_expired: "Истёк",
     itemsCount: "Товаров: {count}",
     fromStatus: "из статуса {from}",
@@ -242,6 +242,12 @@ export function accountErrorText(language, error) {
   return ERROR_KEYS[error?.code]?.[language] || ERROR_KEYS[error?.code]?.ro || accountText(language, "accountUnavailable");
 }
 
+export function orderDisplayStatus(status) {
+  return ['confirmed', 'processing', 'ready', 'shipped'].includes(status)
+    ? 'completed'
+    : status;
+}
+
 export function orderStatusText(language, status) {
-  return accountText(language, `status_${status}`);
+  return accountText(language, `status_${orderDisplayStatus(status)}`);
 }

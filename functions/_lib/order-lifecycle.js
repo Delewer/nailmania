@@ -1,15 +1,24 @@
 import { catalogRevisionBump } from './catalog-cache.js';
 
 export const ORDER_TRANSITIONS = Object.freeze({
-  pending: Object.freeze(['confirmed', 'cancelled']),
-  confirmed: Object.freeze(['processing', 'cancelled']),
-  processing: Object.freeze(['ready', 'cancelled']),
-  ready: Object.freeze(['shipped', 'completed', 'cancelled']),
-  shipped: Object.freeze(['completed']),
+  pending: Object.freeze(['completed', 'cancelled']),
+  // Legacy states stay readable so existing orders can be finalized without
+  // rewriting their stock history. New orders never enter these states.
+  confirmed: Object.freeze(['completed', 'cancelled']),
+  processing: Object.freeze(['completed', 'cancelled']),
+  ready: Object.freeze(['completed', 'cancelled']),
+  shipped: Object.freeze(['completed', 'cancelled']),
   completed: Object.freeze(['returned']),
-  cancelled: Object.freeze(['confirmed']),
+  cancelled: Object.freeze(['completed']),
   returned: Object.freeze([]),
 });
+
+export const ORDER_STATUSES = Object.freeze(['pending', 'completed', 'cancelled', 'returned']);
+export const LEGACY_ORDER_STATUSES = Object.freeze(['confirmed', 'processing', 'ready', 'shipped']);
+
+export const normalizePublicOrderStatus = (status) => (
+  LEGACY_ORDER_STATUSES.includes(status) ? 'completed' : status
+);
 
 export class OrderLifecycleError extends Error {
   constructor(code, message, status = 409, details) {
@@ -34,9 +43,6 @@ export function transitionPlan(fromStatus, toStatus) {
       409,
       { fromStatus, toStatus, allowed },
     );
-  }
-  if (fromStatus === 'cancelled' && toStatus === 'confirmed') {
-    return { action: 'reserve', idempotent: false };
   }
   if (toStatus === 'cancelled') return { action: 'release', idempotent: false };
   if (toStatus === 'completed') return { action: 'sale', idempotent: false };
@@ -186,7 +192,7 @@ function restoreStatements(db, orderId, toStatus, token, now, actorUserId, reaso
   ];
 }
 
-function saleStatements(db, orderId, toStatus, token, now, actorUserId, reason) {
+function saleStatements(db, orderId, toStatus, token, now, actorUserId, reason, fromStatus) {
   return [
     db.prepare(`
       UPDATE inventory
@@ -195,7 +201,7 @@ function saleStatements(db, orderId, toStatus, token, now, actorUserId, reason) 
              WHERE oi.order_id = ? AND oi.product_id = inventory.product_id
            ),
            reserved = reserved - (
-             SELECT CASE WHEN ? = 'completed'
+             SELECT CASE WHEN ? = 'completed' AND ? <> 'cancelled'
                THEN oi.quantity - oi.sold_quantity ELSE 0 END
              FROM order_items oi
              WHERE oi.order_id = ? AND oi.product_id = inventory.product_id
@@ -208,7 +214,7 @@ function saleStatements(db, orderId, toStatus, token, now, actorUserId, reason) 
           WHERE oi.order_id = ? AND oi.product_id = inventory.product_id
         )
         AND ${transitionGuard}
-    `).bind(orderId, toStatus, orderId, now, inventoryRevision(token, 'sale'), orderId, orderId, toStatus, token),
+    `).bind(orderId, toStatus, fromStatus, orderId, now, inventoryRevision(token, 'sale'), orderId, orderId, toStatus, token),
     db.prepare(`
       INSERT INTO inventory_movements (
         id, product_id, warehouse_id, movement_type, delta_on_hand, delta_reserved,
@@ -217,7 +223,7 @@ function saleStatements(db, orderId, toStatus, token, now, actorUserId, reason) 
       SELECT
         'sale:' || ? || ':' || i.product_id,
         i.product_id, 1, 'sale', -(oi.quantity - oi.sold_quantity),
-        CASE WHEN o.status = 'completed'
+        CASE WHEN o.status = 'completed' AND ? <> 'cancelled'
           THEN -(oi.quantity - oi.sold_quantity) ELSE 0 END,
         i.on_hand, i.reserved, ?, ?, ?, ?
       FROM order_items oi
@@ -226,7 +232,7 @@ function saleStatements(db, orderId, toStatus, token, now, actorUserId, reason) 
       WHERE oi.order_id = ? AND oi.sold_quantity < oi.quantity
         AND o.status = ? AND o.transition_token = ?
       ON CONFLICT(id) DO NOTHING
-    `).bind(orderId, orderId, actorUserId, reason, now, orderId, toStatus, token),
+    `).bind(token, fromStatus, orderId, actorUserId, reason, now, orderId, toStatus, token),
     db.prepare(`
       UPDATE order_items
       SET sold_quantity = quantity
@@ -342,14 +348,21 @@ const lifecycleStatements = (db, action, args) => {
 
 const changedRows = (result) => Number(result?.meta?.changes ?? result?.changes ?? 0);
 
-async function transitionOrderInternal(db, options, { allowConfirmedCompletion = false } = {}) {
+async function transitionOrderInternal(db, options) {
   const database = typeof db.withSession === 'function' ? db.withSession('first-primary') : db;
   const orderId = safeText(options?.orderId, 120);
-  const toStatus = safeText(options?.toStatus, 30);
+  const requestedToStatus = safeText(options?.toStatus, 30);
+  const toStatus = normalizePublicOrderStatus(requestedToStatus);
   const actorUserId = safeText(options?.actorUserId, 120) || null;
   const comment = safeText(options?.comment, 1000);
   const now = options?.now ? new Date(options.now).toISOString() : new Date().toISOString();
-  if (!orderId || !toStatus) throw new OrderLifecycleError('INVALID_TRANSITION_REQUEST', 'Order id and target status are required', 400);
+  if (!orderId || !requestedToStatus) throw new OrderLifecycleError('INVALID_TRANSITION_REQUEST', 'Order id and target status are required', 400);
+  if (!ORDER_STATUSES.includes(toStatus)) {
+    throw new OrderLifecycleError('INVALID_ORDER_STATUS', `Unknown target order status: ${toStatus}`, 400, {
+      toStatus,
+      allowed: ORDER_STATUSES,
+    });
+  }
 
   const order = await database.prepare(`
     SELECT id, order_no, cart_id, status, reservation_expires_at, inventory_mode
@@ -357,16 +370,11 @@ async function transitionOrderInternal(db, options, { allowConfirmedCompletion =
   `).bind(orderId).first();
   if (!order) throw new OrderLifecycleError('ORDER_NOT_FOUND', 'Order not found', 404, { orderId });
 
-  const directConfirmedCompletion = allowConfirmedCompletion
-    && order.status === 'confirmed'
-    && toStatus === 'completed';
-  const basePlan = directConfirmedCompletion
-    ? { action: 'sale', idempotent: false }
-    : transitionPlan(order.status, toStatus);
+  const basePlan = transitionPlan(order.status, toStatus);
   const plan = order.inventory_mode === 'sold_at_creation' && !basePlan.idempotent
     ? {
         ...basePlan,
-        action: order.status === 'cancelled' && toStatus === 'confirmed'
+        action: order.status === 'cancelled' && toStatus === 'completed'
           ? 'sale'
           : toStatus === 'cancelled'
             ? 'restore'
@@ -414,7 +422,11 @@ async function transitionOrderInternal(db, options, { allowConfirmedCompletion =
     UPDATE orders
     SET status = ?,
         reservation_expires_at = NULL,
-        confirmed_at = CASE WHEN ? = 'confirmed' THEN ? ELSE confirmed_at END,
+        confirmed_at = CASE
+          WHEN ? IN ('confirmed', 'completed') AND status = 'cancelled' THEN ?
+          WHEN ? IN ('confirmed', 'completed') THEN COALESCE(confirmed_at, ?)
+          ELSE confirmed_at
+        END,
         completed_at = CASE WHEN ? = 'completed' THEN COALESCE(completed_at, ?) ELSE completed_at END,
         cancelled_at = CASE
           WHEN ? = 'cancelled' THEN COALESCE(cancelled_at, ?)
@@ -426,12 +438,14 @@ async function transitionOrderInternal(db, options, { allowConfirmedCompletion =
     WHERE id = ? AND status = ?
     ${reopenGuard}
   `).bind(
-    toStatus, toStatus, now, toStatus, now, toStatus, now, plan.action,
+    toStatus, toStatus, now, toStatus, now, toStatus, now, toStatus, now, plan.action,
     token, now, orderId, order.status,
   );
 
   const statements = [statusStatement];
-  statements.push(...lifecycleStatements(database, plan.action, [orderId, toStatus, token, now, actorUserId, reason]));
+  statements.push(...lifecycleStatements(database, plan.action, [
+    orderId, toStatus, token, now, actorUserId, reason, order.status,
+  ]));
   statements.push(database.prepare(`
     INSERT INTO order_status_history (
       order_id, from_status, to_status, actor_user_id, comment, created_at, transition_token
@@ -539,22 +553,19 @@ export async function transitionOrder(db, options) {
   return transitionOrderInternal(db, options);
 }
 
-export async function completeAgedConfirmedOrders(db, options = {}) {
+export async function completeLegacyOpenOrders(db, options = {}) {
   const database = typeof db.withSession === 'function' ? db.withSession('first-primary') : db;
   const now = options.now ? new Date(options.now).toISOString() : new Date().toISOString();
-  const threshold = new Date(Date.parse(now) - 24 * 60 * 60 * 1000).toISOString();
   const limit = Math.min(250, Math.max(1, Number(options.limit) || 100));
   const result = await database.prepare(`
     SELECT id FROM orders
-    WHERE status = 'confirmed'
-      AND COALESCE(confirmed_at, updated_at, created_at) <= ?
+    WHERE status IN ('confirmed', 'processing', 'ready', 'shipped')
     ORDER BY COALESCE(confirmed_at, updated_at, created_at), id
     LIMIT ?
-  `).bind(threshold, limit).all();
+  `).bind(limit).all();
   const orders = result.results || [];
   const summary = {
     checkedAt: now,
-    threshold,
     selected: orders.length,
     completed: 0,
     skipped: 0,
@@ -566,9 +577,9 @@ export async function completeAgedConfirmedOrders(db, options = {}) {
       const transition = await transitionOrderInternal(database, {
         orderId: order.id,
         toStatus: 'completed',
-        comment: 'Order completed automatically 24 hours after confirmation',
+        comment: 'Legacy order completed automatically after workflow simplification',
         now,
-      }, { allowConfirmedCompletion: true });
+      });
       if (transition.changed) summary.completed += 1;
       else summary.skipped += 1;
     } catch (error) {
@@ -582,3 +593,6 @@ export async function completeAgedConfirmedOrders(db, options = {}) {
   }
   return summary;
 }
+
+// Keep old worker bundles import-compatible during a staged deployment.
+export const completeAgedConfirmedOrders = completeLegacyOpenOrders;

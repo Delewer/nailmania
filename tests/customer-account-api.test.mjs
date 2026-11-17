@@ -265,6 +265,15 @@ test('address and order handlers cannot read, change, or delete another customer
     cookie: ionCookie,
   }))));
   assert.deepEqual(ionOrders.body.items.map((order) => order.id), ['order-ion']);
+  const confirmedOrders = await responseJson(await listOrders(context(db, request('/api/me/orders?status=completed', {
+    cookie: ionCookie,
+  }))));
+  assert.deepEqual(confirmedOrders.body.items.map((order) => order.id), ['order-ion']);
+  const legacyStatusFilter = await responseJson(await listOrders(context(db, request('/api/me/orders?status=confirmed', {
+    cookie: ionCookie,
+  }))));
+  assert.equal(legacyStatusFilter.response.status, 200);
+  assert.deepEqual(legacyStatusFilter.body.items.map((order) => order.id), ['order-ion']);
   const foreignOrder = await responseJson(await getOrder(context(db, request('/api/me/orders/order-ana', {
     cookie: ionCookie,
   }), { params: { id: 'order-ana' } })));

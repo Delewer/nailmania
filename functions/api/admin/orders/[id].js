@@ -2,6 +2,7 @@ import { requireAdmin, requireSameOrigin } from '../../../_lib/admin-auth.js';
 import { adminOrderForRole, getAdminOrder } from '../../../_lib/admin-orders.js';
 import { apiError, handleApiError, json } from '../../../_lib/http.js';
 import { OrderLifecycleError, transitionOrder } from '../../../_lib/order-lifecycle.js';
+import { queueOrderCustomerNotification } from '../../../_lib/order-customer-notifications.js';
 
 const orderId = (params) => decodeURIComponent(String(params.id || '')).trim().slice(0, 120);
 
@@ -36,6 +37,21 @@ export async function onRequestPatch(context) {
       comment,
     });
     const order = await getAdminOrder(db, id);
+    const customerEvent = transition.toStatus === 'completed'
+      ? 'order_confirmed'
+      : transition.toStatus === 'cancelled'
+        ? 'order_cancelled'
+        : transition.toStatus === 'returned' ? 'order_returned' : '';
+    if (transition.changed && customerEvent) {
+      await queueOrderCustomerNotification(context, {
+        db,
+        orderId: id,
+        orderNo: transition.orderNo,
+        eventType: customerEvent,
+        requestKey: `${customerEvent}:${transition.transitionToken}`,
+        actorUserId: user.id,
+      });
+    }
     return json({
       ok: true,
       transition,

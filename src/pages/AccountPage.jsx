@@ -1,6 +1,6 @@
 import React from "react";
 import { Link } from "react-router-dom";
-import { accountText, orderStatusText } from "../account-copy.js";
+import { accountText, orderDisplayStatus, orderStatusText } from "../account-copy.js";
 import { useAuth } from "../auth.jsx";
 import { ApiErrorNotice, FormField, ProtectedAccount, SuccessNotice } from "../components/AccountUi.jsx";
 import { Icon } from "../shop.jsx";
@@ -14,7 +14,7 @@ const formatDate = (value, language) => {
     day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
   }).format(date);
 };
-const ORDER_STATUSES = ["pending", "confirmed", "processing", "ready", "shipped", "completed", "cancelled", "returned"];
+const ORDER_STATUSES = ["pending", "completed", "cancelled", "returned"];
 
 function ProfileCard() {
   const { lang } = useShop();
@@ -240,7 +240,7 @@ function OrdersCard() {
                 <strong>{accountText(lang, "order")} {order.no}</strong>
                 <span>{formatDate(order.createdAt, lang)}</span>
               </div>
-              <span className={`order-status status-${order.status}`}>{orderStatusText(lang, order.status)}</span>
+              <span className={`order-status status-${orderDisplayStatus(order.status)}`}>{orderStatusText(lang, order.status)}</span>
               <div className="order-row-meta"><span>{accountText(lang, "itemsCount", { count: order.itemCount })}</span><b>{formatMoney(order.total, lang)}</b></div>
               <Link className="account-secondary compact" to={`/account/orders/${encodeURIComponent(order.id)}`}>{accountText(lang, "details")}<Icon n="chev" s={15} /></Link>
             </article>

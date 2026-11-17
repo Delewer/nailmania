@@ -28,6 +28,14 @@ const localDateTime = (value) => {
 const isoDateTime = (value) => value ? new Date(value).toISOString() : null;
 const nullableInteger = (value) => value === '' ? null : Number(value);
 const foldBrand = (value) => String(value || '').trim().toLocaleLowerCase('ro');
+const ORDER_STATUS_LABEL = {
+  pending: 'Nouă', completed: 'Confirmată', cancelled: 'Anulată', returned: 'Retur',
+};
+const orderStatusLabel = (status) => (
+  ['confirmed', 'processing', 'ready', 'shipped'].includes(status)
+    ? ORDER_STATUS_LABEL.completed
+    : ORDER_STATUS_LABEL[status] || status
+);
 
 const promoCategoryOptions = (available, selected, selectedIds) => {
   const options = [...available];
@@ -218,7 +226,7 @@ function PromoEditor({
             <div className="adm-section-head"><h3>Utilizare și comenzi</h3><span className="adm-promo-metric">{promo.usageCount} utilizări · {money(promo.discountSum)}</span></div>
             {!promo.orders?.length && <div className="adm-muted-empty">Codul nu a fost folosit</div>}
             {promo.orders?.length > 0 && <div className="adm-promo-orders">
-              {promo.orders.map((order) => <article key={order.id}><div><b>{order.no}</b><span>{order.customerName} · {dateTime(order.createdAt)}</span></div><div><strong>−{money(order.discountAmount)}</strong><span>{order.status}{order.releasedAt ? ` · eliberat (${order.releaseReason})` : ''}</span>{order.promoRefundAmount > 0 && <small>Reversat la retur: {money(order.promoRefundAmount)}</small>}</div></article>)}
+              {promo.orders.map((order) => <article key={order.id}><div><b>{order.no}</b><span>{order.customerName} · {dateTime(order.createdAt)}</span></div><div><strong>−{money(order.discountAmount)}</strong><span>{orderStatusLabel(order.status)}{order.releasedAt ? ` · eliberat (${order.releaseReason})` : ''}</span>{order.promoRefundAmount > 0 && <small>Reversat la retur: {money(order.promoRefundAmount)}</small>}</div></article>)}
             </div>}
           </div>}
           {saveError && <div className="adm-list-message adm-error" role="alert"><AlertTriangle size={18}/>{saveError}</div>}

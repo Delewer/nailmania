@@ -10,6 +10,7 @@ import {
 import { telegramOrderRecipients } from '../_lib/telegram.js';
 import { allocatePromoDiscount, PromoValidationError, validatePromotion } from '../_lib/promos.js';
 import { recordProductEvent } from '../_lib/product-events.js';
+import { getOrderCustomerPayload } from '../_lib/order-customer-payload.js';
 import { verifyTurnstile } from '../_lib/turnstile.js';
 import {
   findOrderReplay,
@@ -222,13 +223,17 @@ async function ensureOrderNotifications(context, db, order) {
         });
       }));
       if (payload.customer.email) {
-        deliveries.push(deliverOrderConfirmationNotification({
-          db,
-          env: context.env,
-          order: payload,
-          requestKey: `order-created:${order.id}`,
-          requestId,
-        }).catch(() => {
+        deliveries.push(getOrderCustomerPayload(db, order.id)
+          .then((emailOrder) => {
+            if (!emailOrder) throw new Error('Committed order could not be loaded for customer email');
+            return deliverOrderConfirmationNotification({
+              db,
+              env: context.env,
+              order: emailOrder,
+              requestKey: `order-created:${order.id}`,
+              requestId,
+            });
+          }).catch(() => {
           logNotificationEvent({
             level: 'error',
             event: 'notification.email.persistence_failed',
@@ -238,7 +243,7 @@ async function ensureOrderNotifications(context, db, order) {
             orderNo: order.no,
             code: 'NOTIFICATION_PERSISTENCE_FAILED',
           });
-        }));
+          }));
       }
       await Promise.all(deliveries);
     })

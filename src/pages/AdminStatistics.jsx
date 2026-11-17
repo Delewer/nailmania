@@ -189,9 +189,16 @@ export default function AdminStatistics({ onUnauthorized }) {
     processing: 0,
     ready: 0,
     shipped: 0,
+    completed: 0,
+    returned: 0,
     cancelled: 0,
     cancelledValue: 0,
   };
+  const confirmedOrders = orderFlow.completed
+    + orderFlow.confirmed
+    + orderFlow.processing
+    + orderFlow.ready
+    + orderFlow.shipped;
   const eventMetrics = events?.configured ? events.metrics : null;
   const eventSource = events?.source === 'd1'
     ? 'D1 · agregare zilnică exactă'
@@ -224,9 +231,10 @@ export default function AdminStatistics({ onUnauthorized }) {
       {summary && <>
         <section className="adm-stat-cards" aria-label="Indicatori de vânzare">
           <MetricCard label="Comenzi primite" value={quantity(orderFlow.received)} note={`${money(orderFlow.receivedValue)} valoare comandată`} tone="primary"/>
-          <MetricCard label="Comenzi active" value={quantity(orderFlow.active)} note={`${orderFlow.pending} în așteptare · ${orderFlow.confirmed} confirmate · ${orderFlow.processing + orderFlow.ready + orderFlow.shipped} în proces`}/>
-          <MetricCard label="Vânzări finalizate" value={quantity(summary.orders)} note={`${summary.returnedOrders} cu retur complet`}/>
+          <MetricCard label="Comenzi noi" value={quantity(orderFlow.pending)} note="așteaptă confirmarea"/>
+          <MetricCard label="Comenzi confirmate" value={quantity(confirmedOrders)} note={`${summary.orders} vânzări în perioada selectată`}/>
           <MetricCard label="Comenzi anulate" value={quantity(orderFlow.cancelled)} note={money(orderFlow.cancelledValue)} tone="negative"/>
+          <MetricCard label="Retur" value={quantity(orderFlow.returned)} note={`${summary.returnCount} operațiuni de retur`} tone="negative"/>
           <MetricCard label="Venit net" value={money(summary.netRevenue)} note="vânzări minus rambursări" tone="primary"/>
           <MetricCard label="Vânzări încasate" value={money(summary.saleRevenue)} note={`${money(summary.deliveryRevenue)} livrare`}/>
           <MetricCard label="Rambursări" value={money(summary.refundAmount)} note={`${summary.returnCount} operațiuni · ${summary.returnedUnits} buc.`} tone="negative"/>

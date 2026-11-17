@@ -17,7 +17,7 @@ const schema = [
   readFileSync(new URL('../migrations/0021_order_reservations_without_cart_timer.sql', import.meta.url), 'utf8'),
 ].join('\n');
 
-function setupExpiredOrder() {
+function setupMaintenanceState() {
   const db = new SqliteD1(schema);
   db.sqlite.exec(`
     INSERT INTO categories (id, slug, name_ro, name_ru)
@@ -39,12 +39,12 @@ function setupExpiredOrder() {
       'expired', 'NM-EXPIRED', 'pending', 'ro', 'Test Client', '+37360000000',
       'pickup', 'Pickup', 'cash', 'Cash', 100, 100, '2026-07-15T00:00:00.000Z'
     ), (
-      'aged-confirmed', 'NM-CONFIRMED', 'confirmed', 'ro', 'Test Client', '+37360000000',
+      'just-confirmed', 'NM-CONFIRMED', 'confirmed', 'ro', 'Test Client', '+37360000000',
       'pickup', 'Pickup', 'cash', 'Cash', 100, 100, NULL
     );
     UPDATE orders
-    SET confirmed_at = '2026-07-15T10:00:00.000Z', updated_at = '2026-07-15T10:00:00.000Z'
-    WHERE id = 'aged-confirmed';
+    SET confirmed_at = '2026-07-16T10:00:00.000Z', updated_at = '2026-07-16T10:00:00.000Z'
+    WHERE id = 'just-confirmed';
 
     INSERT INTO order_items (
       order_id, product_id, product_key, sku, name,
@@ -53,7 +53,7 @@ function setupExpiredOrder() {
     INSERT INTO order_items (
       order_id, product_id, product_key, sku, name,
       unit_price, list_price, quantity, line_total
-    ) VALUES ('aged-confirmed', 2, 'P2', 'P2', 'Product 2', 100, 100, 1, 100);
+    ) VALUES ('just-confirmed', 2, 'P2', 'P2', 'Product 2', 100, 100, 1, 100);
 
     INSERT INTO inventory_movements (
       id, product_id, warehouse_id, movement_type, delta_reserved,
@@ -62,7 +62,7 @@ function setupExpiredOrder() {
     INSERT INTO inventory_movements (
       id, product_id, warehouse_id, movement_type, delta_reserved,
       balance_on_hand, balance_reserved, order_id, reason
-    ) VALUES ('reserve:aged-confirmed:2', 2, 1, 'reservation', 1, 3, 1, 'aged-confirmed', 'Test');
+    ) VALUES ('reserve:just-confirmed:2', 2, 1, 'reservation', 1, 3, 1, 'just-confirmed', 'Test');
 
     INSERT INTO rate_limit_buckets (scope, key_hash, window_start, hits, expires_at)
     VALUES
@@ -84,8 +84,8 @@ function setupExpiredOrder() {
   return db;
 }
 
-test('scheduled worker completes aged confirmed orders without expiring pending reservations', async (t) => {
-  const db = setupExpiredOrder();
+test('scheduled worker immediately completes legacy confirmed orders without expiring pending reservations', async (t) => {
+  const db = setupMaintenanceState();
   t.after(() => db.close());
 
   await worker.scheduled({
@@ -94,7 +94,7 @@ test('scheduled worker completes aged confirmed orders without expiring pending 
   }, { DB: db });
 
   assert.equal(db.sqlite.prepare("SELECT status FROM orders WHERE id = 'expired'").get().status, 'pending');
-  assert.equal(db.sqlite.prepare("SELECT status FROM orders WHERE id = 'aged-confirmed'").get().status, 'completed');
+  assert.equal(db.sqlite.prepare("SELECT status FROM orders WHERE id = 'just-confirmed'").get().status, 'completed');
   assert.deepEqual(
     { ...db.sqlite.prepare('SELECT on_hand, reserved FROM inventory WHERE product_id = 1').get() },
     { on_hand: 1, reserved: 1 },

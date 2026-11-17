@@ -1,6 +1,6 @@
 import React from "react";
 import { Link, useParams } from "react-router-dom";
-import { accountText, orderStatusText } from "../account-copy.js";
+import { accountText, orderDisplayStatus, orderStatusText } from "../account-copy.js";
 import { planRepeatOrder } from "../account-utils.js";
 import { useAuth } from "../auth.jsx";
 import { ApiErrorNotice, ProtectedAccount } from "../components/AccountUi.jsx";
@@ -65,7 +65,7 @@ function OrderContent() {
       <nav className="crumbs"><Link to="/account">{accountText(lang, "account")}</Link><Icon n="chev" s={14} /><span className="cur">{order.no}</span></nav>
       <header className="order-detail-head">
         <div><span>{accountText(lang, "order")}</span><h1>{order.no}</h1><p>{formatDate(order.createdAt, lang)}</p></div>
-        <span className={`order-status status-${order.status}`}>{orderStatusText(lang, order.status)}</span>
+        <span className={`order-status status-${orderDisplayStatus(order.status)}`}>{orderStatusText(lang, order.status)}</span>
       </header>
       {catalogError && <div className="account-catalog-warning"><CatalogUnavailable /></div>}
       <div className="order-detail-grid">
